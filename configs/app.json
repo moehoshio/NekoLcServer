@@ -18,5 +18,8 @@
   "database": {
     "type": "sqlite",
     "path": "./data/nekolc.db"
+  },
+  "storage": {
+    "basePath": "./data"
   }
 }

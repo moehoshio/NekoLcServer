@@ -28,7 +28,7 @@ func createTestConfig(enableAuth bool) *config.Config {
 	return cfg
 }
 
-func createTestDatabase() (*storage.Database, func()) {
+func createTestDatabase() (storage.Storage, func()) {
 	db, err := storage.NewDatabase(":memory:")
 	if err != nil {
 		panic(err)

@@ -75,7 +75,7 @@ func CommonMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 }
 
 // AuthMiddleware checks for valid JWT authentication
-func AuthMiddleware(cfg *config.Config, db *storage.Database, jwtAuth *auth.JWTAuth, required bool) func(http.Handler) http.Handler {
+func AuthMiddleware(cfg *config.Config, db storage.Storage, jwtAuth *auth.JWTAuth, required bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rw := &ResponseWriter{

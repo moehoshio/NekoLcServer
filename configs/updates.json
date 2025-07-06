@@ -1,0 +1,53 @@
+{
+  "latestCoreVersion": "1.1.1",
+  "latestResourceVersion": "1.1.0",
+  "files": [
+    {
+      "os": "windows",
+      "arch": "x64",
+      "coreVersion": "1.0.1",
+      "coreVersionPath": "update/windows-64/1.0.1-to-1.1.1.json"
+    },
+    {
+      "os": "windows",
+      "arch": "x64",
+      "coreVersion": "1.0.2",
+      "coreVersionPath": "update/windows-64/1.0.2-to-1.1.1.json"
+    },
+    {
+      "os": "linux",
+      "arch": "x64",
+      "coreVersion": "1.0.1",
+      "coreVersionPath": "update/linux-64/1.0.1-to-1.1.1.json"
+    },
+    {
+      "os": "macos",
+      "arch": "arm64",
+      "coreVersion": "1.0.0",
+      "coreVersionPath": "update/macos-arm64/1.0.0-to-1.1.1.json"
+    }
+  ],
+  "fullPackages": {
+    "windows-x64": {
+      "coreVersion": "1.1.1",
+      "resourceVersion": "1.1.0",
+      "downloadUrl": "https://example.com/updates/windows-x64-1.1.1.zip",
+      "size": 1024000,
+      "checksum": "sha256:abc123def456789"
+    },
+    "linux-x64": {
+      "coreVersion": "1.1.1",
+      "resourceVersion": "1.1.0",
+      "downloadUrl": "https://example.com/updates/linux-x64-1.1.1.tar.gz",
+      "size": 950000,
+      "checksum": "sha256:def456abc123789"
+    },
+    "macos-arm64": {
+      "coreVersion": "1.1.1",
+      "resourceVersion": "1.1.0",
+      "downloadUrl": "https://example.com/updates/macos-arm64-1.1.1.dmg",
+      "size": 1100000,
+      "checksum": "sha256:789abc123def456"
+    }
+  }
+}

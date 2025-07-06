@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/moehoshio/NekoLcServer/internal/config"
@@ -12,10 +13,10 @@ import (
 
 type LauncherHandler struct {
 	Config *config.Config
-	DB     *storage.Database
+	DB     storage.Storage
 }
 
-func NewLauncherHandler(cfg *config.Config, db *storage.Database) *LauncherHandler {
+func NewLauncherHandler(cfg *config.Config, db storage.Storage) *LauncherHandler {
 	return &LauncherHandler{
 		Config: cfg,
 		DB:     db,
@@ -89,29 +90,55 @@ func (h *LauncherHandler) Maintenance(w http.ResponseWriter, r *http.Request) {
 		language = req.Preferences.Language
 	}
 	
-	// Check if maintenance is active from config
-	if !h.Config.Maintenance.MaintenanceActive {
-		// Return 204 No Content if not in maintenance
+	// Check for platform-specific maintenance first if OS and Arch are provided
+	var maintenanceActive bool
+	var maintenanceInfo config.MaintenanceInfoConfig
+	
+	// Try to get OS and Arch from the request (you might need to add these fields to MaintenanceRequest)
+	// For now, let's use a platform key if available in the config
+	// platformKey := fmt.Sprintf("%s-%s", os, arch) // Would need OS/Arch in request
+	
+	// Check platform-specific maintenance if available
+	platformSpecificChecked := false
+	for _, platformMaintenance := range h.Config.Maintenance.PlatformSpecific {
+		// For demonstration, we'll check all platform-specific configs
+		// In practice, you'd want to match against the client's OS/Arch
+		if platformMaintenance.MaintenanceActive {
+			maintenanceActive = true
+			maintenanceInfo = platformMaintenance.MaintenanceInfo
+			platformSpecificChecked = true
+			break
+		}
+	}
+	
+	// Fall back to global maintenance if no platform-specific maintenance
+	if !platformSpecificChecked {
+		maintenanceActive = h.Config.Maintenance.MaintenanceActive
+		maintenanceInfo = h.Config.Maintenance.MaintenanceInfo
+	}
+	
+	// Return 204 No Content if not in maintenance
+	if !maintenanceActive {
 		rw.WriteNoContent()
 		return
 	}
 	
 	// Get localized maintenance message
-	localizedMessage := h.Config.GetLocalizedString(language, "maintenance", h.Config.Maintenance.MaintenanceInfo.Status)
-	if localizedMessage == h.Config.Maintenance.MaintenanceInfo.Status {
+	localizedMessage := h.Config.GetLocalizedString(language, "maintenance", maintenanceInfo.Status)
+	if localizedMessage == maintenanceInfo.Status {
 		// Fallback to config message if no localization found
-		localizedMessage = h.Config.Maintenance.MaintenanceInfo.Message
+		localizedMessage = maintenanceInfo.Message
 	}
 	
 	// Return maintenance information from config
 	response := models.MaintenanceResponse{
 		MaintenanceInformation: models.MaintenanceInformation{
-			Status:    h.Config.Maintenance.MaintenanceInfo.Status,
+			Status:    maintenanceInfo.Status,
 			Message:   localizedMessage,
-			StartTime: h.Config.Maintenance.MaintenanceInfo.StartTime,
-			ExEndTime: h.Config.Maintenance.MaintenanceInfo.ExEndTime,
-			PosterUrl: h.Config.Maintenance.MaintenanceInfo.PosterUrl,
-			Link:      h.Config.Maintenance.MaintenanceInfo.Link,
+			StartTime: maintenanceInfo.StartTime,
+			ExEndTime: maintenanceInfo.ExEndTime,
+			PosterUrl: maintenanceInfo.PosterUrl,
+			Link:      maintenanceInfo.Link,
 		},
 		Meta: models.NewMeta(h.Config.App.Server.APIVersion, h.Config.App.Server.MinAPIVersion, h.Config.App.Server.BuildVersion, h.Config.App.Server.ReleaseDate),
 	}
@@ -145,42 +172,87 @@ func (h *LauncherHandler) CheckUpdates(w http.ResponseWriter, r *http.Request) {
 		language = req.Preferences.Language
 	}
 	
-	// Check for updates (simplified - always no updates for this example)
-	// In a real implementation, you would check version comparisons and update availability
-	hasUpdates := false
+	// Check if either core version or resource version is outdated
+	coreOutdated := req.CheckUpdate.CoreVersion != h.Config.Updates.LatestCoreVersion
+	resourceOutdated := req.CheckUpdate.ResourceVersion != h.Config.Updates.LatestResourceVersion
 	
-	if !hasUpdates {
-		// Return 204 No Content if no updates
+	if !coreOutdated && !resourceOutdated {
+		// Return 204 No Content if no updates needed
 		rw.WriteNoContent()
 		return
+	}
+	
+	// Create platform key for OS-arch specific lookup
+	platformKey := fmt.Sprintf("%s-%s", req.CheckUpdate.OS, req.CheckUpdate.Arch)
+	
+	// Look for incremental update path
+	var updateFiles []models.FileInfo
+	var incrementalUpdate *config.UpdateFileInfo
+	
+	// Check for incremental update for the core version
+	if coreOutdated {
+		for _, file := range h.Config.Updates.Files {
+			if file.OS == req.CheckUpdate.OS && 
+			   file.Arch == req.CheckUpdate.Arch && 
+			   file.CoreVersion == req.CheckUpdate.CoreVersion {
+				incrementalUpdate = &file
+				break
+			}
+		}
+	}
+	
+	// If incremental update available, use it
+	if incrementalUpdate != nil {
+		updateFiles = []models.FileInfo{
+			{
+				URL:      fmt.Sprintf("https://example.com/updates/%s", incrementalUpdate.CoreVersionPath),
+				FileName: "update.json",
+				Checksum: "incremental-update-checksum",
+				DownloadMeta: models.DownloadMeta{
+					HashAlgorithm:      "sha256",
+					SuggestMultiThread: false,
+					IsCoreFile:         true,
+					IsAbsoluteUrl:      true,
+				},
+			},
+		}
+	} else {
+		// No incremental update available, check for full package
+		if fullPackage, exists := h.Config.Updates.FullPackages[platformKey]; exists {
+			updateFiles = []models.FileInfo{
+				{
+					URL:      fullPackage.DownloadUrl,
+					FileName: fmt.Sprintf("%s-full-update.zip", platformKey),
+					Checksum: fullPackage.Checksum,
+					DownloadMeta: models.DownloadMeta{
+						HashAlgorithm:      "sha256",
+						SuggestMultiThread: true,
+						IsCoreFile:         true,
+						IsAbsoluteUrl:      true,
+					},
+				},
+			}
+		} else {
+			// No update available for this platform
+			rw.WriteNoContent()
+			return
+		}
 	}
 	
 	// Get localized update messages
 	localizedTitle := h.Config.GetLocalizedString(language, "updates", "available")
 	localizedDescription := h.Config.GetLocalizedString(language, "updates", "description")
 	
-	// If updates available, return update information
+	// Return update information
 	response := models.UpdateResponse{
 		UpdateInformation: models.UpdateInformation{
 			Title:           localizedTitle,
 			Description:     localizedDescription,
 			PosterUrl:       "https://example.com/update-poster.jpg",
 			PublishTime:     "2024-06-01T12:00:00Z",
-			ResourceVersion: "2.0.1",
+			ResourceVersion: h.Config.Updates.LatestResourceVersion,
 			IsMandatory:     false,
-			Files: []models.FileInfo{
-				{
-					URL:      "https://example.com/download/main.exe",
-					FileName: "main.exe",
-					Checksum: "abcdef1234567890",
-					DownloadMeta: models.DownloadMeta{
-						HashAlgorithm:      "sha256",
-						SuggestMultiThread: false,
-						IsCoreFile:         true,
-						IsAbsoluteUrl:      true,
-					},
-				},
-			},
+			Files:          updateFiles,
 		},
 		Meta: models.NewMeta(h.Config.App.Server.APIVersion, h.Config.App.Server.MinAPIVersion, h.Config.App.Server.BuildVersion, h.Config.App.Server.ReleaseDate),
 	}

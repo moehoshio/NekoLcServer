@@ -5,7 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
+
+// CLIFlags represents command line arguments
+type CLIFlags struct {
+	ConfigPath   *string
+	Port         *int
+	Debug        *bool
+	EnableAuth   *bool
+	JWTSecret    *string
+	DatabaseType *string
+	DatabasePath *string
+	Reload       *bool
+	Help         *bool
+}
 
 // AppConfig represents the main application configuration
 type AppConfig struct {
@@ -26,9 +40,17 @@ type AppConfig struct {
 		Enabled bool `json:"enabled"`
 	} `json:"debug"`
 	Database struct {
-		Type string `json:"type"`
-		Path string `json:"path"`
+		Type string `json:"type"` // sqlite, mysql, file
+		Path string `json:"path"` // connection string or file path
+		Host string `json:"host,omitempty"` // for mysql
+		Port int    `json:"port,omitempty"` // for mysql
+		Name string `json:"name,omitempty"` // for mysql
+		User string `json:"user,omitempty"` // for mysql
+		Password string `json:"password,omitempty"` // for mysql
 	} `json:"database"`
+	Storage struct {
+		BasePath string `json:"basePath"` // base path for file storage
+	} `json:"storage"`
 }
 
 // LauncherConfig represents launcher configuration
@@ -60,6 +82,7 @@ type SecurityConfig struct {
 type MaintenanceConfigData struct {
 	MaintenanceActive bool                     `json:"maintenanceActive"`
 	MaintenanceInfo   MaintenanceInfoConfig   `json:"maintenanceInfo"`
+	PlatformSpecific  map[string]PlatformMaintenanceConfig `json:"platformSpecific,omitempty"`
 }
 
 type MaintenanceInfoConfig struct {
@@ -69,6 +92,36 @@ type MaintenanceInfoConfig struct {
 	ExEndTime string `json:"exEndTime"`
 	PosterUrl string `json:"posterUrl"`
 	Link      string `json:"link"`
+}
+
+type PlatformMaintenanceConfig struct {
+	MaintenanceActive bool                  `json:"maintenanceActive"`
+	MaintenanceInfo   MaintenanceInfoConfig `json:"maintenanceInfo"`
+}
+
+// UpdateConfig represents update configuration
+type UpdateConfigData struct {
+	LatestCoreVersion     string           `json:"latestCoreVersion"`
+	LatestResourceVersion string           `json:"latestResourceVersion"`
+	Files                 []UpdateFileInfo `json:"files"`
+	FullPackages          map[string]UpdatePackageInfo `json:"fullPackages"` // key: "os-arch"
+}
+
+type UpdateFileInfo struct {
+	OS              string `json:"os"`
+	Arch            string `json:"arch"`
+	CoreVersion     string `json:"coreVersion"`
+	ResourceVersion string `json:"resourceVersion,omitempty"`
+	CoreVersionPath string `json:"coreVersionPath"`
+	ResourceVersionPath string `json:"resourceVersionPath,omitempty"`
+}
+
+type UpdatePackageInfo struct {
+	CoreVersion     string `json:"coreVersion"`
+	ResourceVersion string `json:"resourceVersion"`
+	DownloadUrl     string `json:"downloadUrl"`
+	Size            int64  `json:"size"`
+	Checksum        string `json:"checksum"`
 }
 
 // LanguageConfig represents language configuration
@@ -85,12 +138,22 @@ type Config struct {
 	App         *AppConfig
 	Launcher    *LauncherConfigData
 	Maintenance *MaintenanceConfigData
+	Updates     *UpdateConfigData
 	Languages   LanguageConfig
 	ConfigPath  string
 }
 
 func Load() *Config {
-	configPath := getEnvOrDefault("CONFIG_PATH", "./configs")
+	return LoadWithFlags(nil)
+}
+
+func LoadWithFlags(flags *CLIFlags) *Config {
+	configPath := "./configs"
+	if flags != nil && flags.ConfigPath != nil && *flags.ConfigPath != "" {
+		configPath = *flags.ConfigPath
+	} else if envPath := os.Getenv("CONFIG_PATH"); envPath != "" {
+		configPath = envPath
+	}
 	
 	config := &Config{
 		ConfigPath: configPath,
@@ -100,9 +163,15 @@ func Load() *Config {
 	config.loadAppConfig()
 	config.loadLauncherConfig()
 	config.loadMaintenanceConfig()
+	config.loadUpdateConfig()
 	config.loadLanguageConfig()
 	
-	// Override with environment variables
+	// Override with CLI flags (highest priority)
+	if flags != nil {
+		config.overrideWithFlags(flags)
+	}
+	
+	// Override with environment variables (lower priority)
 	config.overrideWithEnv()
 	
 	return config
@@ -126,6 +195,7 @@ func (c *Config) loadAppConfig() {
 		c.App.Debug.Enabled = false
 		c.App.Database.Type = "sqlite"
 		c.App.Database.Path = "./data/nekolc.db"
+		c.App.Storage.BasePath = "./data"
 		return
 	}
 	
@@ -192,6 +262,7 @@ func (c *Config) loadMaintenanceConfig() {
 				PosterUrl: "https://example.com/maintenance-poster.jpg",
 				Link:      "https://example.com/maintenance-announcement",
 			},
+			PlatformSpecific: make(map[string]PlatformMaintenanceConfig),
 		}
 		return
 	}
@@ -200,6 +271,42 @@ func (c *Config) loadMaintenanceConfig() {
 	if err := json.Unmarshal(data, c.Maintenance); err != nil {
 		fmt.Printf("Error loading maintenance config: %v\n", err)
 		c.loadMaintenanceConfig() // Use defaults on error
+	}
+}
+
+func (c *Config) loadUpdateConfig() {
+	updateConfigPath := filepath.Join(c.ConfigPath, "updates.json")
+	data, err := os.ReadFile(updateConfigPath)
+	if err != nil {
+		// Fall back to defaults
+		c.Updates = &UpdateConfigData{
+			LatestCoreVersion:     "1.1.1",
+			LatestResourceVersion: "1.1.0",
+			Files:                 []UpdateFileInfo{},
+			FullPackages: map[string]UpdatePackageInfo{
+				"windows-x64": {
+					CoreVersion:     "1.1.1",
+					ResourceVersion: "1.1.0",
+					DownloadUrl:     "https://example.com/updates/windows-x64-1.1.1.zip",
+					Size:            1024000,
+					Checksum:        "sha256:abc123...",
+				},
+				"linux-x64": {
+					CoreVersion:     "1.1.1",
+					ResourceVersion: "1.1.0",
+					DownloadUrl:     "https://example.com/updates/linux-x64-1.1.1.tar.gz",
+					Size:            1024000,
+					Checksum:        "sha256:def456...",
+				},
+			},
+		}
+		return
+	}
+	
+	c.Updates = &UpdateConfigData{}
+	if err := json.Unmarshal(data, c.Updates); err != nil {
+		fmt.Printf("Error loading update config: %v\n", err)
+		c.loadUpdateConfig() // Use defaults on error
 	}
 }
 
@@ -238,8 +345,35 @@ func (c *Config) loadLanguageConfig() {
 	}
 }
 
+func (c *Config) overrideWithFlags(flags *CLIFlags) {
+	if flags.Port != nil && *flags.Port > 0 {
+		c.App.Server.Port = strconv.Itoa(*flags.Port)
+	}
+	if flags.Debug != nil {
+		c.App.Debug.Enabled = *flags.Debug
+		if *flags.Debug {
+			if ui, ok := c.Launcher.FeaturesFlags["ui"].(map[string]interface{}); ok {
+				ui["enableDevHint"] = true
+			}
+		}
+	}
+	if flags.EnableAuth != nil {
+		c.App.Authentication.Enabled = *flags.EnableAuth
+		c.Launcher.Security.EnableAuthentication = *flags.EnableAuth
+	}
+	if flags.JWTSecret != nil && *flags.JWTSecret != "" {
+		c.App.Authentication.JWTSecret = *flags.JWTSecret
+	}
+	if flags.DatabaseType != nil && *flags.DatabaseType != "" {
+		c.App.Database.Type = *flags.DatabaseType
+	}
+	if flags.DatabasePath != nil && *flags.DatabasePath != "" {
+		c.App.Database.Path = *flags.DatabasePath
+	}
+}
+
 func (c *Config) overrideWithEnv() {
-	// Override with environment variables for deployment flexibility
+	// Override with environment variables for deployment flexibility (lower priority than CLI flags)
 	if port := os.Getenv("PORT"); port != "" {
 		c.App.Server.Port = port
 	}

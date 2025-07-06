@@ -1,0 +1,25 @@
+{
+  "host": ["localhost:8080"],
+  "retryIntervalSec": 5,
+  "maxRetryCount": 3,
+  "webSocket": {
+    "enable": false,
+    "socketHost": "",
+    "heartbeatIntervalSec": 30
+  },
+  "security": {
+    "enableAuthentication": false,
+    "tokenExpirationSec": 3600,
+    "refreshTokenExpirationDays": 30,
+    "loginUrl": "/v0/api/auth/login",
+    "logoutUrl": "/v0/api/auth/logout",
+    "refreshUrl": "/v0/api/auth/refresh"
+  },
+  "featuresFlags": {
+    "ui": {
+      "enableDevHint": false
+    },
+    "enableFeatureA": true,
+    "enableFeatureB": false
+  }
+}

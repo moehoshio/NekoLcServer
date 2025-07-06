@@ -1,0 +1,11 @@
+{
+  "maintenanceActive": false,
+  "maintenanceInfo": {
+    "status": "scheduled",
+    "message": "Scheduled maintenance",
+    "startTime": "2024-06-01T12:00:00Z",
+    "exEndTime": "2024-06-01T14:00:00Z",
+    "posterUrl": "https://example.com/maintenance-poster.jpg",
+    "link": "https://example.com/maintenance-announcement"
+  }
+}

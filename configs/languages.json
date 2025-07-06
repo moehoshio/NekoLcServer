@@ -1,0 +1,38 @@
+{
+  "en": {
+    "errors": {
+      "InvalidRequest": "The request is invalid.",
+      "NotFound": "Resource not found.",
+      "Unauthorized": "Authentication required.",
+      "InternalError": "Internal server error.",
+      "NotImplemented": "Feature not implemented.",
+      "ServiceUnavailable": "Service is currently unavailable."
+    },
+    "maintenance": {
+      "scheduled": "Scheduled maintenance",
+      "progress": "Maintenance in progress"
+    },
+    "updates": {
+      "available": "New version available",
+      "description": "Bug fixes and improvements"
+    }
+  },
+  "zh-tw": {
+    "errors": {
+      "InvalidRequest": "請求無效。",
+      "NotFound": "找不到資源。",
+      "Unauthorized": "需要身份驗證。",
+      "InternalError": "內部伺服器錯誤。",
+      "NotImplemented": "功能尚未實作。",
+      "ServiceUnavailable": "服務目前無法使用。"
+    },
+    "maintenance": {
+      "scheduled": "預定維護",
+      "progress": "維護進行中"
+    },
+    "updates": {
+      "available": "有新版本可用",
+      "description": "錯誤修復和改進"
+    }
+  }
+}

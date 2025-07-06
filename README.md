@@ -10,23 +10,29 @@ This server implements all the APIs defined in the specification with enterprise
 - **Testing endpoints** for connectivity and debugging
 - **JWT Authentication system** with ID + timestamp signature support
 - **Configuration-driven architecture** with external JSON config files
-- **SQLite database storage** for feedback logs and authentication tokens
+- **Multiple storage backends** (SQLite, file-based, MySQL support)
+- **Command line interface** with flag-based configuration
+- **Hot-reload configuration** support
 - **Launcher configuration** management
-- **Maintenance status** checking with localized messages
-- **Update checking** system
+- **Maintenance status** checking with OS/arch-specific settings
+- **Advanced update checking** with incremental and full package support
 - **Feedback logging** with persistent storage
 - **Multi-language support** (English, Traditional Chinese, extensible)
 
 ### Technical Features
-- ✅ Proper JWT token generation and validation
-- ✅ Token revocation and refresh mechanism
-- ✅ SQLite database for data persistence
-- ✅ Configuration files instead of hardcoded values
-- ✅ Localized error messages and UI text
-- ✅ Standard error handling with proper HTTP status codes
-- ✅ Meta information in all API responses
-- ✅ User preferences support for localization
-- ✅ Production-ready deployment configuration
+- ✅ **Pure Go SQLite** implementation (no CGO dependencies)
+- ✅ **Flexible storage backends** (SQLite, file-based, MySQL)
+- ✅ **Command line flag configuration** with proper precedence
+- ✅ **Hot-reload functionality** for configuration updates
+- ✅ **Platform-specific maintenance** and update management
+- ✅ **Incremental update support** with fallback to full packages
+- ✅ **JWT token generation and validation**
+- ✅ **Token revocation and refresh mechanism**
+- ✅ **Configuration files instead of hardcoded values**
+- ✅ **Localized error messages and UI text**
+- ✅ **Standard error handling with proper HTTP status codes**
+- ✅ **Meta information in all API responses**
+- ✅ **Production-ready deployment configuration**
 
 ## 📁 Project Structure
 
@@ -34,18 +40,77 @@ This server implements all the APIs defined in the specification with enterprise
 ├── configs/                    # Configuration files
 │   ├── app.json               # Main application config
 │   ├── launcher.json          # Launcher-specific settings
-│   ├── maintenance.json       # Maintenance status config
+│   ├── maintenance.json       # Maintenance status config (with platform support)
+│   ├── updates.json           # Update configuration (new)
 │   ├── languages.json         # Localization strings
 │   └── production.example.json # Production config template
 ├── data/                      # Database and data files (created at runtime)
 ├── internal/
 │   ├── auth/                  # JWT authentication logic
-│   ├── config/                # Configuration loading
+│   ├── config/                # Configuration loading with CLI support
 │   ├── handlers/              # API endpoint handlers
 │   ├── middleware/            # HTTP middleware
 │   ├── models/                # Request/response models
-│   └── storage/               # Database operations
-└── main.go                    # Application entry point
+│   └── storage/               # Storage abstraction (SQLite, file, MySQL)
+│       ├── database.go        # SQLite implementation
+│       ├── file.go           # File-based storage
+│       └── factory.go        # Storage factory
+└── main.go                    # Application entry point with CLI support
+```
+
+## 🖥️ Command Line Interface
+
+The server supports comprehensive command-line configuration with proper precedence: 
+**CLI flags > Config files > Defaults**
+
+### Usage
+```bash
+./nekolc-server [options]
+```
+
+### Available Options
+```bash
+--config_path=PATH     Path to configuration files directory (default: ./configs)
+--port=PORT           Server port (default: 8080)
+--debug=BOOL          Enable debug mode (default: false)
+--enable_auth=BOOL    Enable authentication (default: false)
+--jwt_secret=SECRET   JWT secret key
+--database_type=TYPE  Database type: sqlite, mysql, file (default: sqlite)
+--database_path=PATH  Database connection path
+--reload              Hot-reload configuration and exit
+--help                Show help message
+```
+
+### Examples
+```bash
+# Start with custom config path
+./nekolc-server --config_path=/etc/nekolc --port=9000
+
+# Enable authentication and debug mode
+./nekolc-server --enable_auth=true --debug=true
+
+# Use file-based storage
+./nekolc-server --database_type=file --database_path=/var/lib/nekolc/storage
+
+# Hot-reload configuration
+./nekolc-server --reload
+```
+
+### Storage Backend Configuration
+
+#### SQLite (Default)
+```bash
+--database_type=sqlite --database_path=./data/server.db
+```
+
+#### File-based Storage
+```bash
+--database_type=file --database_path=/var/lib/nekolc/data
+```
+
+#### MySQL (Future)
+```bash
+--database_type=mysql --database_path="user:password@tcp(localhost:3306)/dbname"
 ```
 
 ## 🔧 Configuration
@@ -68,11 +133,59 @@ The server uses JSON configuration files in the `configs/` directory:
   "database": {
     "type": "sqlite",
     "path": "./data/nekolc.db"
+  },
+  "storage": {
+    "basePath": "./data"
   }
 }
 ```
 
-### Environment Variable Overrides
+### Update Configuration (`configs/updates.json`)
+```json
+{
+  "latestCoreVersion": "1.1.1",
+  "latestResourceVersion": "1.1.0",
+  "files": [
+    {
+      "os": "windows",
+      "arch": "x64",
+      "coreVersion": "1.0.1",
+      "coreVersionPath": "update/windows-64/1.0.1-to-1.1.1.json"
+    }
+  ],
+  "fullPackages": {
+    "windows-x64": {
+      "coreVersion": "1.1.1",
+      "resourceVersion": "1.1.0",
+      "downloadUrl": "https://example.com/updates/windows-x64-1.1.1.zip",
+      "size": 1024000,
+      "checksum": "sha256:abc123..."
+    }
+  }
+}
+```
+
+### Maintenance Configuration (`configs/maintenance.json`)
+```json
+{
+  "maintenanceActive": false,
+  "maintenanceInfo": {
+    "status": "scheduled",
+    "message": "Scheduled maintenance"
+  },
+  "platformSpecific": {
+    "windows-x64": {
+      "maintenanceActive": true,
+      "maintenanceInfo": {
+        "status": "progress",
+        "message": "Windows servers under maintenance"
+      }
+    }
+  }
+}
+```
+
+### Environment Variable Overrides (Legacy)
 ```bash
 export PORT=8080
 export ENABLE_AUTH=true

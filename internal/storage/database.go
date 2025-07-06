@@ -5,8 +5,18 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
+
+// Storage interface defines the contract for all storage implementations
+type Storage interface {
+	StoreFeedbackLog(log *FeedbackLog) error
+	StoreAuthToken(token *AuthToken) error
+	GetAuthToken(tokenHash string) (*AuthToken, error)
+	RevokeAuthToken(tokenHash string) error
+	RevokeAllUserTokens(userID string) error
+	Close() error
+}
 
 type Database struct {
 	db *sql.DB
@@ -34,7 +44,7 @@ type AuthToken struct {
 }
 
 func NewDatabase(dbPath string) (*Database, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

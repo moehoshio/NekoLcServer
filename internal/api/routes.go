@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/moehoshio/NekoLcServer/internal/auth"
 	"github.com/moehoshio/NekoLcServer/internal/config"
@@ -14,14 +13,14 @@ import (
 )
 
 func SetupRoutes(cfg *config.Config) http.Handler {
-	// Initialize database
-	if err := os.MkdirAll("./data", 0755); err != nil {
-		log.Printf("Warning: Failed to create data directory: %v", err)
+	// Initialize storage
+	if err := storage.EnsureDataDirectory(cfg); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
 	}
 	
-	db, err := storage.NewDatabase(cfg.App.Database.Path)
+	db, err := storage.NewStorage(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 	
 	// Initialize JWT authentication
@@ -104,28 +103,29 @@ func SetupRoutes(cfg *config.Config) http.Handler {
 	// Log configuration status
 	log.Printf("Authentication enabled: %v", cfg.App.Authentication.Enabled)
 	log.Printf("Debug mode enabled: %v", cfg.App.Debug.Enabled)
-	log.Printf("Database path: %s", cfg.App.Database.Path)
+	log.Printf("Storage type: %s", cfg.App.Database.Type)
+	log.Printf("Storage path: %s", cfg.App.Database.Path)
 	
 	return &serverWrapper{
 		handler: mux,
-		db:      db,
+		storage: db,
 	}
 }
 
-// serverWrapper wraps the HTTP handler and holds the database reference for cleanup
+// serverWrapper wraps the HTTP handler and holds the storage reference for cleanup
 type serverWrapper struct {
 	handler http.Handler
-	db      *storage.Database
+	storage storage.Storage
 }
 
 func (sw *serverWrapper) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sw.handler.ServeHTTP(w, r)
 }
 
-// Close closes the database connection (call this on server shutdown)
+// Close closes the storage connection (call this on server shutdown)
 func (sw *serverWrapper) Close() error {
-	if sw.db != nil {
-		return sw.db.Close()
+	if sw.storage != nil {
+		return sw.storage.Close()
 	}
 	return nil
 }

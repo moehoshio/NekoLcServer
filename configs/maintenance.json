@@ -7,5 +7,29 @@
     "exEndTime": "2024-06-01T14:00:00Z",
     "posterUrl": "https://example.com/maintenance-poster.jpg",
     "link": "https://example.com/maintenance-announcement"
+  },
+  "platformSpecific": {
+    "windows-x64": {
+      "maintenanceActive": false,
+      "maintenanceInfo": {
+        "status": "none",
+        "message": "No scheduled maintenance for Windows x64",
+        "startTime": "",
+        "exEndTime": "",
+        "posterUrl": "",
+        "link": ""
+      }
+    },
+    "linux-x64": {
+      "maintenanceActive": true,
+      "maintenanceInfo": {
+        "status": "progress",
+        "message": "Linux x64 servers undergoing maintenance",
+        "startTime": "2024-06-01T10:00:00Z",
+        "exEndTime": "2024-06-01T16:00:00Z",
+        "posterUrl": "https://example.com/linux-maintenance.jpg",
+        "link": "https://example.com/linux-maintenance-announcement"
+      }
+    }
   }
 }

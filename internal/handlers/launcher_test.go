@@ -50,6 +50,20 @@ func createTestLauncherConfig() *config.Config {
 				Link:      "https://example.com/maintenance-announcement",
 			},
 		},
+		Updates: &config.UpdateConfigData{
+			LatestCoreVersion:     "1.1.1",
+			LatestResourceVersion: "1.1.0",
+			Files:                 []config.UpdateFileInfo{},
+			FullPackages: map[string]config.UpdatePackageInfo{
+				"windows-x64": {
+					CoreVersion:     "1.1.1",
+					ResourceVersion: "1.1.0",
+					DownloadUrl:     "https://example.com/updates/windows-x64-1.1.1.zip",
+					Size:            1024000,
+					Checksum:        "sha256:abc123...",
+				},
+			},
+		},
 		Languages: make(config.LanguageConfig),
 	}
 	cfg.App.Server.APIVersion = "1.0.0"
@@ -212,8 +226,8 @@ func TestLauncherHandler_CheckUpdates_NoUpdates(t *testing.T) {
 		CheckUpdate: models.CheckUpdateInfo{
 			OS:              "windows",
 			Arch:            "x64",
-			CoreVersion:     "1.0.0",
-			ResourceVersion: "2.0.0",
+			CoreVersion:     "1.1.1",    // Latest core version
+			ResourceVersion: "1.1.0",    // Latest resource version
 		},
 	}
 	

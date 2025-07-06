@@ -14,11 +14,11 @@ import (
 
 type AuthHandler struct {
 	Config  *config.Config
-	DB      *storage.Database
+	DB      storage.Storage
 	JWTAuth *auth.JWTAuth
 }
 
-func NewAuthHandler(cfg *config.Config, db *storage.Database, jwtAuth *auth.JWTAuth) *AuthHandler {
+func NewAuthHandler(cfg *config.Config, db storage.Storage, jwtAuth *auth.JWTAuth) *AuthHandler {
 	return &AuthHandler{
 		Config:  cfg,
 		DB:      db,

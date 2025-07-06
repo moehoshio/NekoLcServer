@@ -10,13 +10,16 @@
     "enabled": true,
     "jwtSecret": "CHANGE-THIS-TO-A-SECURE-RANDOM-KEY-IN-PRODUCTION",
     "tokenExpirationSec": 3600,
-    "refreshTokenExpirationDays": 30
+    "refreshTokenExpirationDays": 7
   },
   "debug": {
     "enabled": false
   },
   "database": {
     "type": "sqlite",
-    "path": "./data/production.db"
+    "path": "/var/lib/nekolc/server.db"
+  },
+  "storage": {
+    "basePath": "/var/lib/nekolc/data"
   }
 }

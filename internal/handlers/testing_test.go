@@ -7,17 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/models"
 )
 
 func TestTestingHandler_Ping(t *testing.T) {
-	cfg := &config.Config{
-		APIVersion:    "1.0.0",
-		MinAPIVersion: "1.0.0",
-		BuildVersion:  "test",
-		ReleaseDate:   "2024-01-01T00:00:00Z",
-	}
+	cfg := createTestConfig(false)
 	
 	handler := NewTestingHandler(cfg)
 	
@@ -45,13 +39,8 @@ func TestTestingHandler_Ping(t *testing.T) {
 }
 
 func TestTestingHandler_Echo(t *testing.T) {
-	cfg := &config.Config{
-		APIVersion:      "1.0.0",
-		MinAPIVersion:   "1.0.0",
-		BuildVersion:    "test",
-		ReleaseDate:     "2024-01-01T00:00:00Z",
-		EnableDebugMode: true,
-	}
+	cfg := createTestConfig(false)
+	cfg.App.Debug.Enabled = true
 	
 	handler := NewTestingHandler(cfg)
 	
@@ -87,13 +76,8 @@ func TestTestingHandler_Echo(t *testing.T) {
 }
 
 func TestTestingHandler_Echo_InvalidJSON(t *testing.T) {
-	cfg := &config.Config{
-		APIVersion:      "1.0.0",
-		MinAPIVersion:   "1.0.0",
-		BuildVersion:    "test",
-		ReleaseDate:     "2024-01-01T00:00:00Z",
-		EnableDebugMode: true,
-	}
+	cfg := createTestConfig(false)
+	cfg.App.Debug.Enabled = true
 	
 	handler := NewTestingHandler(cfg)
 	

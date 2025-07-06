@@ -7,14 +7,19 @@ import (
 	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/middleware"
 	"github.com/moehoshio/NekoLcServer/internal/models"
+	"github.com/moehoshio/NekoLcServer/internal/storage"
 )
 
 type LauncherHandler struct {
 	Config *config.Config
+	DB     *storage.Database
 }
 
-func NewLauncherHandler(cfg *config.Config) *LauncherHandler {
-	return &LauncherHandler{Config: cfg}
+func NewLauncherHandler(cfg *config.Config, db *storage.Database) *LauncherHandler {
+	return &LauncherHandler{
+		Config: cfg,
+		DB:     db,
+	}
 }
 
 // LauncherConfig handles POST /v0/api/launcherConfig
@@ -36,36 +41,30 @@ func (h *LauncherHandler) LauncherConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	
-	// Build launcher configuration
+	// Build launcher configuration from config files
 	launcherConfig := models.LauncherConfig{
-		Host:             []string{"localhost:8080"},
-		RetryIntervalSec: 5,
-		MaxRetryCount:    3,
+		Host:             h.Config.Launcher.Host,
+		RetryIntervalSec: h.Config.Launcher.RetryIntervalSec,
+		MaxRetryCount:    h.Config.Launcher.MaxRetryCount,
 		WebSocket: models.WebSocket{
-			Enable:                false, // Disabled by default for simplicity
-			SocketHost:           "",
-			HeartbeatIntervalSec: 30,
+			Enable:                h.Config.Launcher.WebSocket.Enable,
+			SocketHost:           h.Config.Launcher.WebSocket.SocketHost,
+			HeartbeatIntervalSec: h.Config.Launcher.WebSocket.HeartbeatIntervalSec,
 		},
 		Security: models.Security{
-			EnableAuthentication:        h.Config.EnableAuthentication,
-			TokenExpirationSec:         h.Config.TokenExpirationSec,
-			RefreshTokenExpirationDays: h.Config.RefreshTokenExpirationDays,
-			LoginUrl:                   "/v0/api/auth/login",
-			LogoutUrl:                  "/v0/api/auth/logout",
-			RefreshUrl:                 "/v0/api/auth/refresh",
+			EnableAuthentication:        h.Config.Launcher.Security.EnableAuthentication,
+			TokenExpirationSec:         h.Config.Launcher.Security.TokenExpirationSec,
+			RefreshTokenExpirationDays: h.Config.Launcher.Security.RefreshTokenExpirationDays,
+			LoginUrl:                   h.Config.Launcher.Security.LoginUrl,
+			LogoutUrl:                  h.Config.Launcher.Security.LogoutUrl,
+			RefreshUrl:                 h.Config.Launcher.Security.RefreshUrl,
 		},
-		FeaturesFlags: map[string]interface{}{
-			"ui": map[string]interface{}{
-				"enableDevHint": h.Config.EnableDebugMode,
-			},
-			"enableFeatureA": true,
-			"enableFeatureB": false,
-		},
+		FeaturesFlags: h.Config.Launcher.FeaturesFlags,
 	}
 	
 	response := models.LauncherConfigResponse{
 		LauncherConfig: launcherConfig,
-		Meta:           models.NewMeta(h.Config.APIVersion, h.Config.MinAPIVersion, h.Config.BuildVersion, h.Config.ReleaseDate),
+		Meta:           models.NewMeta(h.Config.App.Server.APIVersion, h.Config.App.Server.MinAPIVersion, h.Config.App.Server.BuildVersion, h.Config.App.Server.ReleaseDate),
 	}
 	
 	rw.WriteJSON(http.StatusOK, response)
@@ -84,26 +83,37 @@ func (h *LauncherHandler) Maintenance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Check if maintenance is active (simplified - always not in maintenance for demo)
-	inMaintenance := false
+	// Get preferred language for localized messages
+	language := "en"
+	if req.Preferences.Language != "" {
+		language = req.Preferences.Language
+	}
 	
-	if !inMaintenance {
+	// Check if maintenance is active from config
+	if !h.Config.Maintenance.MaintenanceActive {
 		// Return 204 No Content if not in maintenance
 		rw.WriteNoContent()
 		return
 	}
 	
-	// If in maintenance, return maintenance information
+	// Get localized maintenance message
+	localizedMessage := h.Config.GetLocalizedString(language, "maintenance", h.Config.Maintenance.MaintenanceInfo.Status)
+	if localizedMessage == h.Config.Maintenance.MaintenanceInfo.Status {
+		// Fallback to config message if no localization found
+		localizedMessage = h.Config.Maintenance.MaintenanceInfo.Message
+	}
+	
+	// Return maintenance information from config
 	response := models.MaintenanceResponse{
 		MaintenanceInformation: models.MaintenanceInformation{
-			Status:    "scheduled",
-			Message:   "Scheduled maintenance",
-			StartTime: "2024-06-01T12:00:00Z",
-			ExEndTime: "2024-06-01T14:00:00Z",
-			PosterUrl: "https://example.com/maintenance-poster.jpg",
-			Link:      "https://example.com/maintenance-announcement",
+			Status:    h.Config.Maintenance.MaintenanceInfo.Status,
+			Message:   localizedMessage,
+			StartTime: h.Config.Maintenance.MaintenanceInfo.StartTime,
+			ExEndTime: h.Config.Maintenance.MaintenanceInfo.ExEndTime,
+			PosterUrl: h.Config.Maintenance.MaintenanceInfo.PosterUrl,
+			Link:      h.Config.Maintenance.MaintenanceInfo.Link,
 		},
-		Meta: models.NewMeta(h.Config.APIVersion, h.Config.MinAPIVersion, h.Config.BuildVersion, h.Config.ReleaseDate),
+		Meta: models.NewMeta(h.Config.App.Server.APIVersion, h.Config.App.Server.MinAPIVersion, h.Config.App.Server.BuildVersion, h.Config.App.Server.ReleaseDate),
 	}
 	
 	rw.WriteJSON(http.StatusOK, response)
@@ -129,7 +139,14 @@ func (h *LauncherHandler) CheckUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Check for updates (simplified - always no updates for demo)
+	// Get preferred language for localized messages
+	language := "en"
+	if req.Preferences.Language != "" {
+		language = req.Preferences.Language
+	}
+	
+	// Check for updates (simplified - always no updates for this example)
+	// In a real implementation, you would check version comparisons and update availability
 	hasUpdates := false
 	
 	if !hasUpdates {
@@ -138,11 +155,15 @@ func (h *LauncherHandler) CheckUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
+	// Get localized update messages
+	localizedTitle := h.Config.GetLocalizedString(language, "updates", "available")
+	localizedDescription := h.Config.GetLocalizedString(language, "updates", "description")
+	
 	// If updates available, return update information
 	response := models.UpdateResponse{
 		UpdateInformation: models.UpdateInformation{
-			Title:           "New Version Available",
-			Description:     "Bug fixes and improvements",
+			Title:           localizedTitle,
+			Description:     localizedDescription,
 			PosterUrl:       "https://example.com/update-poster.jpg",
 			PublishTime:     "2024-06-01T12:00:00Z",
 			ResourceVersion: "2.0.1",
@@ -161,7 +182,7 @@ func (h *LauncherHandler) CheckUpdates(w http.ResponseWriter, r *http.Request) {
 				},
 			},
 		},
-		Meta: models.NewMeta(h.Config.APIVersion, h.Config.MinAPIVersion, h.Config.BuildVersion, h.Config.ReleaseDate),
+		Meta: models.NewMeta(h.Config.App.Server.APIVersion, h.Config.App.Server.MinAPIVersion, h.Config.App.Server.BuildVersion, h.Config.App.Server.ReleaseDate),
 	}
 	
 	rw.WriteJSON(http.StatusOK, response)
@@ -188,14 +209,21 @@ func (h *LauncherHandler) FeedbackLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Validate versions exist (simplified - always valid for demo)
-	versionsValid := true
-	if !versionsValid {
-		rw.WriteError(http.StatusBadRequest, "InvalidRequest", "Invalid core or resource version")
+	// Store feedback log in database
+	feedbackLog := &storage.FeedbackLog{
+		OS:              req.FeedbackLog.OS,
+		Arch:            req.FeedbackLog.Arch,
+		CoreVersion:     req.FeedbackLog.CoreVersion,
+		ResourceVersion: req.FeedbackLog.ResourceVersion,
+		Timestamp:       req.FeedbackLog.Timestamp,
+		Content:         req.FeedbackLog.Content,
+	}
+	
+	if err := h.DB.StoreFeedbackLog(feedbackLog); err != nil {
+		rw.WriteError(http.StatusInternalServerError, "InternalError", "Failed to store feedback log")
 		return
 	}
 	
-	// Process feedback log (in a real implementation, you would store it)
-	// For now, just return success
+	// Return 204 No Content for success
 	rw.WriteNoContent()
 }

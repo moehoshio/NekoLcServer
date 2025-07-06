@@ -13,8 +13,9 @@ func main() {
 	
 	router := api.SetupRoutes(cfg)
 	
-	log.Printf("Starting NekoLc Server on port %s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {
+	log.Printf("Starting NekoLc Server on port %s", cfg.App.Server.Port)
+	log.Printf("Configuration loaded from: %s", cfg.ConfigPath)
+	if err := http.ListenAndServe(":"+cfg.App.Server.Port, router); err != nil {
 		log.Fatal("Server failed to start:", err)
 	}
 }

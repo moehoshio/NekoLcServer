@@ -32,3 +32,14 @@ Thumbs.db
 nekolc-server
 /dist/
 /tmp/
+
+# Database and data files
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment and secret config files
+.env
+configs/secrets.json
+configs/production.json

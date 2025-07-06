@@ -28,7 +28,7 @@ func (h *TestingHandler) Ping(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"message": "pong",
 		"status":  "ok",
-		"meta":    models.NewMeta(h.Config.APIVersion, h.Config.MinAPIVersion, h.Config.BuildVersion, h.Config.ReleaseDate),
+		"meta":    models.NewMeta(h.Config.App.Server.APIVersion, h.Config.App.Server.MinAPIVersion, h.Config.App.Server.BuildVersion, h.Config.App.Server.ReleaseDate),
 	}
 	
 	rw.WriteJSON(http.StatusOK, response)
@@ -59,7 +59,7 @@ func (h *TestingHandler) Echo(w http.ResponseWriter, r *http.Request) {
 	// Create response with echo data and meta
 	response := map[string]interface{}{
 		"echo": jsonData,
-		"meta": models.NewMeta(h.Config.APIVersion, h.Config.MinAPIVersion, h.Config.BuildVersion, h.Config.ReleaseDate),
+		"meta": models.NewMeta(h.Config.App.Server.APIVersion, h.Config.App.Server.MinAPIVersion, h.Config.App.Server.BuildVersion, h.Config.App.Server.ReleaseDate),
 	}
 	
 	rw.WriteJSON(http.StatusOK, response)

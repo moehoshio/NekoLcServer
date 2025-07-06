@@ -1,0 +1,22 @@
+{
+  "server": {
+    "port": "8080",
+    "apiVersion": "1.0.0",
+    "minApiVersion": "1.0.0",
+    "buildVersion": "20241201",
+    "releaseDate": "2024-12-01T12:00:00Z"
+  },
+  "authentication": {
+    "enabled": true,
+    "jwtSecret": "CHANGE-THIS-TO-A-SECURE-RANDOM-KEY-IN-PRODUCTION",
+    "tokenExpirationSec": 3600,
+    "refreshTokenExpirationDays": 30
+  },
+  "debug": {
+    "enabled": false
+  },
+  "database": {
+    "type": "sqlite",
+    "path": "./data/production.db"
+  }
+}

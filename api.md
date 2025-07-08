@@ -11,7 +11,7 @@ Conventions:
 - [Testing](#testing)
 - [Api](#api)
   - [Account](#account)
-    - [Launcher](#launcher)
+  - [Launcher](#launcher)
     - [WebSocket](#websocket)
     - [Static Deployment](#static-deployment)
 
@@ -688,11 +688,11 @@ Client-side WebSocket API should follow the following protocol:
 | action | string | Action type ("ping", "pong") | "ping" |
 | accessToken | string | Optional, if authentication is enabled | "token-abc" |
 | lastMessageId | string | Optional, message history compensation | "msg-122" |
-| clientInfo | object | Client information | ... |
-| clientInfo.os | string | OS | "windows" |
-| clientInfo.arch | string | Architecture | "x64" |
-| clientInfo.coreVersion | string | Core version | "1.0.0" |
-| clientInfo.resourceVersion | string | Resource version | "2.0.0" |
+| clientResponse | object | Client information | ... |
+| clientResponse.os | string | OS | "windows" |
+| clientResponse.arch | string | Architecture | "x64" |
+| clientResponse.coreVersion | string | Core version | "1.0.0" |
+| clientResponse.resourceVersion | string | Resource version | "2.0.0" |
 | preferences | object | User preferences | ... |
 
 Example:
@@ -702,7 +702,7 @@ Example:
     "action": "ping",
     "accessToken": "token-abc",
     "lastMessageId": "msg-122",
-    "clientInfo": {
+    "clientResponse": {
         "os": "windows",
         "arch": "x64",
         "coreVersion": "1.0.0",
@@ -735,29 +735,29 @@ Remote configuration URL: GET
 
 | Field | Type | Description | value/example |
 | --- | --- | --- | --- |
-| launcherConfig | object | Launcher configuration object | ... |
-| launcherConfig.checkUpdateUrls | object | Update URLs by os-arch key | {"windows-x64": "..."} |
-| maintenanceInformation | object | Maintenance information | ... |
-| maintenanceInformation.status | string | Maintenance status ("scheduled", "progress", "completed") | "scheduled" |
+| launcherConfigResponse | object | Launcher configuration object | ... |
+| launcherConfigResponse.checkUpdateUrls | object | Update URLs by os-arch key | {"windows-x64": "..."} |
+| maintenanceResponse | object | Maintenance information | ... |
+| maintenanceResponse.status | string | Maintenance status ("scheduled", "progress", "completed") | "scheduled" |
 
 Example:
 
 ```json
 {
-    "launcherConfig": {
+    "launcherConfigResponse": {
         "checkUpdateUrls": {
             "windows-x64": "https://example.com/update/windows-x64.json"
         }
         // ...other launcherConfig fields...
     },
-    "maintenanceInformation": {
-        "status": "scheduled"
+    "maintenanceResponse": {
+        "status": "completed",
         // ...other maintenance fields...
     }
 }
 ```
 
-- If you only want to statically deploy the configuration to a CDN or hosting service, while leaving other logic to the backend, you can include only the `launcherConfig` field.
+- If you only want to statically deploy the configuration to a CDN or hosting service, while leaving other logic to the backend, you can include only the `launcherConfigResponse` field.
 
 Check update URL: GET  
 

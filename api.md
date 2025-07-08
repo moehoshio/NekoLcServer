@@ -24,8 +24,26 @@ Conventions:
 
 1. In most cases, we use JSON for data interaction.
 2. The client and server must include the header: "Content-Type: application/json".
-3. If authentication is required, include the header Authorization: Bearer {token} in the request.
-4. Standard error response format:
+3. All request bodies should use the `<Subject/Action>Request` format, and responses should use `<Subject/Action>Response`.
+    - `<Subject/Action>Request`: The request body format, which is a JSON object containing the request parameters.
+    - `<Subject/Action>Response`: The response body format, which is a JSON object containing the response data.
+    Example:
+
+    ```json
+    {
+      "loginRequest": {
+         "username": "user",
+         "password": "pass"
+      },
+      // Additional information, such as preferences
+      "preferences": {
+         "language": "en"
+      }
+    }
+    ```
+
+4. If authentication is required, include the header Authorization: Bearer {token} in the request.
+5. Standard error response format:
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
@@ -51,7 +69,9 @@ Conventions:
     }
     ```
 
-5. HTTP status codes:  
+    All requests, if an error occurs, should return the above standard error format.
+
+6. HTTP status codes:  
     These represent the HTTP status codes that should be used in NekoLc, but not all APIs are required to use only these codes, nor are these the only possible codes that may be returned. For example, reverse proxy servers or CDNs may return other status codes. However, within NekoLc, these codes should be considered standard.
 
     - 200: Success, the request was processed successfully
@@ -77,7 +97,7 @@ API meta information should be included in every API response, with the followin
 | meta.buildVersion | string | Build version | "20240601" |
 | meta.timestamp | number | Server time (UTCZ Timestamp) | 1685625600 |
 | meta.releaseDate | string | Release date (ISO 8601 format) | "YYYY-MM-DDTHH:MM:SSZ" |
-| meta.deprecated | boolean | Whether this API version is deprecated | false |
+| meta.isDeprecated | boolean | Whether this API version is deprecated | false |
 | meta.deprecatedMessage | string | Deprecation info if deprecated | "This version is deprecated" |
 
 Example:
@@ -90,7 +110,7 @@ Example:
         "buildVersion": "20240601",
         "timestamp": 1685625600,
         "releaseDate": "2024-06-01T12:00:00Z",
-        "deprecated": false,
+        "isDeprecated": false,
         "deprecatedMessage": ""
     }
 }
@@ -144,8 +164,8 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | auth.username | string | Username | "user" |
-    | auth.password | string | Password | "pass" |
+    | loginResponse.username | string | Username | "user" |
+    | loginResponse.password | string | Password | "pass" |
     | preferences | object | User preferences | ... |
 
     or
@@ -154,16 +174,16 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | auth.identifier | string | Unique identifier | "device-uuid" |
-    | auth.timestamp | number | UTCZ Timestamp | 1685625600 |
-    | auth.signature | string | Hash signature | "abcdef..." |
+    | loginResponse.identifier | string | Unique identifier, e.g. device UUID, build ID, or a randomly generated string | "device-uuid", "build-id", "random-string" |
+    | loginResponse.timestamp | number | UTCZ Timestamp | 1685625600 |
+    | loginResponse.signature | string | Hash signature, generated as: base64Encode(SHA256(id:timestamp:secret)). Concatenate the id and timestamp with the secret using a colon (:) as the separator, hash the resulting string with SHA256, then encode the hash value in base64. | "..." |
     | preferences | object | User preferences | ... |
 
     Example:
 
     ```json
     {
-        "auth": {
+        "loginRequest": {
             "username": "user",
             "password": "pass"
         },
@@ -173,20 +193,40 @@ For example, if supported, error messages can also be returned according to the 
     }
     ```
 
-    **response**：
+    or
+
+    ```json
+    {
+        "loginRequest": {
+            "identifier": "device-uuid",
+            "timestamp": 1685625600,
+            "signature": "base64-encoded-signature"
+        },
+        "preferences": {
+            // ...
+        }
+    }
+    ```
+
+    - For signature-based authentication, the server should enforce a validity period for the timestamp, typically limiting it to within 10 minutes. That is, if the timestamp differs from the server's current time by more than 10 minutes, the authentication should be considered invalid.
+    - For debugging purposes, you may skip timestamp validity checks in debug mode.
+
+    **Response**：
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | accessToken | string | Access token | "token-abc" |
-    | refreshToken | string | Refresh token | "refresh-xyz" |
+    | loginResponse.accessToken | string | Access token | "token-abc" |
+    | loginResponse.refreshToken | string | Refresh token | "refresh-xyz" |
     | meta | object | Api meta information | ... |
 
     Example:
 
     ```json
     {
-        "accessToken": "token-abc",
-        "refreshToken": "refresh-xyz",
+        "loginResponse": {
+            "accessToken": "token-abc",
+            "refreshToken": "refresh-xyz"
+        },
         "meta": {
             "apiVersion": "1.0.0"
         }
@@ -208,28 +248,32 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | refreshToken | string | Refresh token | "refresh-xyz" |
+    | refreshRequest.refreshToken | string | Refresh token | "refresh-xyz" |
 
     Example:
 
     ```json
     {
-        "refreshToken": "refresh-xyz"
+        "refreshRequest": {
+            "refreshToken": "refresh-xyz"
+        }
     }
     ```
 
-    **response**：
+    **Response**：
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | accessToken | string | New access token | "token-abc" |
+    | refreshResponse.accessToken | string | New access token | "token-abc" |
     | meta | object | Api meta information | ... |
 
     Example:
 
     ```json
     {
-        "accessToken": "token-abc",
+        "refreshResponse": {
+            "accessToken": "token-abc"
+        },
         "meta": {
             "apiVersion": "1.0.0"
         }
@@ -247,17 +291,19 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | accessToken | string | Access token | "token-abc" |
+    | validateRequest.accessToken | string | Access token | "token-abc" |
 
     Example:
 
     ```json
     {
-        "accessToken": "token-abc"
+        "validateRequest": {
+            "accessToken": "token-abc"
+        }
     }
     ```
 
-    **response**：204 (No Content) for valid, 401 for invalid/expired
+    **Response**：204 (No Content) for valid, 401 for invalid/expired
 
 - `/v0/api/auth/logout` : post, optional
 
@@ -267,21 +313,21 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | logout.accessToken | string | Access token | "token-abc" |
-    | logout.refreshToken | string | Refresh token | "refresh-xyz" |
+    | logoutRequest.accessToken | string | Access token | "token-abc" |
+    | logoutRequest.refreshToken | string | Refresh token | "refresh-xyz" |
 
     Example:
 
     ```json
     {
-        "logout": {
+        "logoutRequest": {
             "accessToken": "token-abc",
             "refreshToken": "refresh-xyz"
         }
     }
     ```
 
-    **response**：204 (No Content) for success, 500 for server error
+    **Response**：204 (No Content) for success, 500 for server error
 
 #### Launcher
 
@@ -296,8 +342,8 @@ For example, if supported, error messages can also be returned according to the 
     | launcherConfigRequest | object | ... | ... |
     | launcherConfigRequest.os | string | OS | "windows" |
     | launcherConfigRequest.arch | string | Architecture | "x64" |
-    | launcherConfigRequest.coreVersion | string | Core version (optional) | "1.0.0" |
-    | launcherConfigRequest.resourceVersion | string | Resource version (optional) | "2.0.0" |
+    | launcherConfigRequest.coreVersion | string | Core version | "1.0.0" |
+    | launcherConfigRequest.resourceVersion | string | Resource version | "2.0.0" |
     | preferences | object | User preferences | ... |
 
     Example:
@@ -306,28 +352,30 @@ For example, if supported, error messages can also be returned according to the 
     {
         "launcherConfigRequest": {
             "os": "windows",
-            "arch": "x64"
+            "arch": "x64",
+            "coreVersion": "1.0.0",
+            "resourceVersion": "2.0.0"
         },
         "preferences": {
-            "language": "zh-tw"
+            // ...
         }
     }
     ```
 
-    **response**：
+    **Response**：
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | launcherConfig | object | | ... |
-    | launcherConfig.host | array | Host list | ["host1"] |
-    | launcherConfig.webSocket | object | WebSocket config | ... |
-    | launcherConfig.retryIntervalSec | number | Retry interval | 5 |
-    | launcherConfig.maxRetryCount | number | Max retry count | 3 |
-    | launcherConfig.security | object | Security config | ... |
-    | launcherConfig.featuresFlags | object | Feature flags | ... |
+    | launcherConfigResponse | object | | ... |
+    | launcherConfigResponse.host | array | Host list | ["host1"] |
+    | launcherConfigResponse.webSocket | object | WebSocket config | ... |
+    | launcherConfigResponse.retryIntervalSec | number | Retry interval | 5 |
+    | launcherConfigResponse.maxRetryCount | number | Max retry count | 3 |
+    | launcherConfigResponse.security | object | Security config | ... |
+    | launcherConfigResponse.featuresFlags | object | Feature flags | ... |
     | meta | object | Api meta information | ... |
 
-    **WebSocket**:
+    ***WebSocket***:
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
@@ -336,7 +384,7 @@ For example, if supported, error messages can also be returned according to the 
     | webSocket.socketHost | string | WebSocket host | "wss://..." |
     | webSocket.heartbeatIntervalSec | number | Heartbeat interval | 30 |
 
-    **Security**:
+    ***Security***:
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
@@ -352,7 +400,7 @@ For example, if supported, error messages can also be returned according to the 
 
     ```json
     {
-        "launcherConfig": {
+        "launcherConfigResponse": {
             "host": ["host1"],
             "webSocket": {
                 "enable": true,
@@ -393,44 +441,46 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | checkMaintenance | object | Maintenance check parameters | ... |
-    | checkMaintenance.os | string | OS | "windows" |
-    | checkMaintenance.arch | string | Architecture | "x64" |
-    | checkMaintenance.coreVersion | string | Core version (optional) | "1.0.0" |
-    | checkMaintenance.resourceVersion | string | Resource version (optional) | "2.0.0" |
+    | maintenanceRequest | object | Maintenance check parameters | ... |
+    | maintenanceRequest.os | string | OS | "windows" |
+    | maintenanceRequest.arch | string | Architecture | "x64" |
+    | maintenanceRequest.coreVersion | string | Core version | "1.0.0" |
+    | maintenanceRequest.resourceVersion | string | Resource version | "2.0.0" |
     | preferences | object | User preferences | ... |
 
     Example:
 
     ```json
     {
-        "checkMaintenance": {
+        "maintenanceRequest": {
             "os": "windows",
-            "arch": "x64"
+            "arch": "x64",
+            "coreVersion": "1.0.0",
+            "resourceVersion": "2.0.0"
         },
         "preferences": {
-            "language": "zh-tw"
+            // ...
         }
     }
     ```
 
-    **response**：
+    **Response**：
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | maintenanceInformation.status | string | Maintenance status | "scheduled", "progress" |
-    | maintenanceInformation.message | string | Maintenance message | "Planned maintenance" |
-    | maintenanceInformation.startTime | string | Start time (ISO 8601 format) | "2024-06-01T12:00:00Z" |
-    | maintenanceInformation.exEndTime | string | Expected end time (ISO 8601 format) | "2024-06-01T14:00:00Z" |
-    | maintenanceInformation.posterUrl | string | Poster URL | "https://..." |
-    | maintenanceInformation.link | string | Announcement link | "https://..." |
+    | maintenanceResponse.status | string | Maintenance status | "scheduled", "progress", "completed"(Only static deployment) |
+    | maintenanceResponse.message | string | Maintenance message | "Planned maintenance" |
+    | maintenanceResponse.startTime | string | Start time (ISO 8601 format) | "2024-06-01T12:00:00Z" |
+    | maintenanceResponse.exEndTime | string | Expected end time (ISO 8601 format) | "2024-06-01T14:00:00Z" |
+    | maintenanceResponse.posterUrl | string | Poster URL | "https://..." |
+    | maintenanceResponse.link | string | Announcement link | "https://..." |
     | meta | object | Api meta information | ... |
 
     Example:
 
     ```json
     {
-        "maintenanceInformation": {
+        "maintenanceResponse": {
             "status": "scheduled",
             "message": "Planned maintenance",
             "startTime": "2024-06-01T12:00:00Z",
@@ -457,30 +507,30 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | checkUpdate | object | Update check parameters | ... |
-    | checkUpdate.os | string | OS | "windows" |
-    | checkUpdate.arch | string | Architecture | "x64" |
-    | checkUpdate.coreVersion | string | Core version | "1.0.0" |
-    | checkUpdate.resourceVersion | string | Resource version | "2.0.0" |
+    | updateRequest | object | Update check parameters | ... |
+    | updateRequest.os | string | OS | "windows" |
+    | updateRequest.arch | string | Architecture | "x64" |
+    | updateRequest.coreVersion | string | Core version | "1.0.0" |
+    | updateRequest.resourceVersion | string | Resource version | "2.0.0" |
     | preferences | object | User preferences | ... |
 
     Example:
 
     ```json
     {
-        "checkUpdate": {
+        "updateRequest": {
             "os": "windows",
             "arch": "x64",
             "coreVersion": "1.0.0",
             "resourceVersion": "2.0.0"
         },
         "preferences": {
-            "language": "zh-tw"
+            // ...
         }
     }
     ```
 
-    ****response****：
+    **Response**：
 
   - If there are no updates, return code 204.
   - If the server is in maintenance mode, return code 503 (Service Unavailable) with maintenance information. (This applies to cases where the maintenance API and update API are not strongly consistent, and the update API is under maintenance. Specifically, if the maintenance status is checked before checking for updates, there is no need to handle separate maintenance status for the update API.)
@@ -489,17 +539,17 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | updateInformation | object | Update information | ... |
-    | updateInformation.title | string | Update title | "New version" |
-    | updateInformation.description | string | Update description | "Bug fixes" |
-    | updateInformation.posterUrl | string | Poster URL | "https://..." |
-    | updateInformation.publishTime | string | Publish time (ISO 8601 format) | "2024-06-01T12:00:00Z" |
-    | updateInformation.resourceVersion | string | If this update does not involve a resource version, this key can be absent or an empty string | "2.0.1" |
-    | updateInformation.isMandatory | boolean | Is mandatory update | true |
-    | updateInformation.files | array | Update files | [...] |
+    | updateResponse | object | Update information | ... |
+    | updateResponse.title | string | Update title | "New version" |
+    | updateResponse.description | string | Update description | "Bug fixes" |
+    | updateResponse.posterUrl | string | Poster URL | "https://..." |
+    | updateResponse.publishTime | string | Publish time (ISO 8601 format) | "2024-06-01T12:00:00Z" |
+    | updateResponse.resourceVersion | string | If this update does not involve a resource version, this key can be absent or an empty string | "2.0.1" |
+    | updateResponse.isMandatory | boolean | Is mandatory update | true |
+    | updateResponse.files | array | Update files | [...] |
     | meta | object | Api meta information | ... |
 
-    **File Metadata**
+    ***File Metadata***
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
@@ -517,7 +567,7 @@ For example, if supported, error messages can also be returned according to the 
 
     ```json
     {
-        "updateInformation": {
+        "updateResponse": {
             "title": "New version",
             "description": "Bug fixes",
             "posterUrl": "https://...",
@@ -556,12 +606,12 @@ For example, if supported, error messages can also be returned according to the 
 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
-    | feedbackLog | object | Feedback log information | ... |
-    | feedbackLog.os | string | OS | "windows" |
-    | feedbackLog.arch | string | Architecture | "x64" |
-    | feedbackLog.coreVersion | string | Core version | "1.0.0" |
-    | feedbackLog.resourceVersion | string | Resource version | "2.0.0" |
-    | feedbackLog.timestamp | number | UTCZ Timestamp | 1685625600 |
+    | feedbackLogRequest | object | Feedback log information | ... |
+    | feedbackLogRequest.os | string | OS | "windows" |
+    | feedbackLogRequest.arch | string | Architecture | "x64" |
+    | feedbackLogRequest.coreVersion | string | Core version | "1.0.0" |
+    | feedbackLogRequest.resourceVersion | string | Resource version | "2.0.0" |
+    | feedbackLogRequest.timestamp | number | UTCZ Timestamp | 1685625600 |
     | feedbackLog.content | string | Feedback content | "Log content..." |
     | preferences | object | User preferences | ... |
 
@@ -569,7 +619,7 @@ For example, if supported, error messages can also be returned according to the 
 
     ```json
     {
-        "feedbackLog": {
+        "feedbackLogRequest": {
             "os": "windows",
             "arch": "x64",
             "coreVersion": "1.0.0",
@@ -578,7 +628,7 @@ For example, if supported, error messages can also be returned according to the 
             "content": "Log content..."
         },
         "preferences": {
-            "language": "zh-tw"
+            // ...
         }
     }
     ```
@@ -626,8 +676,7 @@ Example:
         "message": "Update available"
     },
     "meta": {
-        "apiVersion": "1.0.0",
-        "timestamp": "2024-06-01T12:00:00Z"
+        // ...
     }
 }
 ```
@@ -660,7 +709,7 @@ Example:
         "resourceVersion": "2.0.0"
     },
     "preferences": {
-        "language": "zh-tw"
+        // ...
     }
 }
 ```
@@ -682,7 +731,7 @@ For static deployment, we only define the API protocol format.
 
 Remote configuration URL: GET  
 
-**response**:
+**Response**:
 
 | Field | Type | Description | value/example |
 | --- | --- | --- | --- |
@@ -712,7 +761,7 @@ Example:
 
 Check update URL: GET  
 
-**response**:
+**Response**:
 
 | Field | Type | Description | value/example |
 | --- | --- | --- | --- |

@@ -3,17 +3,23 @@
 This is the API specification document for [NekoLc](https://github.com/moehoshio/NekoLauncher), defining the API protocols, formats, error handling, and more for NekoLc.  
 Servers can be implemented in any language, but all supported APIs should comply with these specifications.
 
-Conventions:  
-[Definition](#definition) [Protocol](#protocol) [Meta](#meta) [Preferences](#preferences)  
+**Conventions**:  
 
-[Apis](#apis) :
+General:  
+[Definition](#definition) [Protocol](#protocol)  
+Server:  
+[Errors](#errors) [Meta](#meta)  
+Client:  
+[Preferences](#preferences) [ClientInfo](#clientinfo)  
+
+[**Apis**](#apis) :
 
 - [Testing](#testing)
 - [Api](#api)
   - [Account](#account)
   - [Launcher](#launcher)
-    - [WebSocket](#websocket)
-    - [Static Deployment](#static-deployment)
+- [WebSocket](#websocket)
+- [Static Deployment](#static-deployment)
 
 ## Definition
 
@@ -43,35 +49,8 @@ Conventions:
     ```
 
 4. If authentication is required, include the header Authorization: Bearer {token} in the request.
-5. Standard error response format:
 
-    | Field | Type | Description | value/example |
-    | --- | --- | --- | --- |
-    | errors | array | List of error objects | ... |
-    | error[].error | string | Error type | e.g ForClientError, ForServerError... |
-    | error[].errorType | string | Error operation | e.g "InvalidRequest", "NotFound", "InternalError"... |
-    | error[].errorMessage | string | A human-readable error message describing the issue | ... |
-    | other fields | ... | Other content ... if any | ... |
-
-    Example:
-
-    ```json
-    {
-        "errors": [
-            {
-                "error": "ForClientError",
-                "errorType": "InvalidRequest",
-                "errorMessage": "The request is invalid."
-            }
-            // ...
-        ]
-        // other content ... if any
-    }
-    ```
-
-    All requests, if an error occurs, should return the above standard error format.
-
-6. HTTP status codes:  
+5. HTTP status codes:  
     These represent the HTTP status codes that should be used in NekoLc, but not all APIs are required to use only these codes, nor are these the only possible codes that may be returned. For example, reverse proxy servers or CDNs may return other status codes. However, within NekoLc, these codes should be considered standard.
 
     - 200: Success, the request was processed successfully
@@ -84,6 +63,36 @@ Conventions:
     - 500: Server error, internal error
     - 501: Method not supported, should be treated as a client error
     - 503: Service unavailable, the service is currently unavailable, such as during maintenance
+
+## Errors
+
+Standard error response format:
+
+| Field | Type | Description | value/example |
+| --- | --- | --- | --- |
+| errors | array | List of error objects | ... |
+| error[].error | string | Error type | e.g ForClientError, ForServerError... |
+| error[].errorType | string | Error operation | e.g "InvalidRequest", "NotFound", "InternalError"... |
+| error[].errorMessage | string | A human-readable error message describing the issue | ... |
+| other fields | ... | Other content ... if any | ... |
+
+Example:
+
+```json
+{
+    "errors": [
+        {
+            "error": "ForClientError",
+            "errorType": "InvalidRequest",
+            "errorMessage": "The request is invalid."
+        }
+        // ...
+    ]
+    // other content ... if any
+}
+```
+
+All requests, if an error occurs, should return the above standard error format.
 
 ## Meta
 
@@ -136,7 +145,62 @@ Example:
 }
 ```
 
-For example, if supported, error messages can also be returned according to the preferred language.
+For example, if supported, error messages can also be returned according to the preferred language
+
+## ClientInfo
+
+The `clientInfo` is used to pass information about the client making the request. It should be included in the request body of APIs that support it.
+
+| Field | Type | Description | value/example |
+| --- | --- | --- | --- |
+| clientInfo | object | Client information object | ... |
+| clientInfo.app | object | Application information | ... |
+| clientInfo.system | object | System information | ... |
+| clientInfo.extra | object | Extra information, Any custom fields | ... |
+| clientInfo.deviceId | string | Device ID, such as UUID or build ID | "device-uuid-123" |
+
+***App***
+
+| Field | Type | Description | value/example |
+| --- | --- | --- | --- |
+| app | object | Application information | ... |
+| app.appName | string | Application name | "MyApp" |
+| app.coreVersion | string | Core version | "1.0.0" |
+| app.resourceVersion | string | Resource version | "2.0.0" |
+| app.buildId | string | Build ID , e.g date + build number | "20240709N1" |
+
+***system***
+
+| Field | Type | Description | value/example |
+| --- | --- | --- | --- |
+| system | object | System information | ... |
+| system.os | string | Operating system | "windows" |
+| system.arch | string | CPU architecture | "x64" |
+| system.osVersion | string | Operating system version | "10.0.19042" |
+
+Example:
+
+```json
+{
+    "clientInfo": {
+        "app": {
+            "appName": "MyApp",
+            "coreVersion": "1.0.0",
+            "resourceVersion": "2.0.0",
+            "buildId": "20240709N1"
+        },
+        "system": {
+            "os": "windows",
+            "arch": "x64",
+            "osVersion": "10.0.19042"
+        },
+        "extra": {
+            // Any additional information
+        },
+        "deviceId": "device-uuid-123"
+    }
+}
+```
 
 ## Apis
 
@@ -340,10 +404,8 @@ For example, if supported, error messages can also be returned according to the 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
     | launcherConfigRequest | object | ... | ... |
-    | launcherConfigRequest.os | string | OS | "windows" |
-    | launcherConfigRequest.arch | string | Architecture | "x64" |
-    | launcherConfigRequest.coreVersion | string | Core version | "1.0.0" |
-    | launcherConfigRequest.resourceVersion | string | Resource version | "2.0.0" |
+    | launcherConfigRequest.clientInfo | object | Client information | ... |
+    | launcherConfigRequest.timestamp | number | UTCZ Timestamp | 1685625600 |
     | preferences | object | User preferences | ... |
 
     Example:
@@ -351,10 +413,10 @@ For example, if supported, error messages can also be returned according to the 
     ```json
     {
         "launcherConfigRequest": {
-            "os": "windows",
-            "arch": "x64",
-            "coreVersion": "1.0.0",
-            "resourceVersion": "2.0.0"
+            "clientInfo": {
+                // ...
+            },
+            "timestamp": 1234567890
         },
         "preferences": {
             // ...
@@ -427,6 +489,7 @@ For example, if supported, error messages can also be returned according to the 
         },
         "meta": {
             "apiVersion": "1.0.0"
+            // ...
         }
     }
     ```
@@ -442,10 +505,8 @@ For example, if supported, error messages can also be returned according to the 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
     | maintenanceRequest | object | Maintenance check parameters | ... |
-    | maintenanceRequest.os | string | OS | "windows" |
-    | maintenanceRequest.arch | string | Architecture | "x64" |
-    | maintenanceRequest.coreVersion | string | Core version | "1.0.0" |
-    | maintenanceRequest.resourceVersion | string | Resource version | "2.0.0" |
+    | maintenanceRequest.clientInfo | object | Client information | ... |
+    | maintenanceRequest.timestamp | number | UTCZ Timestamp | 1685625600 |
     | preferences | object | User preferences | ... |
 
     Example:
@@ -453,10 +514,10 @@ For example, if supported, error messages can also be returned according to the 
     ```json
     {
         "maintenanceRequest": {
-            "os": "windows",
-            "arch": "x64",
-            "coreVersion": "1.0.0",
-            "resourceVersion": "2.0.0"
+            "clientInfo": {
+                // ...
+            },
+            "timestamp": 1685625600
         },
         "preferences": {
             // ...
@@ -490,6 +551,7 @@ For example, if supported, error messages can also be returned according to the 
         },
         "meta": {
             "apiVersion": "1.0.0"
+            // ...
         }
     }
     ```
@@ -508,10 +570,8 @@ For example, if supported, error messages can also be returned according to the 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
     | updateRequest | object | Update check parameters | ... |
-    | updateRequest.os | string | OS | "windows" |
-    | updateRequest.arch | string | Architecture | "x64" |
-    | updateRequest.coreVersion | string | Core version | "1.0.0" |
-    | updateRequest.resourceVersion | string | Resource version | "2.0.0" |
+    | updateRequest.clientInfo | object | Client information | ... |
+    | updateRequest.timestamp | number | UTCZ Timestamp | 1685625600 |
     | preferences | object | User preferences | ... |
 
     Example:
@@ -519,10 +579,10 @@ For example, if supported, error messages can also be returned according to the 
     ```json
     {
         "updateRequest": {
-            "os": "windows",
-            "arch": "x64",
-            "coreVersion": "1.0.0",
-            "resourceVersion": "2.0.0"
+            "clientInfo": {
+                // ...
+            },
+            "timestamp": 1685625600
         },
         "preferences": {
             // ...
@@ -590,6 +650,7 @@ For example, if supported, error messages can also be returned according to the 
         },
         "meta": {
             "apiVersion": "1.0.0"
+            // ...
         }
     }
     ```
@@ -607,10 +668,7 @@ For example, if supported, error messages can also be returned according to the 
     | Field | Type | Description | value/example |
     | --- | --- | --- | --- |
     | feedbackLogRequest | object | Feedback log information | ... |
-    | feedbackLogRequest.os | string | OS | "windows" |
-    | feedbackLogRequest.arch | string | Architecture | "x64" |
-    | feedbackLogRequest.coreVersion | string | Core version | "1.0.0" |
-    | feedbackLogRequest.resourceVersion | string | Resource version | "2.0.0" |
+    | feedbackLogRequest.clientInfo | object | Client information | ... |
     | feedbackLogRequest.timestamp | number | UTCZ Timestamp | 1685625600 |
     | feedbackLog.content | string | Feedback content | "Log content..." |
     | preferences | object | User preferences | ... |
@@ -620,10 +678,9 @@ For example, if supported, error messages can also be returned according to the 
     ```json
     {
         "feedbackLogRequest": {
-            "os": "windows",
-            "arch": "x64",
-            "coreVersion": "1.0.0",
-            "resourceVersion": "2.0.0",
+            "clientInfo": {
+                // ...
+            },
             "timestamp": 1685625600,
             "content": "Log content..."
         },
@@ -636,7 +693,7 @@ For example, if supported, error messages can also be returned according to the 
   - Return 204 for success, 400 for client error, 500 for server error.
   - For example, if either the core or resource version is a non-existent version, return a client error.
 
-### WebSocket
+## WebSocket
 
 In the API, the use of WebSocket is optional.  
 Whether it is enabled, the connection host, and other configurations are returned by the configuration API `/v0/api/launcherConfig`.  
@@ -653,10 +710,7 @@ Server-side WebSocket API should follow the following protocol:
 | messageId | string | Optional, message history compensation | "msg-123" |
 | notifyChanged | object | Notification change object | ... |
 | notifyChanged.type | string | Notification type ("update", "maintenance") | "update" |
-| notifyChanged.os | string | OS | "windows" |
-| notifyChanged.arch | string | Architecture | "x64" |
-| notifyChanged.coreVersion | string | Core version | "1.0.0" |
-| notifyChanged.resourceVersion | string | Resource version | "2.0.0" |
+| notifyChanged.clientInfo | object | Applicable client information | ... |
 | notifyChanged.message | string | Notification message | "Update available" |
 | errors | array | Standard error response format, if any | ... |
 | meta | object | Api meta information | ... |
@@ -669,11 +723,10 @@ Example:
     "messageId": "msg-123",
     "notifyChanged": {
         "type": "update",
-        "os": "windows",
-        "arch": "x64",
-        "coreVersion": "1.0.0",
-        "resourceVersion": "2.0.0",
-        "message": "Update available"
+        "message": "Update available",
+        "clientInfo": {
+            // ...
+        }
     },
     "meta": {
         // ...
@@ -681,18 +734,17 @@ Example:
 }
 ```
 
+- if the action is "notify", the server can send a notification message to the client.
+
 Client-side WebSocket API should follow the following protocol:
 
 | Field | Type | Description | value/example |
 | --- | --- | --- | --- |
-| action | string | Action type ("ping", "pong") | "ping" |
+| action | string | Action type ("ping", "pong", "query") | "ping" |
 | accessToken | string | Optional, if authentication is enabled | "token-abc" |
 | lastMessageId | string | Optional, message history compensation | "msg-122" |
-| clientResponse | object | Client information | ... |
-| clientResponse.os | string | OS | "windows" |
-| clientResponse.arch | string | Architecture | "x64" |
-| clientResponse.coreVersion | string | Core version | "1.0.0" |
-| clientResponse.resourceVersion | string | Resource version | "2.0.0" |
+| clientInfo | object | Client information | ... |
+| timestamp | number | UTCZ Timestamp | 1685625600 |
 | preferences | object | User preferences | ... |
 
 Example:
@@ -702,21 +754,21 @@ Example:
     "action": "ping",
     "accessToken": "token-abc",
     "lastMessageId": "msg-122",
-    "clientResponse": {
-        "os": "windows",
-        "arch": "x64",
-        "coreVersion": "1.0.0",
-        "resourceVersion": "2.0.0"
+    "clientInfo": {    
+        // ...
     },
+    "timestamp": 1685625600,
     "preferences": {
         // ...
     }
 }
 ```
 
+- If the action is "query", the client can send a request to query the latest notification or status.
+
 Whether on the client or server side, if a ping request is received, a message with the action "pong" should be sent in response.
 
-### Static Deployment
+## Static Deployment
 
 Some features support static deployment on the server side, but there are certain limitations:
 
@@ -736,7 +788,7 @@ Remote configuration URL: GET
 | Field | Type | Description | value/example |
 | --- | --- | --- | --- |
 | launcherConfigResponse | object | Launcher configuration object | ... |
-| launcherConfigResponse.checkUpdateUrls | object | Update URLs by os-arch key | {"windows-x64": "..."} |
+| launcherConfigResponse.checkUpdateUrls | object | Update URLs by os:arch:version key | {"windows:x64:10.0.19042": "..."} |
 | maintenanceResponse | object | Maintenance information | ... |
 | maintenanceResponse.status | string | Maintenance status ("scheduled", "progress", "completed") | "scheduled" |
 
@@ -746,7 +798,7 @@ Example:
 {
     "launcherConfigResponse": {
         "checkUpdateUrls": {
-            "windows-x64": "https://example.com/update/windows-x64.json"
+            "windows:x64:10.0.19042": "https://example.com/update/windows-x64.json"
         }
         // ...other launcherConfig fields...
     },

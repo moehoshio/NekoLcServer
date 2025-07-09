@@ -788,7 +788,11 @@ Remote configuration URL: GET
 | Field | Type | Description | value/example |
 | --- | --- | --- | --- |
 | launcherConfigResponse | object | Launcher configuration object | ... |
-| launcherConfigResponse.checkUpdateUrls | object | Update URLs by os:arch:version key | {"windows:x64:10.0.19042": "..."} |
+| launcherConfigResponse.checkUpdateUrls | array | Update URLs by os:arch:version key | ... |
+| launcherConfigResponse.checkUpdateUrls[].os | string | Operating system | "windows" |
+| launcherConfigResponse.checkUpdateUrls[].arch | string | Architecture | "x64" |
+| launcherConfigResponse.checkUpdateUrls[].version | string | Version | "10.0.19042" |
+| launcherConfigResponse.checkUpdateUrls[].url | string | Update URL | "https://.../windows-x64.json" |
 | maintenanceResponse | object | Maintenance information | ... |
 | maintenanceResponse.status | string | Maintenance status ("scheduled", "progress", "completed") | "scheduled" |
 
@@ -797,9 +801,17 @@ Example:
 ```json
 {
     "launcherConfigResponse": {
-        "checkUpdateUrls": {
-            "windows:x64:10.0.19042": "https://example.com/update/windows-x64.json"
-        }
+        "checkUpdateUrls": [
+            {
+                "os": "windows",
+                "arch": "x64",
+                "version": "10.0.19042",
+                "url": "https://example.com/update/windows-x64.json"
+            },
+            {
+                // ...
+            }
+        ]
         // ...other launcherConfig fields...
     },
     "maintenanceResponse": {

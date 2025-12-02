@@ -33,6 +33,7 @@ type Server struct {
 	authService       *auth.Service
 	feedbackLogPath   string
 	debug             bool
+	basePath          string
 }
 
 // New constructs a Server and prepares its router.
@@ -62,6 +63,7 @@ func New(
 		authService:       authSvc,
 		feedbackLogPath:   feedbackPath,
 		debug:             appCfg.Debug.Enabled,
+		basePath:          normalizeBasePath(appCfg.Server.BasePath),
 	}
 	srv.router = srv.buildRouter()
 	return srv, nil
@@ -79,22 +81,31 @@ func (s *Server) buildRouter() chi.Router {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.Get("/v0/testing/ping", s.handlePing)
-	r.Post("/v0/testing/echo", s.handleEcho)
+	mount := func(router chi.Router) {
+		router.Get("/v0/testing/ping", s.handlePing)
+		router.Post("/v0/testing/echo", s.handleEcho)
 
-	r.Route("/v0/api", func(r chi.Router) {
-		r.Route("/auth", func(authRouter chi.Router) {
-			authRouter.Post("/login", s.handleLogin)
-			authRouter.Post("/refresh", s.handleRefresh)
-			authRouter.Post("/validate", s.handleValidate)
-			authRouter.Post("/logout", s.handleLogout)
+		router.Route("/v0/api", func(r chi.Router) {
+			r.Route("/auth", func(authRouter chi.Router) {
+				authRouter.Post("/login", s.handleLogin)
+				authRouter.Post("/refresh", s.handleRefresh)
+				authRouter.Post("/validate", s.handleValidate)
+				authRouter.Post("/logout", s.handleLogout)
+			})
+			r.Post("/launcherConfig", s.handleLauncherConfig)
+			r.Post("/maintenance", s.handleMaintenance)
+			r.Post("/checkUpdates", s.handleCheckUpdates)
+			r.Post("/feedbackLog", s.handleFeedbackLog)
 		})
-		r.Post("/launcherConfig", s.handleLauncherConfig)
-		r.Post("/maintenance", s.handleMaintenance)
-		r.Post("/checkUpdates", s.handleCheckUpdates)
-		r.Post("/feedbackLog", s.handleFeedbackLog)
-	})
+	}
 
+	if s.basePath == "" {
+		mount(r)
+	} else {
+		r.Route(s.basePath, func(sub chi.Router) {
+			mount(sub)
+		})
+	}
 	return r
 }
 
@@ -267,4 +278,16 @@ func (s *Server) resolveUpdateAssetPath(path string) string {
 		return filepath.Clean(path)
 	}
 	return filepath.Join(s.updateAssetsDir, path)
+}
+
+func normalizeBasePath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" || trimmed == "/" {
+		return ""
+	}
+	trimmed = strings.Trim(trimmed, "/")
+	if trimmed == "" {
+		return ""
+	}
+	return "/" + trimmed
 }

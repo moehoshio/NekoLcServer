@@ -16,6 +16,7 @@ type AppConfig struct {
 		MinAPIVer    string `json:"minApiVersion"`
 		BuildVersion string `json:"buildVersion"`
 		ReleaseDate  string `json:"releaseDate"`
+		BasePath     string `json:"basePath"`
 	} `json:"server"`
 	Authentication struct {
 		Enabled                    bool   `json:"enabled"`

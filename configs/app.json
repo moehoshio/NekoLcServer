@@ -4,7 +4,8 @@
     "apiVersion": "0.0.1",
     "minApiVersion": "0.0.1",
     "buildVersion": "20251203",
-    "releaseDate": "2025-12-03T12:00:00Z"
+    "releaseDate": "2025-12-03T12:00:00Z",
+    "basePath": ""
   },
   "authentication": {
     "enabled": true,

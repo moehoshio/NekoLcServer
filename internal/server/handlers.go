@@ -57,21 +57,28 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := s.languageFromPreferences(payload.Preferences)
 	req := payload.LoginRequest
-	var subject string
-	switch {
-	case req.Username != "" && req.Password != "":
-		subject = req.Username
-	case req.Identifier != "" && req.Signature != "":
+	switch s.authMethod() {
+	case "account":
+		s.writeError(w, http.StatusNotImplemented, lang, "NotImplemented", "Account authentication is not available")
+		return
+	case "jwt":
+		if req.Identifier == "" || req.Signature == "" || req.Timestamp == 0 {
+			s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "identifier, signature, and timestamp are required for JWT login")
+			return
+		}
 		if err := s.validateSignature(req); err != nil {
 			s.writeError(w, http.StatusUnauthorized, lang, "Unauthorized", err.Error())
 			return
 		}
-		subject = req.Identifier
 	default:
-		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "Username/password or identifier/signature required")
+		s.writeError(w, http.StatusNotImplemented, lang, "NotImplemented", "Authentication method not supported")
 		return
 	}
-	access, refresh := s.authService.IssueTokens(subject)
+	access, refresh, err := s.authService.IssueTokens(req.Identifier)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+		return
+	}
 	body := LoginResponseBody{Meta: s.meta()}
 	body.LoginResponse.AccessToken = access
 	body.LoginResponse.RefreshToken = refresh
@@ -82,7 +89,7 @@ func (s *Server) validateSignature(req LoginRequest) error {
 	if req.Timestamp == 0 {
 		return errors.New("timestamp missing")
 	}
-	if !s.debug {
+	if !s.appConfig.Authentication.IgnoreTokenExpiration {
 		now := time.Now().UTC().Unix()
 		delta := now - req.Timestamp
 		if delta < 0 {
@@ -284,18 +291,38 @@ func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, b
 	needResource := resLatest != "" && !strings.EqualFold(resLatest, resCurrent)
 
 	if needCore {
+		coreSatisfied := false
 		if diff := s.findDiff(system, coreCurrent, true); diff != nil && diff.CoreVersionPath != "" {
-			files = append(files, s.fileFromPath(diff.CoreVersionPath, true))
-		} else if pkg, ok := s.resolveFullPackage(system); ok && pkg.CoreDownloadURL != "" {
-			files = append(files, s.fileFromPath(pkg.CoreDownloadURL, true))
+			if diffFiles := s.diffFilesFromPath(diff.CoreVersionPath, true); len(diffFiles) > 0 {
+				files = append(files, diffFiles...)
+				coreSatisfied = true
+			} else {
+				files = append(files, s.fileFromPath(diff.CoreVersionPath, true))
+				coreSatisfied = true
+			}
+		}
+		if !coreSatisfied {
+			if pkg, ok := s.resolveFullPackage(system); ok && pkg.CoreDownloadURL != "" {
+				files = append(files, s.fileFromPath(pkg.CoreDownloadURL, true))
+			}
 		}
 	}
 
 	if needResource {
+		resourceSatisfied := false
 		if diff := s.findDiff(system, resCurrent, false); diff != nil && diff.ResourceVersionPath != "" {
-			files = append(files, s.fileFromPath(diff.ResourceVersionPath, false))
-		} else if pkg, ok := s.resolveFullPackage(system); ok && pkg.ResourceDownloadURL != "" {
-			files = append(files, s.fileFromPath(pkg.ResourceDownloadURL, false))
+			if diffFiles := s.diffFilesFromPath(diff.ResourceVersionPath, false); len(diffFiles) > 0 {
+				files = append(files, diffFiles...)
+				resourceSatisfied = true
+			} else {
+				files = append(files, s.fileFromPath(diff.ResourceVersionPath, false))
+				resourceSatisfied = true
+			}
+		}
+		if !resourceSatisfied {
+			if pkg, ok := s.resolveFullPackage(system); ok && pkg.ResourceDownloadURL != "" {
+				files = append(files, s.fileFromPath(pkg.ResourceDownloadURL, false))
+			}
 		}
 	}
 

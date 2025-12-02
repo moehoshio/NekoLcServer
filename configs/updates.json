@@ -6,19 +6,19 @@
       "os": "windows",
       "arch": "x64",
       "coreVersion": "1.0.1",
-      "coreVersionPath": "update/windows-64/1.0.1-to-1.1.1.json"
+      "coreVersionPath": "https://example.com/update/windows-64/1.0.1-to-1.1.1.zip"
     },
     {
       "os": "windows",
       "arch": "x64",
       "resourceVersion": "1.0.0",
-      "resourceVersionPath": "update/windows-64/resource-1.0.0-to-1.1.0.json"
+      "resourceVersionPath": "https://example.com/update/windows-64/resource-1.0.0-to-1.1.0.zip"
     },
     {
       "os": "linux",
       "arch": "x64",
       "coreVersion": "1.0.1",
-      "coreVersionPath": "update/linux-64/1.0.1-to-1.1.1.json"
+      "coreVersionPath": "https://example.com/update/linux-64/1.0.1-to-1.1.1.zip"
     }
   ],
   "fullPackages": {

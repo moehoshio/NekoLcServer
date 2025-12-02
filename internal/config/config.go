@@ -19,7 +19,9 @@ type AppConfig struct {
 	} `json:"server"`
 	Authentication struct {
 		Enabled                    bool   `json:"enabled"`
+		Method                     string `json:"method"`
 		JWTSecret                  string `json:"jwtSecret"`
+		IgnoreTokenExpiration      bool   `json:"ignoreTokenExpiration"`
 		TokenExpirationSec         int    `json:"tokenExpirationSec"`
 		RefreshTokenExpirationDays int    `json:"refreshTokenExpirationDays"`
 	} `json:"authentication"`

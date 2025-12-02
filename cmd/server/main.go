@@ -54,7 +54,8 @@ func main() {
 		log.Fatalf("load maintenance config: %v", err)
 	}
 
-	updateCfg, err := config.LoadUpdates(resolve(appCfg.Update.ConfigPath))
+	updateConfigPath := resolve(appCfg.Update.ConfigPath)
+	updateCfg, err := config.LoadUpdates(updateConfigPath)
 	if err != nil {
 		log.Fatalf("load update config: %v", err)
 	}
@@ -62,8 +63,9 @@ func main() {
 	authSvc := auth.NewService(appCfg)
 
 	feedbackPath := filepath.Join(baseDir, "logs", "feedback.log")
+	updateAssetsDir := filepath.Dir(updateConfigPath)
 
-	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, updateCfg, localizer, authSvc, feedbackPath)
+	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, updateCfg, updateAssetsDir, localizer, authSvc, feedbackPath)
 	if err != nil {
 		log.Fatalf("bootstrap server: %v", err)
 	}

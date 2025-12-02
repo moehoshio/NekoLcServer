@@ -1,14 +1,16 @@
 {
   "server": {
     "port": "8080",
-    "apiVersion": "1.0.0",
-    "minApiVersion": "1.0.0",
-    "buildVersion": "20251001",
-    "releaseDate": "2025-10-01T12:00:00Z"
+    "apiVersion": "0.0.1",
+    "minApiVersion": "0.0.1",
+    "buildVersion": "20251203",
+    "releaseDate": "2025-12-03T12:00:00Z"
   },
   "authentication": {
-    "enabled": false,
+    "enabled": true,
+    "method": "jwt",
     "jwtSecret": "your-secret-key-change-this-in-production",
+    "ignoreTokenExpiration": true,
     "tokenExpirationSec": 3600,
     "refreshTokenExpirationDays": 30
   },

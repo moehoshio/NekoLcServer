@@ -28,6 +28,7 @@ type Server struct {
 	launcherConfig    *config.LauncherConfig
 	maintenanceConfig *config.MaintenanceConfig
 	updateConfig      *config.UpdateConfig
+	updateAssetsDir   string
 	localizer         *localization.Localizer
 	authService       *auth.Service
 	feedbackLogPath   string
@@ -40,6 +41,7 @@ func New(
 	launcherCfg *config.LauncherConfig,
 	maintenanceCfg *config.MaintenanceConfig,
 	updateCfg *config.UpdateConfig,
+	updateAssetsDir string,
 	localizer *localization.Localizer,
 	authSvc *auth.Service,
 	feedbackPath string,
@@ -55,6 +57,7 @@ func New(
 		launcherConfig:    launcherCfg,
 		maintenanceConfig: maintenanceCfg,
 		updateConfig:      updateCfg,
+		updateAssetsDir:   updateAssetsDir,
 		localizer:         localizer,
 		authService:       authSvc,
 		feedbackLogPath:   feedbackPath,
@@ -130,6 +133,14 @@ func (s *Server) languageFromPreferences(pref *Preferences) string {
 		return s.localizer.ResolveCode(language)
 	}
 	return language
+}
+
+func (s *Server) authMethod() string {
+	method := strings.ToLower(strings.TrimSpace(s.appConfig.Authentication.Method))
+	if method == "" {
+		return "jwt"
+	}
+	return method
 }
 
 func (s *Server) meta() Meta {
@@ -213,4 +224,47 @@ func (s *Server) logFeedback(entry interface{}) error {
 	defer file.Close()
 	enc := json.NewEncoder(file)
 	return enc.Encode(entry)
+}
+
+func (s *Server) diffFilesFromPath(path string, isCore bool) []UpdateFileResponse {
+	if path == "" {
+		return nil
+	}
+	lower := strings.ToLower(path)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return []UpdateFileResponse{s.fileFromPath(path, isCore)}
+	}
+	resolved := s.resolveUpdateAssetPath(path)
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read diff file %s: %v\n", resolved, err)
+		return nil
+	}
+	var urls []string
+	if err := json.Unmarshal(data, &urls); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse diff file %s: %v\n", resolved, err)
+		return nil
+	}
+	files := make([]UpdateFileResponse, 0, len(urls))
+	for _, url := range urls {
+		trimmed := strings.TrimSpace(url)
+		if trimmed == "" {
+			continue
+		}
+		files = append(files, s.fileFromPath(trimmed, isCore))
+	}
+	return files
+}
+
+func (s *Server) resolveUpdateAssetPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	if s.updateAssetsDir == "" {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(s.updateAssetsDir, path)
 }

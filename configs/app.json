@@ -1,0 +1,31 @@
+{
+  "server": {
+    "port": "8080",
+    "apiVersion": "1.0.0",
+    "minApiVersion": "1.0.0",
+    "buildVersion": "20251001",
+    "releaseDate": "2025-10-01T12:00:00Z"
+  },
+  "authentication": {
+    "enabled": false,
+    "jwtSecret": "your-secret-key-change-this-in-production",
+    "tokenExpirationSec": 3600,
+    "refreshTokenExpirationDays": 30
+  },
+  "debug": {
+    "enabled": false
+  },
+  "language": {
+    "default": "en",
+    "configPath": "./configs/languages.json"
+  },
+  "launcher": {
+    "configPath": "./configs/launcher.json"
+  },
+  "maintenance": {
+    "configPath": "./configs/maintenance.json"
+  },
+  "update": {
+    "configPath": "./configs/updates.json"
+  }
+}

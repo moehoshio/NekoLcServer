@@ -1,0 +1,45 @@
+# Logs and build artifacts
+*.log
+debug
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Application specific
+nekolc-server
+/dist/
+/tmp/
+
+# Database and data files
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment and secret config files
+.env
+configs/secrets.json
+configs/production.json

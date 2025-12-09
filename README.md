@@ -42,7 +42,32 @@ When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed w
 
 ### Update diff payloads
 
-Entries in `diffFiles[].coreVersionPath` or `diffFiles[].resourceVersionPath` can point to JSON files that contain an array of download URLs (for example `"update/windows-64/1.0.1-to-1.1.1.json"`). Paths are resolved relative to the directory that holds `updates.json`, allowing one file per platform/version pair. When present, each URL in the array is returned to clients as an individual download item. If the path begins with `http://` or `https://`, it is treated as a direct file URL instead.
+`updates.json` is organized by platform and architecture. Each architecture declares `latest` (core/resource versions plus download URLs) and an optional `diffs` array with entries that transform a specific installed version to the latest:
+
+```json
+{
+  "platforms": {
+    "windows": {
+      "architectures": {
+        "x64": {
+          "latest": {
+            "coreVersion": "1.1.1",
+            "resourceVersion": "1.1.0",
+            "coreDownloadUrl": "https://example.com/updates/windows-x64-1.1.1.zip",
+            "resourceDownloadUrl": "https://example.com/updates/windows-x64-resource-1.1.0.zip"
+          },
+          "diffs": [
+            { "fromCoreVersion": "1.0.1", "coreDownloadUrl": "https://…/1.0.1-to-1.1.1.zip" },
+            { "fromResourceVersion": "1.0.0", "resourceDownloadUrl": "https://…/1.0.0-to-1.1.0.zip" }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+Diff entries may point to direct files (`coreDownloadUrl` / `resourceDownloadUrl`) or to JSON lists of URLs via `coreVersionPath` / `resourceVersionPath`; those paths resolve relative to the directory containing `updates.json` unless absolute or HTTP(S).
 
 ## Tests
 

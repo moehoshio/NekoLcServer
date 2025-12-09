@@ -104,25 +104,35 @@ type MaintenanceInfo struct {
 	Link    string `json:"link"`
 }
 
-// UpdateConfig mirrors updates.json.
+// UpdateConfig mirrors updates.json and organizes updates by platform and architecture.
+// Each architecture declares the latest package plus optional diffs from a specific
+// client version to that latest package.
 type UpdateConfig struct {
-	LatestCoreVersion     string                 `json:"latestCoreVersion"`
-	LatestResourceVersion string                 `json:"latestResourceVersion"`
-	DiffFiles             []DiffFile             `json:"diffFiles"`
-	FullPackages          map[string]FullPackage `json:"fullPackages"`
+	Platforms map[string]PlatformUpdates `json:"platforms"`
 }
 
-// DiffFile describes incremental update metadata.
+// PlatformUpdates groups architectures for an OS.
+type PlatformUpdates struct {
+	Architectures map[string]ArchUpdates `json:"architectures"`
+}
+
+// ArchUpdates holds the latest package for an architecture and the diff list.
+type ArchUpdates struct {
+	Latest FullPackage `json:"latest"`
+	Diffs  []DiffFile  `json:"diffs"`
+}
+
+// DiffFile describes incremental update metadata from a specific version to latest.
 type DiffFile struct {
-	OS                  string `json:"os"`
-	Arch                string `json:"arch"`
-	CoreVersion         string `json:"coreVersion"`
+	FromCoreVersion     string `json:"fromCoreVersion"`
 	CoreVersionPath     string `json:"coreVersionPath"`
-	ResourceVersion     string `json:"resourceVersion"`
+	CoreDownloadURL     string `json:"coreDownloadUrl"`
+	FromResourceVersion string `json:"fromResourceVersion"`
 	ResourceVersionPath string `json:"resourceVersionPath"`
+	ResourceDownloadURL string `json:"resourceDownloadUrl"`
 }
 
-// FullPackage contains fallback full package metadata per platform.
+// FullPackage contains the latest package metadata per platform/architecture.
 type FullPackage struct {
 	CoreVersion         string `json:"coreVersion"`
 	ResourceVersion     string `json:"resourceVersion"`
@@ -180,8 +190,14 @@ func LoadUpdates(path string) (*UpdateConfig, error) {
 	if err := loadJSON(path, &cfg); err != nil {
 		return nil, fmt.Errorf("load update config: %w", err)
 	}
-	if cfg.FullPackages == nil {
-		cfg.FullPackages = map[string]FullPackage{}
+	if cfg.Platforms == nil {
+		cfg.Platforms = map[string]PlatformUpdates{}
+	}
+	for k, platform := range cfg.Platforms {
+		if platform.Architectures == nil {
+			platform.Architectures = map[string]ArchUpdates{}
+		}
+		cfg.Platforms[k] = platform
 	}
 	return &cfg, nil
 }

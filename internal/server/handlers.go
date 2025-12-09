@@ -237,16 +237,15 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusServiceUnavailable, body)
 		return
 	}
-	files, needsUpdate := s.resolveUpdateFiles(client)
+	files, needsUpdate, latest := s.resolveUpdateFiles(client)
 	if !needsUpdate {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	isMandatory := false
-	if client.App != nil {
-		coreLatest := strings.TrimSpace(s.updateConfig.LatestCoreVersion)
+	if latest.CoreVersion != "" && client.App != nil {
 		coreCurrent := strings.TrimSpace(client.App.CoreVersion)
-		isMandatory = coreLatest != "" && !strings.EqualFold(coreLatest, coreCurrent)
+		isMandatory = !strings.EqualFold(latest.CoreVersion, coreCurrent)
 	}
 	title := "New version available"
 	description := "Updates available"
@@ -264,7 +263,7 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 			Description:     description,
 			PosterURL:       "",
 			PublishTime:     time.Now().UTC().Format(time.RFC3339),
-			ResourceVersion: s.updateConfig.LatestResourceVersion,
+			ResourceVersion: latest.ResourceVersion,
 			IsMandatory:     isMandatory,
 			Files:           files,
 		},
@@ -273,101 +272,132 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, bool) {
+func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, bool, config.FullPackage) {
 	if s.updateConfig == nil {
-		return nil, false
+		return nil, false, config.FullPackage{}
 	}
-	var files []UpdateFileResponse
-	coreLatest := strings.TrimSpace(s.updateConfig.LatestCoreVersion)
-	resLatest := strings.TrimSpace(s.updateConfig.LatestResourceVersion)
+	archCfg, ok := s.archUpdates(client.System)
+	if !ok {
+		return nil, false, config.FullPackage{}
+	}
+
+	latest := archCfg.Latest
+	coreLatest := strings.TrimSpace(latest.CoreVersion)
+	resLatest := strings.TrimSpace(latest.ResourceVersion)
 	coreCurrent := ""
 	resCurrent := ""
 	if client.App != nil {
 		coreCurrent = strings.TrimSpace(client.App.CoreVersion)
 		resCurrent = strings.TrimSpace(client.App.ResourceVersion)
 	}
-	system := client.System
+
 	needCore := coreLatest != "" && !strings.EqualFold(coreLatest, coreCurrent)
 	needResource := resLatest != "" && !strings.EqualFold(resLatest, resCurrent)
 
+	if !needCore && !needResource {
+		return nil, false, latest
+	}
+
+	var files []UpdateFileResponse
+
 	if needCore {
 		coreSatisfied := false
-		if diff := s.findDiff(system, coreCurrent, true); diff != nil && diff.CoreVersionPath != "" {
-			if diffFiles := s.diffFilesFromPath(diff.CoreVersionPath, true); len(diffFiles) > 0 {
-				files = append(files, diffFiles...)
-				coreSatisfied = true
-			} else {
-				files = append(files, s.fileFromPath(diff.CoreVersionPath, true))
+		if diff := findDiff(archCfg.Diffs, coreCurrent, true); diff != nil {
+			if diff.CoreVersionPath != "" {
+				if diffFiles := s.diffFilesFromPath(diff.CoreVersionPath, true); len(diffFiles) > 0 {
+					files = append(files, diffFiles...)
+					coreSatisfied = true
+				} else {
+					files = append(files, s.fileFromPath(diff.CoreVersionPath, true))
+					coreSatisfied = true
+				}
+			} else if diff.CoreDownloadURL != "" {
+				files = append(files, s.fileFromPath(diff.CoreDownloadURL, true))
 				coreSatisfied = true
 			}
 		}
-		if !coreSatisfied {
-			if pkg, ok := s.resolveFullPackage(system); ok && pkg.CoreDownloadURL != "" {
-				files = append(files, s.fileFromPath(pkg.CoreDownloadURL, true))
-			}
+		if !coreSatisfied && latest.CoreDownloadURL != "" {
+			files = append(files, s.fileFromPath(latest.CoreDownloadURL, true))
 		}
 	}
 
 	if needResource {
-		resourceSatisfied := false
-		if diff := s.findDiff(system, resCurrent, false); diff != nil && diff.ResourceVersionPath != "" {
-			if diffFiles := s.diffFilesFromPath(diff.ResourceVersionPath, false); len(diffFiles) > 0 {
-				files = append(files, diffFiles...)
-				resourceSatisfied = true
-			} else {
-				files = append(files, s.fileFromPath(diff.ResourceVersionPath, false))
-				resourceSatisfied = true
+		resSatisfied := false
+		if diff := findDiff(archCfg.Diffs, resCurrent, false); diff != nil {
+			if diff.ResourceVersionPath != "" {
+				if diffFiles := s.diffFilesFromPath(diff.ResourceVersionPath, false); len(diffFiles) > 0 {
+					files = append(files, diffFiles...)
+					resSatisfied = true
+				} else {
+					files = append(files, s.fileFromPath(diff.ResourceVersionPath, false))
+					resSatisfied = true
+				}
+			} else if diff.ResourceDownloadURL != "" {
+				files = append(files, s.fileFromPath(diff.ResourceDownloadURL, false))
+				resSatisfied = true
 			}
 		}
-		if !resourceSatisfied {
-			if pkg, ok := s.resolveFullPackage(system); ok && pkg.ResourceDownloadURL != "" {
-				files = append(files, s.fileFromPath(pkg.ResourceDownloadURL, false))
-			}
+		if !resSatisfied && latest.ResourceDownloadURL != "" {
+			files = append(files, s.fileFromPath(latest.ResourceDownloadURL, false))
 		}
 	}
 
 	if len(files) == 0 && (coreCurrent == "" || resCurrent == "") {
-		if pkg, ok := s.resolveFullPackage(system); ok {
-			if pkg.CoreDownloadURL != "" {
-				files = append(files, s.fileFromPath(pkg.CoreDownloadURL, true))
-			}
-			if pkg.ResourceDownloadURL != "" {
-				files = append(files, s.fileFromPath(pkg.ResourceDownloadURL, false))
-			}
+		if latest.CoreDownloadURL != "" {
+			files = append(files, s.fileFromPath(latest.CoreDownloadURL, true))
+		}
+		if latest.ResourceDownloadURL != "" {
+			files = append(files, s.fileFromPath(latest.ResourceDownloadURL, false))
 		}
 	}
 
-	return files, len(files) > 0
+	return files, len(files) > 0, latest
 }
 
-func (s *Server) findDiff(system *SystemInfo, clientVersion string, isCore bool) *config.DiffFile {
-	if system == nil || s.updateConfig == nil {
-		return nil
-	}
-	for i := range s.updateConfig.DiffFiles {
-		diff := &s.updateConfig.DiffFiles[i]
-		if !strings.EqualFold(diff.OS, system.OS) || !strings.EqualFold(diff.Arch, system.Arch) {
-			continue
-		}
-		if isCore && diff.CoreVersion != "" && strings.EqualFold(diff.CoreVersion, clientVersion) {
+func findDiff(diffs []config.DiffFile, clientVersion string, isCore bool) *config.DiffFile {
+	for i := range diffs {
+		diff := &diffs[i]
+		if isCore && diff.FromCoreVersion != "" && strings.EqualFold(diff.FromCoreVersion, clientVersion) {
 			return diff
 		}
-		if !isCore && diff.ResourceVersion != "" && strings.EqualFold(diff.ResourceVersion, clientVersion) {
+		if !isCore && diff.FromResourceVersion != "" && strings.EqualFold(diff.FromResourceVersion, clientVersion) {
 			return diff
 		}
 	}
 	return nil
 }
 
-func (s *Server) resolveFullPackage(system *SystemInfo) (config.FullPackage, bool) {
+func (s *Server) archUpdates(system *SystemInfo) (config.ArchUpdates, bool) {
 	if system == nil || s.updateConfig == nil {
-		return config.FullPackage{}, false
+		return config.ArchUpdates{}, false
 	}
-	key := systemKey(system)
-	if pkg, ok := s.updateConfig.FullPackages[key]; ok {
-		return pkg, true
+	platform, ok := findPlatform(s.updateConfig.Platforms, system.OS)
+	if !ok {
+		return config.ArchUpdates{}, false
 	}
-	return config.FullPackage{}, false
+	arch, ok := findArch(platform.Architectures, system.Arch)
+	if !ok {
+		return config.ArchUpdates{}, false
+	}
+	return arch, true
+}
+
+func findPlatform(platforms map[string]config.PlatformUpdates, osName string) (config.PlatformUpdates, bool) {
+	for key, platform := range platforms {
+		if strings.EqualFold(key, osName) {
+			return platform, true
+		}
+	}
+	return config.PlatformUpdates{}, false
+}
+
+func findArch(architectures map[string]config.ArchUpdates, arch string) (config.ArchUpdates, bool) {
+	for key, cfg := range architectures {
+		if strings.EqualFold(key, arch) {
+			return cfg, true
+		}
+	}
+	return config.ArchUpdates{}, false
 }
 
 func (s *Server) fileFromPath(path string, isCore bool) UpdateFileResponse {

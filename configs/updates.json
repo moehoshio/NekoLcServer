@@ -1,50 +1,58 @@
 {
-  "latestCoreVersion": "1.1.1",
-  "latestResourceVersion": "1.1.0",
-  "diffFiles": [
-    {
-      "os": "windows",
-      "arch": "x64",
-      "coreVersion": "1.0.1",
-      "coreVersionPath": "https://example.com/update/windows-64/1.0.1-to-1.1.1.zip"
+  "platforms": {
+    "windows": {
+      "architectures": {
+        "x64": {
+          "latest": {
+            "coreVersion": "1.1.1",
+            "resourceVersion": "1.1.0",
+            "coreDownloadUrl": "https://example.com/updates/windows-x64-1.1.1.zip",
+            "resourceDownloadUrl": "https://example.com/updates/windows-x64-resource-1.1.0.zip",
+            "size": 1024000,
+            "checksum": "sha256:abc123def456789"
+          },
+          "diffs": [
+            {
+              "fromCoreVersion": "1.0.1",
+              "coreDownloadUrl": "https://example.com/updates/windows-x64-1.0.1-to-1.1.1.zip"
+            },
+            {
+              "fromResourceVersion": "1.0.0",
+              "resourceDownloadUrl": "https://example.com/updates/windows-x64-resource-1.0.0-to-1.1.0.zip"
+            }
+          ]
+        }
+      }
     },
-    {
-      "os": "windows",
-      "arch": "x64",
-      "resourceVersion": "1.0.0",
-      "resourceVersionPath": "https://example.com/update/windows-64/resource-1.0.0-to-1.1.0.zip"
+    "linux": {
+      "architectures": {
+        "x64": {
+          "latest": {
+            "coreVersion": "1.1.1",
+            "resourceVersion": "1.1.0",
+            "coreDownloadUrl": "https://example.com/updates/linux-x64-1.1.1.tar.gz",
+            "resourceDownloadUrl": "https://example.com/updates/linux-x64-resource-1.1.0.tar.gz",
+            "size": 950000,
+            "checksum": "sha256:def456abc123789"
+          },
+          "diffs": []
+        }
+      }
     },
-    {
-      "os": "linux",
-      "arch": "x64",
-      "coreVersion": "1.0.1",
-      "coreVersionPath": "https://example.com/update/linux-64/1.0.1-to-1.1.1.zip"
-    }
-  ],
-  "fullPackages": {
-    "windows-x64": {
-      "coreVersion": "1.1.1",
-      "resourceVersion": "1.1.0",
-      "coreDownloadUrl": "https://example.com/updates/windows-x64-1.1.1.zip",
-      "resourceDownloadUrl": "https://example.com/updates/windows-x64-resource-1.1.0.zip",
-      "size": 1024000,
-      "checksum": "sha256:abc123def456789"
-    },
-    "linux-x64": {
-      "coreVersion": "1.1.1",
-      "resourceVersion": "1.1.0",
-      "coreDownloadUrl": "https://example.com/updates/linux-x64-1.1.1.tar.gz",
-      "resourceDownloadUrl": "https://example.com/updates/linux-x64-resource-1.1.0.tar.gz",
-      "size": 950000,
-      "checksum": "sha256:def456abc123789"
-    },
-    "macos-arm64": {
-      "coreVersion": "1.1.1",
-      "resourceVersion": "1.1.0",
-      "coreDownloadUrl": "https://example.com/updates/macos-arm64-1.1.1.dmg",
-      "resourceDownloadUrl": "https://example.com/updates/macos-arm64-resource-1.1.0.dmg",
-      "size": 1100000,
-      "checksum": "sha256:789abc123def456"
+    "macos": {
+      "architectures": {
+        "arm64": {
+          "latest": {
+            "coreVersion": "1.1.1",
+            "resourceVersion": "1.1.0",
+            "coreDownloadUrl": "https://example.com/updates/macos-arm64-1.1.1.dmg",
+            "resourceDownloadUrl": "https://example.com/updates/macos-arm64-resource-1.1.0.dmg",
+            "size": 1100000,
+            "checksum": "sha256:789abc123def456"
+          },
+          "diffs": []
+        }
+      }
     }
   }
 }

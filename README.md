@@ -42,7 +42,7 @@ When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed w
 
 ### Update diff payloads
 
-`updates.json` is organized by platform and architecture. Each architecture declares `latest` (core/resource versions plus download URLs) and an optional `diffs` array with entries that transform a specific installed version to the latest:
+`updates.json` is organized by platform and architecture. Each architecture declares `latest` (core/resource versions plus download info) and optional `diffs` that transform a specific installed version to the latest. Each download is an array entry with `downloadMeta` and optional `fileName` override:
 
 ```json
 {
@@ -53,12 +53,24 @@ When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed w
           "latest": {
             "coreVersion": "1.1.1",
             "resourceVersion": "1.1.0",
-            "coreDownloadUrl": "https://example.com/updates/windows-x64-1.1.1.zip",
-            "resourceDownloadUrl": "https://example.com/updates/windows-x64-resource-1.1.0.zip"
+            "core": [
+              {
+                "url": "https://example.com/updates/windows-x64-1.1.1.zip",
+                "fileName": "windows-x64-1.1.1.zip",
+                "downloadMeta": { "hashAlgorithm": "sha256", "suggestMultiThread": false }
+              }
+            ],
+            "resource": [
+              {
+                "url": "https://example.com/updates/windows-x64-resource-1.1.0.zip",
+                "fileName": "windows-x64-resource-1.1.0.zip",
+                "downloadMeta": { "hashAlgorithm": "sha256", "suggestMultiThread": false }
+              }
+            ]
           },
           "diffs": [
-            { "fromCoreVersion": "1.0.1", "coreDownloadUrl": "https://…/1.0.1-to-1.1.1.zip" },
-            { "fromResourceVersion": "1.0.0", "resourceDownloadUrl": "https://…/1.0.0-to-1.1.0.zip" }
+            { "fromCoreVersion": "1.0.1", "core": [ { "url": "https://…/1.0.1-to-1.1.1.zip", "downloadMeta": { "hashAlgorithm": "sha256" } } ] },
+            { "fromResourceVersion": "1.0.0", "resource": [ { "url": "https://…/1.0.0-to-1.1.0.zip", "downloadMeta": { "hashAlgorithm": "sha256" } } ] }
           ]
         }
       }
@@ -67,7 +79,7 @@ When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed w
 }
 ```
 
-Diff entries may point to direct files (`coreDownloadUrl` / `resourceDownloadUrl`) or to JSON lists of URLs via `coreVersionPath` / `resourceVersionPath`; those paths resolve relative to the directory containing `updates.json` unless absolute or HTTP(S).
+Diff entries may point to direct files (`url`) or to JSON lists of URLs via `path`; those paths resolve relative to the directory containing `updates.json` unless absolute or HTTP(S). Each returned file always includes `downloadMeta` with `hashAlgorithm`, `suggestMultiThread`, `isCoreFile`, and `isAbsoluteUrl` populated. Use `fileName` to control the saved filename; defaults to the basename of the URL.
 
 ## Tests
 

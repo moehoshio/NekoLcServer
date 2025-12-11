@@ -122,24 +122,36 @@ type ArchUpdates struct {
 	Diffs  []DiffFile  `json:"diffs"`
 }
 
-// DiffFile describes incremental update metadata from a specific version to latest.
-type DiffFile struct {
-	FromCoreVersion     string `json:"fromCoreVersion"`
-	CoreVersionPath     string `json:"coreVersionPath"`
-	CoreDownloadURL     string `json:"coreDownloadUrl"`
-	FromResourceVersion string `json:"fromResourceVersion"`
-	ResourceVersionPath string `json:"resourceVersionPath"`
-	ResourceDownloadURL string `json:"resourceDownloadUrl"`
-}
-
 // FullPackage contains the latest package metadata per platform/architecture.
 type FullPackage struct {
-	CoreVersion         string `json:"coreVersion"`
-	ResourceVersion     string `json:"resourceVersion"`
-	CoreDownloadURL     string `json:"coreDownloadUrl"`
-	ResourceDownloadURL string `json:"resourceDownloadUrl"`
-	Size                int64  `json:"size"`
-	Checksum            string `json:"checksum"`
+	CoreVersion     string          `json:"coreVersion"`
+	ResourceVersion string          `json:"resourceVersion"`
+	Core            []DownloadEntry `json:"core"`
+	Resource        []DownloadEntry `json:"resource"`
+}
+
+// DiffFile describes incremental update metadata from a specific version to latest.
+type DiffFile struct {
+	FromCoreVersion     string          `json:"fromCoreVersion"`
+	Core                []DownloadEntry `json:"core"`
+	FromResourceVersion string          `json:"fromResourceVersion"`
+	Resource            []DownloadEntry `json:"resource"`
+}
+
+// DownloadEntry captures a single downloadable artifact or a path to a list of URLs.
+type DownloadEntry struct {
+	URL          string       `json:"url,omitempty"`
+	Path         string       `json:"path,omitempty"`
+	FileName     string       `json:"fileName,omitempty"`
+	Checksum     string       `json:"checksum,omitempty"`
+	Size         int64        `json:"size,omitempty"`
+	DownloadMeta DownloadMeta `json:"downloadMeta"`
+}
+
+// DownloadMeta configures download hints per artifact.
+type DownloadMeta struct {
+	HashAlgorithm      string `json:"hashAlgorithm"`
+	SuggestMultiThread bool   `json:"suggestMultiThread"`
 }
 
 // LoadAppConfig reads the primary configuration file.
@@ -197,9 +209,26 @@ func LoadUpdates(path string) (*UpdateConfig, error) {
 		if platform.Architectures == nil {
 			platform.Architectures = map[string]ArchUpdates{}
 		}
+		for archKey, arch := range platform.Architectures {
+			ensureDownloadMetaSlice(arch.Latest.Core)
+			ensureDownloadMetaSlice(arch.Latest.Resource)
+			for i := range arch.Diffs {
+				ensureDownloadMetaSlice(arch.Diffs[i].Core)
+				ensureDownloadMetaSlice(arch.Diffs[i].Resource)
+			}
+			platform.Architectures[archKey] = arch
+		}
 		cfg.Platforms[k] = platform
 	}
 	return &cfg, nil
+}
+
+func ensureDownloadMetaSlice(entries []DownloadEntry) {
+	for i := range entries {
+		if entries[i].DownloadMeta.HashAlgorithm == "" {
+			entries[i].DownloadMeta.HashAlgorithm = "sha256"
+		}
+	}
 }
 
 func loadJSON(path string, target interface{}) error {

@@ -3,8 +3,10 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -244,8 +246,9 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 	isMandatory := false
 	if latest.CoreVersion != "" && client.App != nil {
-		coreCurrent := strings.TrimSpace(client.App.CoreVersion)
-		isMandatory = !strings.EqualFold(latest.CoreVersion, coreCurrent)
+		coreCurrent := normalizeVersion(client.App.CoreVersion)
+		latestCore := normalizeVersion(latest.CoreVersion)
+		isMandatory = latestCore != "" && latestCore != coreCurrent
 	}
 	title := "New version available"
 	description := "Updates available"
@@ -282,13 +285,13 @@ func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, b
 	}
 
 	latest := archCfg.Latest
-	coreLatest := strings.TrimSpace(latest.CoreVersion)
-	resLatest := strings.TrimSpace(latest.ResourceVersion)
+	coreLatest := normalizeVersion(latest.CoreVersion)
+	resLatest := normalizeVersion(latest.ResourceVersion)
 	coreCurrent := ""
 	resCurrent := ""
 	if client.App != nil {
-		coreCurrent = strings.TrimSpace(client.App.CoreVersion)
-		resCurrent = strings.TrimSpace(client.App.ResourceVersion)
+		coreCurrent = normalizeVersion(client.App.CoreVersion)
+		resCurrent = normalizeVersion(client.App.ResourceVersion)
 	}
 
 	needCore := coreLatest != "" && !strings.EqualFold(coreLatest, coreCurrent)
@@ -303,52 +306,36 @@ func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, b
 	if needCore {
 		coreSatisfied := false
 		if diff := findDiff(archCfg.Diffs, coreCurrent, true); diff != nil {
-			if diff.CoreVersionPath != "" {
-				if diffFiles := s.diffFilesFromPath(diff.CoreVersionPath, true); len(diffFiles) > 0 {
-					files = append(files, diffFiles...)
-					coreSatisfied = true
-				} else {
-					files = append(files, s.fileFromPath(diff.CoreVersionPath, true))
-					coreSatisfied = true
-				}
-			} else if diff.CoreDownloadURL != "" {
-				files = append(files, s.fileFromPath(diff.CoreDownloadURL, true))
+			if entries := s.filesFromEntries(diff.Core, true); len(entries) > 0 {
+				files = append(files, entries...)
 				coreSatisfied = true
 			}
 		}
-		if !coreSatisfied && latest.CoreDownloadURL != "" {
-			files = append(files, s.fileFromPath(latest.CoreDownloadURL, true))
+		if !coreSatisfied {
+			if entries := s.filesFromEntries(latest.Core, true); len(entries) > 0 {
+				files = append(files, entries...)
+			}
 		}
 	}
 
 	if needResource {
 		resSatisfied := false
 		if diff := findDiff(archCfg.Diffs, resCurrent, false); diff != nil {
-			if diff.ResourceVersionPath != "" {
-				if diffFiles := s.diffFilesFromPath(diff.ResourceVersionPath, false); len(diffFiles) > 0 {
-					files = append(files, diffFiles...)
-					resSatisfied = true
-				} else {
-					files = append(files, s.fileFromPath(diff.ResourceVersionPath, false))
-					resSatisfied = true
-				}
-			} else if diff.ResourceDownloadURL != "" {
-				files = append(files, s.fileFromPath(diff.ResourceDownloadURL, false))
+			if entries := s.filesFromEntries(diff.Resource, false); len(entries) > 0 {
+				files = append(files, entries...)
 				resSatisfied = true
 			}
 		}
-		if !resSatisfied && latest.ResourceDownloadURL != "" {
-			files = append(files, s.fileFromPath(latest.ResourceDownloadURL, false))
+		if !resSatisfied {
+			if entries := s.filesFromEntries(latest.Resource, false); len(entries) > 0 {
+				files = append(files, entries...)
+			}
 		}
 	}
 
 	if len(files) == 0 && (coreCurrent == "" || resCurrent == "") {
-		if latest.CoreDownloadURL != "" {
-			files = append(files, s.fileFromPath(latest.CoreDownloadURL, true))
-		}
-		if latest.ResourceDownloadURL != "" {
-			files = append(files, s.fileFromPath(latest.ResourceDownloadURL, false))
-		}
+		files = append(files, s.filesFromEntries(latest.Core, true)...)
+		files = append(files, s.filesFromEntries(latest.Resource, false)...)
 	}
 
 	return files, len(files) > 0, latest
@@ -357,14 +344,30 @@ func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, b
 func findDiff(diffs []config.DiffFile, clientVersion string, isCore bool) *config.DiffFile {
 	for i := range diffs {
 		diff := &diffs[i]
-		if isCore && diff.FromCoreVersion != "" && strings.EqualFold(diff.FromCoreVersion, clientVersion) {
-			return diff
+		if isCore {
+			candidate := normalizeVersion(diff.FromCoreVersion)
+			if candidate != "" && candidate == clientVersion {
+				return diff
+			}
+			continue
 		}
-		if !isCore && diff.FromResourceVersion != "" && strings.EqualFold(diff.FromResourceVersion, clientVersion) {
+		candidate := normalizeVersion(diff.FromResourceVersion)
+		if candidate != "" && candidate == clientVersion {
 			return diff
 		}
 	}
 	return nil
+}
+
+func normalizeVersion(v string) string {
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "v") || strings.HasPrefix(trimmed, "V") {
+		trimmed = trimmed[1:]
+	}
+	return trimmed
 }
 
 func (s *Server) archUpdates(system *SystemInfo) (config.ArchUpdates, bool) {
@@ -400,20 +403,84 @@ func findArch(architectures map[string]config.ArchUpdates, arch string) (config.
 	return config.ArchUpdates{}, false
 }
 
-func (s *Server) fileFromPath(path string, isCore bool) UpdateFileResponse {
-	abs := strings.HasPrefix(strings.ToLower(path), "http://") || strings.HasPrefix(strings.ToLower(path), "https://")
-	fileName := filepath.Base(path)
+func (s *Server) filesFromEntries(entries []config.DownloadEntry, isCore bool) []UpdateFileResponse {
+	var out []UpdateFileResponse
+	for _, entry := range entries {
+		out = append(out, s.filesFromEntry(entry, isCore)...)
+	}
+	return out
+}
+
+func (s *Server) filesFromEntry(entry config.DownloadEntry, isCore bool) []UpdateFileResponse {
+	url := strings.TrimSpace(entry.URL)
+	path := strings.TrimSpace(entry.Path)
+	meta := entry.DownloadMeta
+	if meta.HashAlgorithm == "" {
+		meta.HashAlgorithm = "sha256"
+	}
+
+	// Path implies a JSON list of URLs.
+	if url == "" && path != "" {
+		return s.diffFilesFromPathWithMeta(path, entry, isCore)
+	}
+
+	if url == "" {
+		return nil
+	}
+	lower := strings.ToLower(url)
+	abs := strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || filepath.IsAbs(url)
+	fileName := entry.FileName
+	if strings.TrimSpace(fileName) == "" {
+		fileName = filepath.Base(url)
+	}
+	return []UpdateFileResponse{createFileResponse(url, fileName, entry.Checksum, meta, isCore, abs)}
+}
+
+func createFileResponse(url, fileName, checksum string, meta config.DownloadMeta, isCore, abs bool) UpdateFileResponse {
 	return UpdateFileResponse{
-		URL:      path,
+		URL:      url,
 		FileName: fileName,
-		Checksum: "",
+		Checksum: checksum,
 		DownloadMeta: DownloadMeta{
-			HashAlgorithm:      "sha256",
-			SuggestMultiThread: false,
+			HashAlgorithm:      meta.HashAlgorithm,
+			SuggestMultiThread: meta.SuggestMultiThread,
 			IsCoreFile:         isCore,
 			IsAbsoluteURL:      abs,
 		},
 	}
+}
+
+func (s *Server) diffFilesFromPathWithMeta(path string, entry config.DownloadEntry, isCore bool) []UpdateFileResponse {
+	resolved := s.resolveUpdateAssetPath(path)
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read diff file %s: %v\n", resolved, err)
+		return nil
+	}
+	var urls []string
+	if err := json.Unmarshal(data, &urls); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse diff file %s: %v\n", resolved, err)
+		return nil
+	}
+	meta := entry.DownloadMeta
+	if meta.HashAlgorithm == "" {
+		meta.HashAlgorithm = "sha256"
+	}
+	files := make([]UpdateFileResponse, 0, len(urls))
+	for _, raw := range urls {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		abs := strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || filepath.IsAbs(trimmed)
+		fileName := entry.FileName
+		if strings.TrimSpace(fileName) == "" {
+			fileName = filepath.Base(trimmed)
+		}
+		files = append(files, createFileResponse(trimmed, fileName, entry.Checksum, meta, isCore, abs))
+	}
+	return files
 }
 
 func (s *Server) handleFeedbackLog(w http.ResponseWriter, r *http.Request) {

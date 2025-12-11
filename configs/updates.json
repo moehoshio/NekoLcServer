@@ -1,58 +1,136 @@
 {
-  "platforms": {
-    "windows": {
-      "architectures": {
-        "x64": {
-          "latest": {
-            "coreVersion": "1.1.1",
-            "resourceVersion": "1.1.0",
-            "coreDownloadUrl": "https://example.com/updates/windows-x64-1.1.1.zip",
-            "resourceDownloadUrl": "https://example.com/updates/windows-x64-resource-1.1.0.zip",
-            "size": 1024000,
-            "checksum": "sha256:abc123def456789"
-          },
-          "diffs": [
-            {
-              "fromCoreVersion": "1.0.1",
-              "coreDownloadUrl": "https://example.com/updates/windows-x64-1.0.1-to-1.1.1.zip"
-            },
-            {
-              "fromResourceVersion": "1.0.0",
-              "resourceDownloadUrl": "https://example.com/updates/windows-x64-resource-1.0.0-to-1.1.0.zip"
+    "platforms": {
+        "windows": {
+            "architectures": {
+                "x64": {
+                    "latest": {
+                        "coreVersion": "0.0.1",
+                        "resourceVersion": "0.0.2",
+                        "core": [
+                            {
+                                "url": "https://example.com/updates/windows-x64-0.0.1.zip",
+                                "fileName": "windows-x64-0.0.1.zip",
+                                "checksum": "sha256:abc123def456789",
+                                "size": 1024000,
+                                "downloadMeta": {
+                                    "hashAlgorithm": "sha256",
+                                    "suggestMultiThread": false
+                                }
+                            }
+                        ],
+                        "resource": [
+                            {
+                                "url": "https://example.com/updates/2729.png",
+                                "fileName": "2729.png",
+                                "checksum": "a4d29c9d6f3d66e8a31e294954dcf423a4ba4cc943e74d04641d625fc661a3b0",
+                                "size": 1024,
+                                "downloadMeta": {
+                                    "hashAlgorithm": "sha256",
+                                    "suggestMultiThread": false
+                                }
+                            }
+                        ]
+                    },
+                    "diffs": [
+                        {
+                            "fromCoreVersion": "1.0.1",
+                            "core": [
+                                {
+                                    "url": "https://example.com/updates/windows-x64-1.0.1-to-1.1.1.zip",
+                                    "fileName": "windows-x64-1.0.1-to-1.1.1.zip",
+                                    "downloadMeta": {
+                                        "hashAlgorithm": "sha256",
+                                        "suggestMultiThread": false
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "fromResourceVersion": "1.0.0",
+                            "resource": [
+                                {
+                                    "url": "https://example.com/updates/windows-x64-resource-1.0.0-to-1.1.0.zip",
+                                    "fileName": "windows-x64-resource-1.0.0-to-1.1.0.zip",
+                                    "downloadMeta": {
+                                        "hashAlgorithm": "sha256",
+                                        "suggestMultiThread": false
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
             }
-          ]
+        },
+        "linux": {
+            "architectures": {
+                "x64": {
+                    "latest": {
+                        "coreVersion": "1.1.1",
+                        "resourceVersion": "1.1.0",
+                        "core": [
+                            {
+                                "url": "https://example.com/updates/linux-x64-1.1.1.tar.gz",
+                                "fileName": "linux-x64-1.1.1.tar.gz",
+                                "checksum": "sha256:def456abc123789",
+                                "size": 950000,
+                                "downloadMeta": {
+                                    "hashAlgorithm": "sha256",
+                                    "suggestMultiThread": false
+                                }
+                            }
+                        ],
+                        "resource": [
+                            {
+                                "url": "https://example.com/updates/linux-x64-resource-1.1.0.tar.gz",
+                                "fileName": "linux-x64-resource-1.1.0.tar.gz",
+                                "checksum": "sha256:def456abc123789",
+                                "size": 950000,
+                                "downloadMeta": {
+                                    "hashAlgorithm": "sha256",
+                                    "suggestMultiThread": false
+                                }
+                            }
+                        ]
+                    },
+                    "diffs": []
+                }
+            }
+        },
+        "macos": {
+            "architectures": {
+                "arm64": {
+                    "latest": {
+                        "coreVersion": "1.1.1",
+                        "resourceVersion": "1.1.0",
+                        "core": [
+                            {
+                                "url": "https://example.com/updates/macos-arm64-1.1.1.dmg",
+                                "fileName": "macos-arm64-1.1.1.dmg",
+                                "checksum": "sha256:789abc123def456",
+                                "size": 1100000,
+                                "downloadMeta": {
+                                    "hashAlgorithm": "sha256",
+                                    "suggestMultiThread": false
+                                }
+                            }
+                        ],
+                        "resource": [
+                            {
+                                "url": "https://example.com/updates/macos-arm64-resource-1.1.0.dmg",
+                                "fileName": "macos-arm64-resource-1.1.0.dmg",
+                                "checksum": "sha256:789abc123def456",
+                                "size": 1100000,
+                                "downloadMeta": {
+                                    "hashAlgorithm": "sha256",
+                                    "suggestMultiThread": false
+                                }
+                            }
+                        ]
+                    },
+                    "diffs": []
+                }
+            }
         }
-      }
-    },
-    "linux": {
-      "architectures": {
-        "x64": {
-          "latest": {
-            "coreVersion": "1.1.1",
-            "resourceVersion": "1.1.0",
-            "coreDownloadUrl": "https://example.com/updates/linux-x64-1.1.1.tar.gz",
-            "resourceDownloadUrl": "https://example.com/updates/linux-x64-resource-1.1.0.tar.gz",
-            "size": 950000,
-            "checksum": "sha256:def456abc123789"
-          },
-          "diffs": []
-        }
-      }
-    },
-    "macos": {
-      "architectures": {
-        "arm64": {
-          "latest": {
-            "coreVersion": "1.1.1",
-            "resourceVersion": "1.1.0",
-            "coreDownloadUrl": "https://example.com/updates/macos-arm64-1.1.1.dmg",
-            "resourceDownloadUrl": "https://example.com/updates/macos-arm64-resource-1.1.0.dmg",
-            "size": 1100000,
-            "checksum": "sha256:789abc123def456"
-          },
-          "diffs": []
-        }
-      }
     }
-  }
 }

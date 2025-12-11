@@ -243,7 +243,8 @@ func (s *Server) diffFilesFromPath(path string, isCore bool) []UpdateFileRespons
 	}
 	lower := strings.ToLower(path)
 	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
-		return []UpdateFileResponse{s.fileFromPath(path, isCore)}
+		entry := config.DownloadEntry{URL: path, DownloadMeta: config.DownloadMeta{HashAlgorithm: "sha256"}}
+		return s.filesFromEntry(entry, isCore)
 	}
 	resolved := s.resolveUpdateAssetPath(path)
 	data, err := os.ReadFile(resolved)
@@ -262,7 +263,8 @@ func (s *Server) diffFilesFromPath(path string, isCore bool) []UpdateFileRespons
 		if trimmed == "" {
 			continue
 		}
-		files = append(files, s.fileFromPath(trimmed, isCore))
+		entry := config.DownloadEntry{URL: trimmed, DownloadMeta: config.DownloadMeta{HashAlgorithm: "sha256"}}
+		files = append(files, s.filesFromEntry(entry, isCore)...)
 	}
 	return files
 }

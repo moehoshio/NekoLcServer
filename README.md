@@ -81,6 +81,15 @@ When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed w
 
 Diff entries may point to direct files (`url`) or to JSON lists of URLs via `path`; those paths resolve relative to the directory containing `updates.json` unless absolute or HTTP(S). Each returned file always includes `downloadMeta` with `hashAlgorithm`, `suggestMultiThread`, `isCoreFile`, and `isAbsoluteUrl` populated. Use `fileName` to control the saved filename; defaults to the basename of the URL.
 
+### Update payloads (.path support)
+
+`updates.json` entries can be a direct `url` or a local `path` that expands to many files.
+
+- `path` points to a **directory**. All files under it are included using their relative paths (with forward slashes). Example: `path = /path/to/one` yields `img.png` and `logs/log.txt` if those files exist under that tree.
+- `baseUrl` (optional) prefixes each emitted URL, e.g., `https://example.com/updates/windows-x64-0.0.1-files/` → `https://example.com/updates/windows-x64-0.0.1-files/img.png`.
+- Hash and size: files from `path` are hashed with `downloadMeta.hashAlgorithm` (sha256 only) and returned as hex (no `sha256:` prefix) with `size` in bytes.
+- Relative resolution: `path` is resolved relative to the directory containing `updates.json` unless absolute. `baseUrl` is not used for filesystem resolution—only URL output.
+- Caching: directory scans are cached and refreshed automatically when file mtimes change; `updates.json` itself is hot-reloaded on change.
 ## Tests
 
 Unit tests exercise core handlers via `httptest`:

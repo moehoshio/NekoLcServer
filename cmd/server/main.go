@@ -65,7 +65,7 @@ func main() {
 	feedbackPath := filepath.Join(baseDir, "logs", "feedback.log")
 	updateAssetsDir := filepath.Dir(updateConfigPath)
 
-	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, updateCfg, updateAssetsDir, localizer, authSvc, feedbackPath)
+	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, updateCfg, updateConfigPath, updateAssetsDir, localizer, authSvc, feedbackPath)
 	if err != nil {
 		log.Fatalf("bootstrap server: %v", err)
 	}

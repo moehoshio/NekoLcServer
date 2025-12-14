@@ -64,7 +64,7 @@ func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mu
 	authService := auth.NewService(appCfg)
 	feedbackPath := filepath.Join(t.TempDir(), "feedback.log")
 	updateDir := filepath.Dir(updatePath)
-	srv, err := New(appCfg, launcherCfg, maintenanceCfg, updateCfg, updateDir, localizer, authService, feedbackPath)
+	srv, err := New(appCfg, launcherCfg, maintenanceCfg, updateCfg, updatePath, updateDir, localizer, authService, feedbackPath)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestUpdateDirectoryPathProducesFiles(t *testing.T) {
 	if err := os.WriteFile(nested, original, 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	originalHash := fmt.Sprintf("sha256:%x", sha256.Sum256(original))
+	originalHash := fmt.Sprintf("%x", sha256.Sum256(original))
 
 	srv := newTestServerWithConfig(t, nil, func(cfg *config.UpdateConfig) {
 		win := cfg.Platforms["windows"]
@@ -233,7 +233,7 @@ func TestUpdateDirectoryPathProducesFiles(t *testing.T) {
 	if err := os.WriteFile(nested, modified, 0o644); err != nil {
 		t.Fatalf("rewrite file: %v", err)
 	}
-	updatedHash := fmt.Sprintf("sha256:%x", sha256.Sum256(modified))
+	updatedHash := fmt.Sprintf("%x", sha256.Sum256(modified))
 
 	rec = doRequest(t, srv, http.MethodPost, "/v0/api/checkUpdates", payload)
 	if rec.Code != http.StatusOK {
@@ -266,8 +266,8 @@ func TestUpdateDirectoryPathWithBaseURL(t *testing.T) {
 	if err := os.WriteFile(logFile, logBytes, 0o644); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
-	imgHash := fmt.Sprintf("sha256:%x", sha256.Sum256(imgBytes))
-	logHash := fmt.Sprintf("sha256:%x", sha256.Sum256(logBytes))
+	imgHash := fmt.Sprintf("%x", sha256.Sum256(imgBytes))
+	logHash := fmt.Sprintf("%x", sha256.Sum256(logBytes))
 	base := "https://example.com/updates/windows-x64-0.0.1-files/"
 
 	srv := newTestServerWithConfig(t, nil, func(cfg *config.UpdateConfig) {

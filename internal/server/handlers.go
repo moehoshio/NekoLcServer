@@ -278,10 +278,11 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, bool, config.FullPackage) {
-	if s.updateConfig == nil {
+	updateCfg := s.currentUpdateConfig()
+	if updateCfg == nil {
 		return nil, false, config.FullPackage{}
 	}
-	archCfg, ok := s.archUpdates(client.System)
+	archCfg, ok := s.archUpdatesWithConfig(client.System, updateCfg)
 	if !ok {
 		return nil, false, config.FullPackage{}
 	}
@@ -372,11 +373,11 @@ func normalizeVersion(v string) string {
 	return trimmed
 }
 
-func (s *Server) archUpdates(system *SystemInfo) (config.ArchUpdates, bool) {
-	if system == nil || s.updateConfig == nil {
+func (s *Server) archUpdatesWithConfig(system *SystemInfo, updateCfg *config.UpdateConfig) (config.ArchUpdates, bool) {
+	if system == nil || updateCfg == nil {
 		return config.ArchUpdates{}, false
 	}
-	platform, ok := findPlatform(s.updateConfig.Platforms, system.OS)
+	platform, ok := findPlatform(updateCfg.Platforms, system.OS)
 	if !ok {
 		return config.ArchUpdates{}, false
 	}
@@ -443,6 +444,7 @@ func (s *Server) filesFromEntry(entry config.DownloadEntry, isCore bool) []Updat
 }
 
 func createFileResponse(url, fileName, checksum string, size int64, meta config.DownloadMeta, isCore, abs bool) UpdateFileResponse {
+	checksum = normalizeChecksum(checksum)
 	return UpdateFileResponse{
 		URL:      url,
 		FileName: fileName,
@@ -580,7 +582,16 @@ func hashFile(path, algorithm string) (string, error) {
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func normalizeChecksum(checksum string) string {
+	trimmed := strings.TrimSpace(checksum)
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "sha256:") {
+		return trimmed[len("sha256:"):]
+	}
+	return trimmed
 }
 
 func cloneUpdateFiles(files []UpdateFileResponse) []UpdateFileResponse {

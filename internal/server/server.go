@@ -29,6 +29,7 @@ type Server struct {
 	launcherConfig    *config.LauncherConfig
 	maintenanceConfig *config.MaintenanceConfig
 	updateConfig      *config.UpdateConfig
+	updateConfigPath  string
 	updateAssetsDir   string
 	localizer         *localization.Localizer
 	authService       *auth.Service
@@ -37,6 +38,7 @@ type Server struct {
 	basePath          string
 	dirCacheMu        sync.RWMutex
 	dirCache          map[string]dirCacheEntry
+	updateConfigMu    sync.RWMutex
 }
 
 type dirCacheEntry struct {
@@ -53,6 +55,7 @@ func New(
 	launcherCfg *config.LauncherConfig,
 	maintenanceCfg *config.MaintenanceConfig,
 	updateCfg *config.UpdateConfig,
+	updateCfgPath string,
 	updateAssetsDir string,
 	localizer *localization.Localizer,
 	authSvc *auth.Service,
@@ -69,6 +72,7 @@ func New(
 		launcherConfig:    launcherCfg,
 		maintenanceConfig: maintenanceCfg,
 		updateConfig:      updateCfg,
+		updateConfigPath:  updateCfgPath,
 		updateAssetsDir:   updateAssetsDir,
 		localizer:         localizer,
 		authService:       authSvc,
@@ -78,6 +82,7 @@ func New(
 		dirCache:          map[string]dirCacheEntry{},
 	}
 	srv.router = srv.buildRouter()
+	srv.startUpdateReloader()
 	return srv, nil
 }
 
@@ -249,6 +254,13 @@ func (s *Server) logFeedback(entry interface{}) error {
 	return enc.Encode(entry)
 }
 
+func (s *Server) currentUpdateConfig() *config.UpdateConfig {
+	s.updateConfigMu.RLock()
+	cfg := s.updateConfig
+	s.updateConfigMu.RUnlock()
+	return cfg
+}
+
 func (s *Server) diffFilesFromPath(path string, isCore bool) []UpdateFileResponse {
 	if path == "" {
 		return nil
@@ -304,4 +316,43 @@ func normalizeBasePath(path string) string {
 		return ""
 	}
 	return "/" + trimmed
+}
+
+func (s *Server) startUpdateReloader() {
+	if strings.TrimSpace(s.updateConfigPath) == "" {
+		return
+	}
+	const interval = 10 * time.Second
+	go func() {
+		lastMod := modTimeSafe(s.updateConfigPath)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			current := modTimeSafe(s.updateConfigPath)
+			if current.IsZero() || !current.After(lastMod) {
+				continue
+			}
+			cfg, err := config.LoadUpdates(s.updateConfigPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "reload updates failed: %v\n", err)
+				continue
+			}
+			s.updateConfigMu.Lock()
+			s.updateConfig = cfg
+			s.dirCacheMu.Lock()
+			s.dirCache = map[string]dirCacheEntry{}
+			s.dirCacheMu.Unlock()
+			s.updateConfigMu.Unlock()
+			lastMod = current
+			fmt.Fprintf(os.Stderr, "reloaded updates config at %s\n", time.Now().Format(time.RFC3339))
+		}
+	}()
+}
+
+func modTimeSafe(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
 }

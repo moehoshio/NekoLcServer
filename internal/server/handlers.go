@@ -1,10 +1,12 @@
 package server
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -419,8 +421,12 @@ func (s *Server) filesFromEntry(entry config.DownloadEntry, isCore bool) []Updat
 		meta.HashAlgorithm = "sha256"
 	}
 
-	// Path implies a JSON list of URLs.
+	// Path may describe a local directory (preferred) or a JSON list of URLs.
 	if url == "" && path != "" {
+		resolved := s.resolveUpdateAssetPath(path)
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			return s.filesFromDirectory(resolved, entry, isCore)
+		}
 		return s.diffFilesFromPathWithMeta(path, entry, isCore)
 	}
 
@@ -433,14 +439,15 @@ func (s *Server) filesFromEntry(entry config.DownloadEntry, isCore bool) []Updat
 	if strings.TrimSpace(fileName) == "" {
 		fileName = filepath.Base(url)
 	}
-	return []UpdateFileResponse{createFileResponse(url, fileName, entry.Checksum, meta, isCore, abs)}
+	return []UpdateFileResponse{createFileResponse(url, fileName, entry.Checksum, entry.Size, meta, isCore, abs)}
 }
 
-func createFileResponse(url, fileName, checksum string, meta config.DownloadMeta, isCore, abs bool) UpdateFileResponse {
+func createFileResponse(url, fileName, checksum string, size int64, meta config.DownloadMeta, isCore, abs bool) UpdateFileResponse {
 	return UpdateFileResponse{
 		URL:      url,
 		FileName: fileName,
 		Checksum: checksum,
+		Size:     size,
 		DownloadMeta: DownloadMeta{
 			HashAlgorithm:      meta.HashAlgorithm,
 			SuggestMultiThread: meta.SuggestMultiThread,
@@ -448,6 +455,141 @@ func createFileResponse(url, fileName, checksum string, meta config.DownloadMeta
 			IsAbsoluteURL:      abs,
 		},
 	}
+}
+
+func (s *Server) filesFromDirectory(root string, entry config.DownloadEntry, isCore bool) []UpdateFileResponse {
+	info, err := os.Stat(root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "stat directory %s: %v\n", root, err)
+		return nil
+	}
+	if !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "path %s is not a directory\n", root)
+		return nil
+	}
+
+	currentMod, err := latestModTime(root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "stat directory %s: %v\n", root, err)
+		return nil
+	}
+	meta := entry.DownloadMeta
+	baseURL := strings.TrimSpace(entry.BaseURL)
+	if meta.HashAlgorithm == "" {
+		meta.HashAlgorithm = "sha256"
+	}
+	s.dirCacheMu.RLock()
+	cached, ok := s.dirCache[root]
+	s.dirCacheMu.RUnlock()
+	if ok && !currentMod.After(cached.lastModified) && cached.hashAlgorithm == meta.HashAlgorithm && cached.baseURL == baseURL && cached.isCore == isCore {
+		return cloneUpdateFiles(cached.files)
+	}
+
+	files, maxMod, scanErr := collectDirectoryFiles(root, meta, baseURL, isCore)
+	if scanErr != nil {
+		fmt.Fprintf(os.Stderr, "scan directory %s: %v\n", root, scanErr)
+		if ok {
+			return cloneUpdateFiles(cached.files)
+		}
+		return nil
+	}
+	if maxMod.Before(currentMod) {
+		maxMod = currentMod
+	}
+
+	s.dirCacheMu.Lock()
+	s.dirCache[root] = dirCacheEntry{files: cloneUpdateFiles(files), lastModified: maxMod, hashAlgorithm: meta.HashAlgorithm, baseURL: baseURL, isCore: isCore}
+	s.dirCacheMu.Unlock()
+	return files
+}
+
+func collectDirectoryFiles(root string, meta config.DownloadMeta, baseURL string, isCore bool) ([]UpdateFileResponse, time.Time, error) {
+	files := []UpdateFileResponse{}
+	maxMod := time.Time{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		checksum, err := hashFile(path, meta.HashAlgorithm)
+		if err != nil {
+			return err
+		}
+		url, abs := buildURL(baseURL, rel)
+		files = append(files, createFileResponse(url, rel, checksum, info.Size(), meta, isCore, abs))
+		if info.ModTime().After(maxMod) {
+			maxMod = info.ModTime()
+		}
+		return nil
+	})
+	return files, maxMod, err
+}
+
+func buildURL(baseURL, relative string) (string, bool) {
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
+		return relative, false
+	}
+	base = strings.TrimRight(base, "/") + "/"
+	url := base + relative
+	lower := strings.ToLower(base)
+	abs := strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || filepath.IsAbs(base)
+	return url, abs
+}
+
+func latestModTime(root string) (time.Time, error) {
+	maxMod := time.Time{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.ModTime().After(maxMod) {
+			maxMod = info.ModTime()
+		}
+		return nil
+	})
+	return maxMod, err
+}
+
+func hashFile(path, algorithm string) (string, error) {
+	algo := strings.ToLower(strings.TrimSpace(algorithm))
+	if algo != "" && algo != "sha256" {
+		return "", fmt.Errorf("unsupported hash algorithm: %s", algorithm)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
+}
+
+func cloneUpdateFiles(files []UpdateFileResponse) []UpdateFileResponse {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]UpdateFileResponse, len(files))
+	copy(out, files)
+	return out
 }
 
 func (s *Server) diffFilesFromPathWithMeta(path string, entry config.DownloadEntry, isCore bool) []UpdateFileResponse {
@@ -478,7 +620,7 @@ func (s *Server) diffFilesFromPathWithMeta(path string, entry config.DownloadEnt
 		if strings.TrimSpace(fileName) == "" {
 			fileName = filepath.Base(trimmed)
 		}
-		files = append(files, createFileResponse(trimmed, fileName, entry.Checksum, meta, isCore, abs))
+		files = append(files, createFileResponse(trimmed, fileName, entry.Checksum, 0, meta, isCore, abs))
 	}
 	return files
 }

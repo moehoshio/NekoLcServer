@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +35,16 @@ type Server struct {
 	feedbackLogPath   string
 	debug             bool
 	basePath          string
+	dirCacheMu        sync.RWMutex
+	dirCache          map[string]dirCacheEntry
+}
+
+type dirCacheEntry struct {
+	files         []UpdateFileResponse
+	lastModified  time.Time
+	hashAlgorithm string
+	baseURL       string
+	isCore        bool
 }
 
 // New constructs a Server and prepares its router.
@@ -64,6 +75,7 @@ func New(
 		feedbackLogPath:   feedbackPath,
 		debug:             appCfg.Debug.Enabled,
 		basePath:          normalizeBasePath(appCfg.Server.BasePath),
+		dirCache:          map[string]dirCacheEntry{},
 	}
 	srv.router = srv.buildRouter()
 	return srv, nil

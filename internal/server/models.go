@@ -165,6 +165,7 @@ type UpdateFileResponse struct {
 	URL          string       `json:"url"`
 	FileName     string       `json:"fileName"`
 	Checksum     string       `json:"checksum"`
+	Size         int64        `json:"size,omitempty"`
 	DownloadMeta DownloadMeta `json:"downloadMeta"`
 }
 

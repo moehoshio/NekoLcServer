@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,10 +139,11 @@ type DiffFile struct {
 	Resource            []DownloadEntry `json:"resource"`
 }
 
-// DownloadEntry captures a single downloadable artifact or a path to a list of URLs.
+// DownloadEntry captures a single downloadable artifact or a local path that expands to many files.
 type DownloadEntry struct {
 	URL          string       `json:"url,omitempty"`
 	Path         string       `json:"path,omitempty"`
+	BaseURL      string       `json:"baseUrl,omitempty"`
 	FileName     string       `json:"fileName,omitempty"`
 	Checksum     string       `json:"checksum,omitempty"`
 	Size         int64        `json:"size,omitempty"`
@@ -199,7 +201,7 @@ func LoadMaintenance(path string) (*MaintenanceConfig, error) {
 // LoadUpdates loads update configuration.
 func LoadUpdates(path string) (*UpdateConfig, error) {
 	var cfg UpdateConfig
-	if err := loadJSON(path, &cfg); err != nil {
+	if err := loadJSONAllowComments(path, &cfg); err != nil {
 		return nil, fmt.Errorf("load update config: %w", err)
 	}
 	if cfg.Platforms == nil {
@@ -240,4 +242,78 @@ func loadJSON(path string, target interface{}) error {
 	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(target)
+}
+
+// loadJSONAllowComments behaves like loadJSON but permits // and /* */ style comments by stripping them before decoding.
+func loadJSONAllowComments(path string, target interface{}) error {
+	file, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return err
+	}
+	clean := stripJSONComments(file)
+	decoder := json.NewDecoder(bytes.NewReader(clean))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
+}
+
+func stripJSONComments(src []byte) []byte {
+	var out bytes.Buffer
+	inString := false
+	inLineComment := false
+	inBlockComment := false
+	escaped := false
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		if inLineComment {
+			if c == '\n' {
+				inLineComment = false
+				out.WriteByte(c)
+			}
+			continue
+		}
+		if inBlockComment {
+			if c == '*' && i+1 < len(src) && src[i+1] == '/' {
+				inBlockComment = false
+				i++
+			}
+			continue
+		}
+		if escaped {
+			out.WriteByte(c)
+			escaped = false
+			continue
+		}
+		if inString {
+			if c == '\\' {
+				escaped = true
+				out.WriteByte(c)
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			out.WriteByte(c)
+			continue
+		}
+		if c == '"' {
+			inString = true
+			out.WriteByte(c)
+			continue
+		}
+		if c == '/' && i+1 < len(src) {
+			next := src[i+1]
+			if next == '/' {
+				inLineComment = true
+				i++
+				continue
+			}
+			if next == '*' {
+				inBlockComment = true
+				i++
+				continue
+			}
+		}
+		out.WriteByte(c)
+	}
+	return out.Bytes()
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +20,10 @@ import (
 )
 
 func newTestServer(t *testing.T, mutate func(*config.AppConfig)) *Server {
+	return newTestServerWithConfig(t, mutate, nil)
+}
+
+func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mutateUpdate func(*config.UpdateConfig)) *Server {
 	t.Helper()
 	root := filepath.Clean(filepath.Join("..", ".."))
 	appCfgPath := filepath.Join(root, "configs", "app.json")
@@ -26,8 +31,8 @@ func newTestServer(t *testing.T, mutate func(*config.AppConfig)) *Server {
 	if err != nil {
 		t.Fatalf("load app config: %v", err)
 	}
-	if mutate != nil {
-		mutate(appCfg)
+	if mutateApp != nil {
+		mutateApp(appCfg)
 	}
 	resolve := func(p string) string {
 		if filepath.IsAbs(p) {
@@ -51,6 +56,9 @@ func newTestServer(t *testing.T, mutate func(*config.AppConfig)) *Server {
 	updateCfg, err := config.LoadUpdates(updatePath)
 	if err != nil {
 		t.Fatalf("load updates: %v", err)
+	}
+	if mutateUpdate != nil {
+		mutateUpdate(updateCfg)
 	}
 	localizer := localization.New(appCfg.Language.Default, langBundle)
 	authService := auth.NewService(appCfg)
@@ -149,6 +157,188 @@ func TestUpdateCheckReturnsFiles(t *testing.T) {
 	rec := doRequest(t, srv, http.MethodPost, "/v0/api/checkUpdates", payload)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+}
+
+func TestUpdateDirectoryPathProducesFiles(t *testing.T) {
+	tmp := t.TempDir()
+	nested := filepath.Join(tmp, "img", "img.png")
+	if err := os.MkdirAll(filepath.Dir(nested), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	original := []byte("hello update")
+	if err := os.WriteFile(nested, original, 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	originalHash := fmt.Sprintf("sha256:%x", sha256.Sum256(original))
+
+	srv := newTestServerWithConfig(t, nil, func(cfg *config.UpdateConfig) {
+		win := cfg.Platforms["windows"]
+		arch := win.Architectures["x64"]
+		arch.Latest.CoreVersion = "9.9.9"
+		arch.Latest.Core = []config.DownloadEntry{{
+			Path: tmp,
+			DownloadMeta: config.DownloadMeta{
+				HashAlgorithm: "sha256",
+			},
+		}}
+		arch.Latest.Resource = nil
+		arch.Diffs = nil
+		win.Architectures["x64"] = arch
+		cfg.Platforms["windows"] = win
+	})
+
+	payload := map[string]interface{}{
+		"updateRequest": map[string]interface{}{
+			"timestamp": 123,
+			"clientInfo": map[string]interface{}{
+				"app": map[string]interface{}{
+					"coreVersion":     "1.0.0",
+					"resourceVersion": "1.0.0",
+				},
+				"system": map[string]interface{}{
+					"os":   "windows",
+					"arch": "x64",
+				},
+			},
+		},
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/checkUpdates", payload)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	var resp UpdateResponseBody
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.UpdateResponse.Files) != 1 {
+		t.Fatalf("expected 1 file got %d", len(resp.UpdateResponse.Files))
+	}
+	file := resp.UpdateResponse.Files[0]
+	if file.URL != "img/img.png" {
+		t.Fatalf("unexpected url %s", file.URL)
+	}
+	if file.Checksum != originalHash {
+		t.Fatalf("checksum mismatch got %s want %s", file.Checksum, originalHash)
+	}
+	if file.Size != int64(len(original)) {
+		t.Fatalf("size mismatch got %d want %d", file.Size, len(original))
+	}
+	if !file.DownloadMeta.IsCoreFile {
+		t.Fatalf("expected IsCoreFile true")
+	}
+
+	modified := []byte("changed update")
+	if err := os.WriteFile(nested, modified, 0o644); err != nil {
+		t.Fatalf("rewrite file: %v", err)
+	}
+	updatedHash := fmt.Sprintf("sha256:%x", sha256.Sum256(modified))
+
+	rec = doRequest(t, srv, http.MethodPost, "/v0/api/checkUpdates", payload)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	var resp2 UpdateResponseBody
+	if err := json.NewDecoder(rec.Body).Decode(&resp2); err != nil {
+		t.Fatalf("decode response2: %v", err)
+	}
+	if len(resp2.UpdateResponse.Files) != 1 {
+		t.Fatalf("expected 1 file got %d", len(resp2.UpdateResponse.Files))
+	}
+	if resp2.UpdateResponse.Files[0].Checksum != updatedHash {
+		t.Fatalf("checksum did not refresh, got %s want %s", resp2.UpdateResponse.Files[0].Checksum, updatedHash)
+	}
+}
+
+func TestUpdateDirectoryPathWithBaseURL(t *testing.T) {
+	tmp := t.TempDir()
+	img := filepath.Join(tmp, "img.png")
+	logFile := filepath.Join(tmp, "logs", "log.txt")
+	if err := os.MkdirAll(filepath.Dir(logFile), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	imgBytes := []byte("image-data")
+	logBytes := []byte("log-data")
+	if err := os.WriteFile(img, imgBytes, 0o644); err != nil {
+		t.Fatalf("write img: %v", err)
+	}
+	if err := os.WriteFile(logFile, logBytes, 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	imgHash := fmt.Sprintf("sha256:%x", sha256.Sum256(imgBytes))
+	logHash := fmt.Sprintf("sha256:%x", sha256.Sum256(logBytes))
+	base := "https://example.com/updates/windows-x64-0.0.1-files/"
+
+	srv := newTestServerWithConfig(t, nil, func(cfg *config.UpdateConfig) {
+		win := cfg.Platforms["windows"]
+		arch := win.Architectures["x64"]
+		arch.Latest.CoreVersion = "9.9.9"
+		arch.Latest.Core = []config.DownloadEntry{{
+			Path:    tmp,
+			BaseURL: base,
+			DownloadMeta: config.DownloadMeta{
+				HashAlgorithm: "sha256",
+			},
+		}}
+		arch.Latest.Resource = nil
+		arch.Diffs = nil
+		win.Architectures["x64"] = arch
+		cfg.Platforms["windows"] = win
+	})
+
+	payload := map[string]interface{}{
+		"updateRequest": map[string]interface{}{
+			"timestamp": 123,
+			"clientInfo": map[string]interface{}{
+				"app": map[string]interface{}{
+					"coreVersion":     "1.0.0",
+					"resourceVersion": "1.0.0",
+				},
+				"system": map[string]interface{}{
+					"os":   "windows",
+					"arch": "x64",
+				},
+			},
+		},
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/checkUpdates", payload)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	var resp UpdateResponseBody
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.UpdateResponse.Files) != 2 {
+		t.Fatalf("expected 2 files got %d", len(resp.UpdateResponse.Files))
+	}
+	files := map[string]UpdateFileResponse{}
+	for _, f := range resp.UpdateResponse.Files {
+		files[f.URL] = f
+	}
+	expectedImgURL := base + "img.png"
+	expectedLogURL := base + "logs/log.txt"
+	imgFile, ok := files[expectedImgURL]
+	if !ok {
+		t.Fatalf("missing img file url %s", expectedImgURL)
+	}
+	logEntry, ok := files[expectedLogURL]
+	if !ok {
+		t.Fatalf("missing log file url %s", expectedLogURL)
+	}
+	if imgFile.Checksum != imgHash || logEntry.Checksum != logHash {
+		t.Fatalf("checksum mismatch img %s log %s", imgFile.Checksum, logEntry.Checksum)
+	}
+	if imgFile.Size != int64(len(imgBytes)) || logEntry.Size != int64(len(logBytes)) {
+		t.Fatalf("size mismatch img %d log %d", imgFile.Size, logEntry.Size)
+	}
+	if !imgFile.DownloadMeta.IsAbsoluteURL || !logEntry.DownloadMeta.IsAbsoluteURL {
+		t.Fatalf("expected absolute URLs with baseUrl")
+	}
+	if !imgFile.DownloadMeta.IsCoreFile || !logEntry.DownloadMeta.IsCoreFile {
+		t.Fatalf("expected IsCoreFile true")
 	}
 }
 

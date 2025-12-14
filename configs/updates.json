@@ -16,6 +16,14 @@
                                     "hashAlgorithm": "sha256",
                                     "suggestMultiThread": false
                                 }
+                            },
+                            {
+                                "path": "/path/to/one",
+                                "baseUrl": "https://example.com/updates/windows-x64-0.0.1-files/", 
+                                "downloadMeta": {
+                                    "hashAlgorithm": "sha256",
+                                    "suggestMultiThread": false
+                                }
                             }
                         ],
                         "resource": [

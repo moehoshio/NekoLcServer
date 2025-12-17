@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/moehoshio/NekoLcServer/internal/config"
+	"github.com/moehoshio/NekoLcServer/internal/store"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
@@ -62,8 +65,36 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	lang := s.languageFromPreferences(payload.Preferences)
 	req := payload.LoginRequest
 	switch s.authMethod() {
-	case "account":
-		s.writeError(w, http.StatusNotImplemented, lang, "NotImplemented", "Account authentication is not available")
+	case "mysql":
+		username := strings.TrimSpace(req.Username)
+		password := strings.TrimSpace(req.Password)
+		if username == "" || password == "" {
+			s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username and password are required")
+			return
+		}
+		if s.store == nil {
+			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", "account store not configured")
+			return
+		}
+		user, err := s.lookupUser(username)
+		if err != nil {
+			s.writeError(w, http.StatusUnauthorized, lang, "Unauthorized", "invalid credentials")
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+			s.writeError(w, http.StatusUnauthorized, lang, "Unauthorized", "invalid credentials")
+			return
+		}
+		subject := fmt.Sprintf("user:%d", user.ID)
+		access, refresh, err := s.authService.IssueTokens(subject, user.Role)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+			return
+		}
+		body := LoginResponseBody{Meta: s.meta()}
+		body.LoginResponse.AccessToken = access
+		body.LoginResponse.RefreshToken = refresh
+		s.writeJSON(w, http.StatusOK, body)
 		return
 	case "jwt":
 		if req.Identifier == "" || req.Signature == "" || req.Timestamp == 0 {
@@ -78,7 +109,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotImplemented, lang, "NotImplemented", "Authentication method not supported")
 		return
 	}
-	access, refresh, err := s.authService.IssueTokens(req.Identifier)
+	access, refresh, err := s.authService.IssueTokens(req.Identifier, "user")
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
 		return
@@ -706,6 +737,13 @@ func cloneUpdateFiles(files []UpdateFileResponse) []UpdateFileResponse {
 	return out
 }
 
+func deviceIDFromClient(info *ClientInfo) string {
+	if info == nil {
+		return ""
+	}
+	return strings.TrimSpace(info.DeviceID)
+}
+
 func (s *Server) diffFilesFromPathWithMeta(path string, entry config.DownloadEntry, isCore bool) []UpdateFileResponse {
 	resolved := s.resolveUpdateAssetPath(path)
 	data, err := os.ReadFile(resolved)
@@ -751,15 +789,68 @@ func (s *Server) handleFeedbackLog(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "content is required")
 		return
 	}
-	entry := map[string]interface{}{
-		"receivedAt": time.Now().UTC().Format(time.RFC3339),
-		"clientInfo": req.ClientInfo,
-		"timestamp":  req.Timestamp,
-		"content":    req.Content,
-	}
-	if err := s.logFeedback(entry); err != nil {
-		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
-		return
+	if s.store != nil {
+		clientInfo, _ := json.Marshal(req.ClientInfo)
+		entry := store.FeedbackLog{
+			DeviceID:   deviceIDFromClient(req.ClientInfo),
+			Lang:       lang,
+			ClientInfo: clientInfo,
+			Content:    req.Content,
+			ReceivedAt: time.Now().UTC(),
+			Timestamp:  req.Timestamp,
+		}
+		if err := s.store.SaveFeedback(context.Background(), entry); err != nil {
+			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+			return
+		}
+	} else {
+		entry := map[string]interface{}{
+			"receivedAt": time.Now().UTC().Format(time.RFC3339),
+			"clientInfo": req.ClientInfo,
+			"timestamp":  req.Timestamp,
+			"content":    req.Content,
+		}
+		if err := s.logFeedback(entry); err != nil {
+			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleFeedbackLogs(w http.ResponseWriter, r *http.Request) {
+	claims, err := s.requireAdmin(w, r)
+	if err != nil {
+		return
+	}
+	_ = claims
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "feedback storage not configured")
+		return
+	}
+	limit, offset := parseLimitOffset(r)
+	entries, err := s.store.ListFeedback(r.Context(), limit, offset)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	items := make([]FeedbackLogItem, 0, len(entries))
+	for _, e := range entries {
+		items = append(items, FeedbackLogItem{
+			ID:         e.ID,
+			UserID:     nullUserID(e.UserID),
+			DeviceID:   e.DeviceID,
+			Lang:       e.Lang,
+			ClientInfo: jsonRaw(e.ClientInfo),
+			Content:    e.Content,
+			ReceivedAt: e.ReceivedAt.Format(time.RFC3339),
+			Timestamp:  e.Timestamp,
+		})
+	}
+	resp := FeedbackLogsResponseBody{
+		FeedbackLogs: items,
+		Count:        len(items),
+		Meta:         s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
 }

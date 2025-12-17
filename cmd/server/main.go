@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"log"
@@ -9,13 +10,17 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/moehoshio/NekoLcServer/internal/auth"
 	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/localization"
 	"github.com/moehoshio/NekoLcServer/internal/server"
+	"github.com/moehoshio/NekoLcServer/internal/store"
 )
 
 func main() {
@@ -65,12 +70,31 @@ func main() {
 		log.Fatalf("load update config: %v", err)
 	}
 
-	authSvc := auth.NewService(appCfg)
+	var st store.Store
+	if strings.EqualFold(appCfg.Authentication.Method, "mysql") {
+		mysqlCfg := store.MySQLConfig{
+			Host:     appCfg.Authentication.MySQL.Host,
+			Port:     appCfg.Authentication.MySQL.Port,
+			Username: appCfg.Authentication.MySQL.Username,
+			Password: appCfg.Authentication.MySQL.Password,
+			Database: appCfg.Authentication.MySQL.Database,
+			Params:   appCfg.Authentication.MySQL.Params,
+		}
+		st, err = store.NewMySQLStore(mysqlCfg)
+		if err != nil {
+			log.Fatalf("init mysql store: %v", err)
+		}
+		if err := seedAdminUser(st); err != nil {
+			log.Fatalf("seed admin user: %v", err)
+		}
+	}
+
+	authSvc := auth.NewService(appCfg, st)
 
 	feedbackPath := filepath.Join(baseDir, "logs", "feedback.log")
 	updateAssetsDir := filepath.Dir(updateConfigPath)
 
-	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, newsCfg, updateCfg, updateConfigPath, updateAssetsDir, localizer, authSvc, feedbackPath)
+	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, newsCfg, updateCfg, updateConfigPath, updateAssetsDir, localizer, authSvc, st, feedbackPath)
 	if err != nil {
 		log.Fatalf("bootstrap server: %v", err)
 	}
@@ -125,4 +149,39 @@ func resolvePath(baseDir, cfgPath string) string {
 		return combined
 	}
 	return combined
+}
+
+func seedAdminUser(st store.Store) error {
+	if st == nil {
+		return nil
+	}
+	ctx := context.Background()
+	has, err := st.HasUsers(ctx)
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	password, err := randomPassword()
+	if err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	if _, err := st.CreateUser(ctx, "admin", string(hash), "admin"); err != nil {
+		return err
+	}
+	log.Printf("created default admin user: username=admin password=%s (please change immediately)", password)
+	return nil
+}
+
+func randomPassword() (string, error) {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("adm-%x", b), nil
 }

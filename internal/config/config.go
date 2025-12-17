@@ -20,12 +20,14 @@ type AppConfig struct {
 		BasePath     string `json:"basePath"`
 	} `json:"server"`
 	Authentication struct {
-		Enabled                    bool   `json:"enabled"`
-		Method                     string `json:"method"`
-		JWTSecret                  string `json:"jwtSecret"`
-		IgnoreTokenExpiration      bool   `json:"ignoreTokenExpiration"`
-		TokenExpirationSec         int    `json:"tokenExpirationSec"`
-		RefreshTokenExpirationDays int    `json:"refreshTokenExpirationDays"`
+		Enabled                    bool        `json:"enabled"`
+		Method                     string      `json:"method"`
+		JWTSecret                  string      `json:"jwtSecret"`
+		MySQL                      MySQLConfig `json:"mysql"`
+		JWT                        JWTConfig   `json:"jwt"`
+		IgnoreTokenExpiration      bool        `json:"ignoreTokenExpiration"`
+		TokenExpirationSec         int         `json:"tokenExpirationSec"`
+		RefreshTokenExpirationDays int         `json:"refreshTokenExpirationDays"`
 	} `json:"authentication"`
 	Debug struct {
 		Enabled bool `json:"enabled"`
@@ -108,6 +110,21 @@ type MaintenanceInfo struct {
 	Link    string `json:"link"`
 }
 
+// MySQLConfig holds MySQL connection details.
+type MySQLConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Database string `json:"database"`
+	Params   string `json:"params"`
+}
+
+// JWTConfig holds JWT-specific options.
+type JWTConfig struct {
+	JWTSecret string `json:"jwtSecret"`
+}
+
 // NewsConfig reflects news.json content for the news API.
 type NewsConfig struct {
 	Items []NewsItem `json:"items"`
@@ -186,6 +203,9 @@ func LoadAppConfig(path string) (*AppConfig, error) {
 	}
 	if cfg.Server.Port == "" {
 		return nil, errors.New("server.port must be specified")
+	}
+	if cfg.Authentication.MySQL.Database == "" {
+		cfg.Authentication.MySQL.Database = "nekoserver"
 	}
 	return &cfg, nil
 }

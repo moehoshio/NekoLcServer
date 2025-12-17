@@ -17,6 +17,7 @@ import (
 	"github.com/moehoshio/NekoLcServer/internal/auth"
 	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/localization"
+	"github.com/moehoshio/NekoLcServer/internal/store"
 )
 
 func newTestServer(t *testing.T, mutate func(*config.AppConfig)) *Server {
@@ -65,10 +66,11 @@ func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mu
 		mutateUpdate(updateCfg)
 	}
 	localizer := localization.New(appCfg.Language.Default, langBundle)
-	authService := auth.NewService(appCfg)
+	memStore := store.NewMemory()
+	authService := auth.NewService(appCfg, memStore)
 	feedbackPath := filepath.Join(t.TempDir(), "feedback.log")
 	updateDir := filepath.Dir(updatePath)
-	srv, err := New(appCfg, launcherCfg, maintenanceCfg, newsCfg, updateCfg, updatePath, updateDir, localizer, authService, feedbackPath)
+	srv, err := New(appCfg, launcherCfg, maintenanceCfg, newsCfg, updateCfg, updatePath, updateDir, localizer, authService, memStore, feedbackPath)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -425,7 +427,11 @@ func TestJWTLoginSuccess(t *testing.T) {
 	})
 	identifier := "device-uuid"
 	timestamp := time.Now().UTC().Unix()
-	signature := makeSignature(identifier, timestamp, srv.appConfig.Authentication.JWTSecret)
+	secret := srv.appConfig.Authentication.JWT.JWTSecret
+	if secret == "" {
+		secret = srv.appConfig.Authentication.JWTSecret
+	}
+	signature := makeSignature(identifier, timestamp, secret)
 	payload := map[string]interface{}{
 		"loginRequest": map[string]interface{}{
 			"identifier": identifier,
@@ -453,6 +459,36 @@ func TestAccountModeNotImplemented(t *testing.T) {
 	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/login", payload)
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("expected 501 got %d", rec.Code)
+	}
+}
+
+func TestFeedbackViewerJSON(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Debug.Enabled = true
+	})
+
+	feedbackPayload := map[string]interface{}{
+		"feedbackLogRequest": map[string]interface{}{
+			"timestamp": time.Now().UTC().Unix(),
+			"content":   "test feedback",
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/feedbackLog", feedbackPayload)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 got %d", rec.Code)
+	}
+
+	rec = doRequest(t, srv, http.MethodGet, "/debug/feedback.json", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	count, ok := body["count"].(float64)
+	if !ok || count < 1 {
+		t.Fatalf("expected entries in feedback json, got %v", body)
 	}
 }
 

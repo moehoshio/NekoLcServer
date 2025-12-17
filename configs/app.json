@@ -10,7 +10,17 @@
   "authentication": {
     "enabled": true,
     "method": "jwt",
-    "jwtSecret": "your-secret-key-change-this-in-production",
+    "mysql": {
+      "host": "localhost",
+      "username": "app_user",
+      "password": "secure_password",
+      "port": 3306,
+      "database": "nekoserver",
+      "params": "parseTime=true&charset=utf8mb4"
+    },
+    "jwt": {
+      "jwtSecret": "your-secret-key-change-this-in-production"
+    },
     "ignoreTokenExpiration": true,
     "tokenExpirationSec": 3600,
     "refreshTokenExpirationDays": 30

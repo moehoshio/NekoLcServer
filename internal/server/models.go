@@ -119,6 +119,25 @@ type FeedbackLogPayload struct {
 	Preferences *Preferences `json:"preferences"`
 }
 
+// FeedbackLogsResponseBody lists feedback entries (admin only).
+type FeedbackLogsResponseBody struct {
+	FeedbackLogs []FeedbackLogItem `json:"feedbackLogs"`
+	Count        int               `json:"count"`
+	Meta         Meta              `json:"meta"`
+}
+
+// FeedbackLogItem represents a single feedback log entry.
+type FeedbackLogItem struct {
+	ID         int64       `json:"id"`
+	UserID     int64       `json:"userId,omitempty"`
+	DeviceID   string      `json:"deviceId,omitempty"`
+	Lang       string      `json:"lang,omitempty"`
+	ClientInfo interface{} `json:"clientInfo,omitempty"`
+	Content    string      `json:"content"`
+	ReceivedAt string      `json:"receivedAt"`
+	Timestamp  int64       `json:"timestamp"`
+}
+
 // Meta defines the meta object returned with each response.
 type Meta struct {
 	APIVersion        string `json:"apiVersion"`

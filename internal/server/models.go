@@ -97,6 +97,18 @@ type UpdatePayload struct {
 	Preferences *Preferences `json:"preferences"`
 }
 
+// NewsPayload models the news request body.
+type NewsPayload struct {
+	NewsRequest struct {
+		ClientInfo *ClientInfo `json:"clientInfo"`
+		Timestamp  int64       `json:"timestamp"`
+		Limit      int         `json:"limit"`
+		Categories []string    `json:"categories"`
+		LastID     string      `json:"lastId"`
+	} `json:"newsRequest"`
+	Preferences *Preferences `json:"preferences"`
+}
+
 // FeedbackLogPayload models the feedback log submission.
 type FeedbackLogPayload struct {
 	FeedbackLogRequest struct {
@@ -192,4 +204,16 @@ type UpdateResponsePayload struct {
 type UpdateResponseBody struct {
 	UpdateResponse UpdateResponsePayload `json:"updateResponse"`
 	Meta           Meta                  `json:"meta"`
+}
+
+// NewsResponsePayload contains paginated news items.
+type NewsResponsePayload struct {
+	Items   []config.NewsItem `json:"items"`
+	HasMore bool              `json:"hasMore"`
+}
+
+// NewsResponseBody wraps news responses.
+type NewsResponseBody struct {
+	NewsResponse NewsResponsePayload `json:"newsResponse"`
+	Meta         Meta                `json:"meta"`
 }

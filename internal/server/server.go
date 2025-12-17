@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type Server struct {
 	router            chi.Router
 	launcherConfig    *config.LauncherConfig
 	maintenanceConfig *config.MaintenanceConfig
+	newsItems         []config.NewsItem
 	updateConfig      *config.UpdateConfig
 	updateConfigPath  string
 	updateAssetsDir   string
@@ -54,6 +56,7 @@ func New(
 	appCfg *config.AppConfig,
 	launcherCfg *config.LauncherConfig,
 	maintenanceCfg *config.MaintenanceConfig,
+	newsCfg *config.NewsConfig,
 	updateCfg *config.UpdateConfig,
 	updateCfgPath string,
 	updateAssetsDir string,
@@ -71,6 +74,7 @@ func New(
 		appConfig:         appCfg,
 		launcherConfig:    launcherCfg,
 		maintenanceConfig: maintenanceCfg,
+		newsItems:         normalizeNewsItems(newsCfg),
 		updateConfig:      updateCfg,
 		updateConfigPath:  updateCfgPath,
 		updateAssetsDir:   updateAssetsDir,
@@ -112,6 +116,7 @@ func (s *Server) buildRouter() chi.Router {
 			r.Post("/launcherConfig", s.handleLauncherConfig)
 			r.Post("/maintenance", s.handleMaintenance)
 			r.Post("/checkUpdates", s.handleCheckUpdates)
+			r.Post("/news", s.handleNews)
 			r.Post("/feedbackLog", s.handleFeedbackLog)
 		})
 	}
@@ -316,6 +321,21 @@ func normalizeBasePath(path string) string {
 		return ""
 	}
 	return "/" + trimmed
+}
+
+func normalizeNewsItems(cfg *config.NewsConfig) []config.NewsItem {
+	if cfg == nil || len(cfg.Items) == 0 {
+		return nil
+	}
+	items := make([]config.NewsItem, len(cfg.Items))
+	copy(items, cfg.Items)
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Priority == items[j].Priority {
+			return strings.Compare(items[i].PublishTime, items[j].PublishTime) > 0
+		}
+		return items[i].Priority > items[j].Priority
+	})
+	return items
 }
 
 func (s *Server) startUpdateReloader() {

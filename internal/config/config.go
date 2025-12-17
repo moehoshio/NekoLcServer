@@ -40,6 +40,9 @@ type AppConfig struct {
 	Maintenance struct {
 		ConfigPath string `json:"configPath"`
 	} `json:"maintenance"`
+	News struct {
+		ConfigPath string `json:"configPath"`
+	} `json:"news"`
 	Update struct {
 		ConfigPath string `json:"configPath"`
 	} `json:"update"`
@@ -103,6 +106,25 @@ type MaintenanceInfo struct {
 	End     string `json:"exEndTime"`
 	Poster  string `json:"posterUrl"`
 	Link    string `json:"link"`
+}
+
+// NewsConfig reflects news.json content for the news API.
+type NewsConfig struct {
+	Items []NewsItem `json:"items"`
+}
+
+// NewsItem holds a single news entry that may be filtered and paginated.
+type NewsItem struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Summary     string   `json:"summary"`
+	Content     string   `json:"content"`
+	PosterURL   string   `json:"posterUrl"`
+	Link        string   `json:"link"`
+	PublishTime string   `json:"publishTime"`
+	Category    string   `json:"category"`
+	Tags        []string `json:"tags"`
+	Priority    int      `json:"priority"`
 }
 
 // UpdateConfig mirrors updates.json and organizes updates by platform and architecture.
@@ -194,6 +216,18 @@ func LoadMaintenance(path string) (*MaintenanceConfig, error) {
 	}
 	if cfg.PlatformSpecific == nil {
 		cfg.PlatformSpecific = map[string]PlatformMaintenance{}
+	}
+	return &cfg, nil
+}
+
+// LoadNews loads news configuration.
+func LoadNews(path string) (*NewsConfig, error) {
+	var cfg NewsConfig
+	if err := loadJSON(path, &cfg); err != nil {
+		return nil, fmt.Errorf("load news config: %w", err)
+	}
+	if cfg.Items == nil {
+		cfg.Items = []NewsItem{}
 	}
 	return &cfg, nil
 }

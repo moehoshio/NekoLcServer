@@ -277,6 +277,109 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) filterNewsItems(categories []string) []config.NewsItem {
+	if len(s.newsItems) == 0 {
+		return nil
+	}
+	if len(categories) == 0 {
+		return cloneNewsItems(s.newsItems)
+	}
+	allowed := map[string]struct{}{}
+	for _, cat := range categories {
+		trimmed := strings.ToLower(strings.TrimSpace(cat))
+		if trimmed != "" {
+			allowed[trimmed] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		return cloneNewsItems(s.newsItems)
+	}
+	filtered := []config.NewsItem{}
+	for _, item := range s.newsItems {
+		cat := strings.ToLower(strings.TrimSpace(item.Category))
+		if _, ok := allowed[cat]; ok {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func findNewsIndex(items []config.NewsItem, lastID string) int {
+	target := strings.TrimSpace(lastID)
+	if target == "" {
+		return -1
+	}
+	for i, item := range items {
+		if strings.TrimSpace(item.ID) == target {
+			return i
+		}
+	}
+	return -1
+}
+
+func cloneNewsItems(items []config.NewsItem) []config.NewsItem {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]config.NewsItem, len(items))
+	copy(out, items)
+	return out
+}
+
+func (s *Server) handleNews(w http.ResponseWriter, r *http.Request) {
+	var payload NewsPayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.languageFromPreferences(payload.Preferences), "InvalidRequest", err.Error())
+		return
+	}
+	lang := s.languageFromPreferences(payload.Preferences)
+	req := payload.NewsRequest
+	if info, active := s.maintenanceForClient(req.ClientInfo); active {
+		if info.Message == "" && s.localizer != nil {
+			info.Message = s.localizer.Maintenance(lang, info.Status)
+		}
+		body := MaintenanceResponseBody{MaintenanceResponse: info, Meta: s.meta()}
+		s.writeJSON(w, http.StatusServiceUnavailable, body)
+		return
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	} else if limit > 50 {
+		limit = 50
+	}
+	items := s.filterNewsItems(req.Categories)
+	if req.LastID != "" {
+		idx := findNewsIndex(items, req.LastID)
+		if idx == -1 {
+			s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "lastId not found")
+			return
+		}
+		if idx+1 >= len(items) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		items = items[idx+1:]
+	}
+	if len(items) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	hasMore := false
+	if len(items) > limit {
+		hasMore = true
+		items = items[:limit]
+	}
+	resp := NewsResponseBody{
+		NewsResponse: NewsResponsePayload{
+			Items:   cloneNewsItems(items),
+			HasMore: hasMore,
+		},
+		Meta: s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, bool, config.FullPackage) {
 	updateCfg := s.currentUpdateConfig()
 	if updateCfg == nil {

@@ -52,6 +52,10 @@ func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mu
 	if err != nil {
 		t.Fatalf("load maintenance: %v", err)
 	}
+	newsCfg, err := config.LoadNews(resolve(appCfg.News.ConfigPath))
+	if err != nil {
+		t.Fatalf("load news: %v", err)
+	}
 	updatePath := resolve(appCfg.Update.ConfigPath)
 	updateCfg, err := config.LoadUpdates(updatePath)
 	if err != nil {
@@ -64,7 +68,7 @@ func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mu
 	authService := auth.NewService(appCfg)
 	feedbackPath := filepath.Join(t.TempDir(), "feedback.log")
 	updateDir := filepath.Dir(updatePath)
-	srv, err := New(appCfg, launcherCfg, maintenanceCfg, updateCfg, updatePath, updateDir, localizer, authService, feedbackPath)
+	srv, err := New(appCfg, launcherCfg, maintenanceCfg, newsCfg, updateCfg, updatePath, updateDir, localizer, authService, feedbackPath)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -339,6 +343,44 @@ func TestUpdateDirectoryPathWithBaseURL(t *testing.T) {
 	}
 	if !imgFile.DownloadMeta.IsCoreFile || !logEntry.DownloadMeta.IsCoreFile {
 		t.Fatalf("expected IsCoreFile true")
+	}
+}
+
+func TestNewsReturnsItems(t *testing.T) {
+	srv := newTestServer(t, nil)
+	payload := map[string]interface{}{
+		"newsRequest": map[string]interface{}{
+			"timestamp": 123,
+			"limit":     1,
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/news", payload)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	var resp NewsResponseBody
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.NewsResponse.Items) != 1 {
+		t.Fatalf("expected 1 item got %d", len(resp.NewsResponse.Items))
+	}
+	if !resp.NewsResponse.HasMore {
+		t.Fatalf("expected hasMore true")
+	}
+}
+
+func TestNewsInvalidLastID(t *testing.T) {
+	srv := newTestServer(t, nil)
+	payload := map[string]interface{}{
+		"newsRequest": map[string]interface{}{
+			"timestamp": 123,
+			"lastId":    "does-not-exist",
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/news", payload)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 got %d", rec.Code)
 	}
 }
 

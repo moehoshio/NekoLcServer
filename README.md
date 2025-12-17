@@ -1,6 +1,6 @@
 # NekoLc Server
 
-Golang implementation of the NekoLc API specification. The server loads JSON configuration files from `configs/` and exposes the documented HTTP endpoints for launcher configuration, maintenance, updates, feedback logs, test utilities, and optional authentication.
+Golang implementation of the NekoLc API specification (v0.0.2). The server loads JSON configuration files from `configs/` and exposes the documented HTTP endpoints for launcher configuration, maintenance, updates, news, feedback logs, test utilities, and optional authentication.
 
 ## Prerequisites
 
@@ -14,6 +14,7 @@ Primary settings live in `configs/app.json`. Additional referenced files are res
 - `language.configPath` → localization bundle (`configs/languages.json`)
 - `launcher.configPath` → launcher response template
 - `maintenance.configPath` → maintenance windows per platform
+- `news.configPath` → news/announcement items returned by `/v0/api/news`
 - `update.configPath` → incremental/full update metadata
 - `authentication.method` → `jwt` (default) or `account` (account mode currently returns 501)
 

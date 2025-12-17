@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": "news-001",
+      "title": "Server maintenance window",
+      "summary": "Planned downtime for backend upgrades",
+      "content": "Maintenance is scheduled to improve stability and add new features.",
+      "posterUrl": "https://example.com/assets/news/maintenance.png",
+      "link": "https://example.com/news/maintenance",
+      "publishTime": "2024-06-01T12:00:00Z",
+      "category": "maintenance",
+      "tags": ["windows", "linux"],
+      "priority": 10
+    },
+    {
+      "id": "news-002",
+      "title": "New launcher experience",
+      "summary": "UI refresh and better update flow",
+      "content": "The latest launcher improves update reliability and adds clearer progress messaging.",
+      "posterUrl": "https://example.com/assets/news/launcher.png",
+      "link": "https://example.com/news/launcher",
+      "publishTime": "2024-06-02T08:30:00Z",
+      "category": "general",
+      "tags": ["release"],
+      "priority": 5
+    }
+  ]
+}

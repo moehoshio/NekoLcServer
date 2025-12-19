@@ -710,3 +710,90 @@ func TestAppAdminPage(t *testing.T) {
 		t.Fatalf("expected admin dashboard page content")
 	}
 }
+
+func TestAppRegisterPage(t *testing.T) {
+	srv := newTestServer(t, nil)
+	rec := doRequest(t, srv, http.MethodGet, "/app/register", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Create Account") {
+		t.Fatalf("expected register page content")
+	}
+}
+
+func TestRegisterSuccess(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	payload := map[string]interface{}{
+		"registerRequest": map[string]interface{}{
+			"username": "newuser",
+			"password": "password123",
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp RegisterResponseBody
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.RegisterResponse.Username != "newuser" {
+		t.Fatalf("expected username 'newuser' got '%s'", resp.RegisterResponse.Username)
+	}
+}
+
+func TestRegisterDuplicateUsername(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	// First registration
+	payload := map[string]interface{}{
+		"registerRequest": map[string]interface{}{
+			"username": "dupuser",
+			"password": "password123",
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 got %d: %s", rec.Code, rec.Body.String())
+	}
+	// Second registration with same username
+	rec = doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRegisterValidation(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	// Short username
+	payload := map[string]interface{}{
+		"registerRequest": map[string]interface{}{
+			"username": "ab",
+			"password": "password123",
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 got %d: %s", rec.Code, rec.Body.String())
+	}
+	// Short password
+	payload = map[string]interface{}{
+		"registerRequest": map[string]interface{}{
+			"username": "validuser",
+			"password": "12345",
+		},
+	}
+	rec = doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 got %d: %s", rec.Code, rec.Body.String())
+	}
+}

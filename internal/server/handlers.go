@@ -19,6 +19,45 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// resolveSafePath resolves a user-provided path relative to a base directory,
+// ensuring the resolved path stays within the base directory to prevent path traversal.
+func resolveSafePath(basePath, userPath string) (string, error) {
+	if userPath == "" {
+		return "", errors.New("path is required")
+	}
+	// Clean the user path first
+	cleanPath := filepath.Clean(userPath)
+	// If path is absolute, check it's within base
+	if filepath.IsAbs(cleanPath) {
+		if basePath != "" {
+			absBase, err := filepath.Abs(basePath)
+			if err != nil {
+				return "", err
+			}
+			// Ensure the absolute path is within base directory
+			if !strings.HasPrefix(cleanPath, absBase) {
+				return "", errors.New("path must be within the assets directory")
+			}
+		}
+		return cleanPath, nil
+	}
+	// For relative paths, join with base and ensure it stays within
+	if basePath == "" {
+		return "", errors.New("relative paths require a base directory")
+	}
+	absBase, err := filepath.Abs(basePath)
+	if err != nil {
+		return "", err
+	}
+	resolved := filepath.Join(absBase, cleanPath)
+	resolved = filepath.Clean(resolved)
+	// Verify the resolved path is still within the base directory
+	if !strings.HasPrefix(resolved, absBase) {
+		return "", errors.New("path traversal detected")
+	}
+	return resolved, nil
+}
+
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 	type pingResponse struct {
 		Message string `json:"message"`
@@ -973,6 +1012,199 @@ func (s *Server) handleAdminUpdateNews(w http.ResponseWriter, r *http.Request) {
 	resp := AdminMessageResponse{
 		Message: "News configuration updated successfully",
 		Meta:    s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil || !s.authService.Enabled() {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
+		return
+	}
+	var payload RegisterPayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.languageFromPreferences(payload.Preferences), "InvalidRequest", err.Error())
+		return
+	}
+	lang := s.languageFromPreferences(payload.Preferences)
+	username := strings.TrimSpace(payload.RegisterRequest.Username)
+	password := strings.TrimSpace(payload.RegisterRequest.Password)
+	if username == "" || password == "" {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username and password are required")
+		return
+	}
+	if len(username) < 3 || len(username) > 50 {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username must be 3-50 characters")
+		return
+	}
+	if len(password) < 6 {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "password must be at least 6 characters")
+		return
+	}
+	// Check if username already exists
+	_, err := s.store.GetUserByUsername(r.Context(), username)
+	if err == nil {
+		s.writeError(w, http.StatusConflict, lang, "Conflict", "username already exists")
+		return
+	}
+	if err != store.ErrNotFound {
+		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+		return
+	}
+	// Hash password
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+		return
+	}
+	// Create user with "user" role (not admin)
+	userID, err := s.store.CreateUser(r.Context(), username, string(hash), "user")
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+		return
+	}
+	resp := RegisterResponseBody{Meta: s.meta()}
+	resp.RegisterResponse.UserID = userID
+	resp.RegisterResponse.Username = username
+	s.writeJSON(w, http.StatusCreated, resp)
+}
+
+func (s *Server) handleAdminScanPath(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	var payload AdminScanPathPayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	path := strings.TrimSpace(payload.Path)
+	// Resolve path securely to prevent path traversal
+	resolved, err := resolveSafePath(s.updateAssetsDir, path)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	// Check if path exists and is a directory
+	info, err := os.Stat(resolved)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "path does not exist: "+err.Error())
+		return
+	}
+	if !info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "path is not a directory")
+		return
+	}
+	// Scan the directory and compute checksums
+	entry := config.DownloadEntry{
+		Path:    resolved,
+		BaseURL: strings.TrimSpace(payload.BaseURL),
+		DownloadMeta: config.DownloadMeta{
+			HashAlgorithm:      "sha256",
+			SuggestMultiThread: false,
+		},
+	}
+	files := s.filesFromDirectory(resolved, entry, payload.IsCore)
+	resp := AdminScanPathResponse{
+		Files: files,
+		Count: len(files),
+		Meta:  s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminGenerateUpdates(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	var payload AdminScanPathPayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	path := strings.TrimSpace(payload.Path)
+	platform := strings.TrimSpace(payload.Platform)
+	arch := strings.TrimSpace(payload.Architecture)
+	if platform == "" || arch == "" {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "platform and architecture are required")
+		return
+	}
+	// Resolve path securely to prevent path traversal
+	resolved, err := resolveSafePath(s.updateAssetsDir, path)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	// Check if path exists
+	info, err := os.Stat(resolved)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "path does not exist: "+err.Error())
+		return
+	}
+	if !info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "path is not a directory")
+		return
+	}
+	// Scan directory
+	entry := config.DownloadEntry{
+		Path:    resolved,
+		BaseURL: strings.TrimSpace(payload.BaseURL),
+		DownloadMeta: config.DownloadMeta{
+			HashAlgorithm:      "sha256",
+			SuggestMultiThread: false,
+		},
+	}
+	files := s.filesFromDirectory(resolved, entry, payload.IsCore)
+	// Build download entries for config
+	downloadEntries := []config.DownloadEntry{{
+		Path:    path,
+		BaseURL: strings.TrimSpace(payload.BaseURL),
+		DownloadMeta: config.DownloadMeta{
+			HashAlgorithm:      "sha256",
+			SuggestMultiThread: false,
+		},
+	}}
+	// Update the in-memory config
+	s.updateConfigMu.Lock()
+	if s.updateConfig == nil {
+		s.updateConfig = &config.UpdateConfig{Platforms: map[string]config.PlatformUpdates{}}
+	}
+	if s.updateConfig.Platforms == nil {
+		s.updateConfig.Platforms = map[string]config.PlatformUpdates{}
+	}
+	platformCfg, exists := s.updateConfig.Platforms[platform]
+	if !exists {
+		platformCfg = config.PlatformUpdates{Architectures: map[string]config.ArchUpdates{}}
+	}
+	if platformCfg.Architectures == nil {
+		platformCfg.Architectures = map[string]config.ArchUpdates{}
+	}
+	archCfg := platformCfg.Architectures[arch]
+	if payload.IsCore {
+		archCfg.Latest.Core = downloadEntries
+	} else {
+		archCfg.Latest.Resource = downloadEntries
+	}
+	platformCfg.Architectures[arch] = archCfg
+	s.updateConfig.Platforms[platform] = platformCfg
+	s.updateConfigMu.Unlock()
+	// Clear directory cache
+	s.dirCacheMu.Lock()
+	s.dirCache = map[string]dirCacheEntry{}
+	s.dirCacheMu.Unlock()
+	// Save to file
+	if err := s.saveUpdatesConfig(); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	resp := AdminScanPathResponse{
+		Files: files,
+		Count: len(files),
+		Meta:  s.meta(),
 	}
 	s.writeJSON(w, http.StatusOK, resp)
 }

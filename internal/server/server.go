@@ -782,7 +782,7 @@ func (s *Server) saveNewsConfig(cfg *config.NewsConfig) error {
 }
 
 func saveJSONFile(path string, data interface{}) error {
-	file, err := os.Create(filepath.Clean(path))
+	file, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}

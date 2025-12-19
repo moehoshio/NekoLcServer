@@ -919,12 +919,13 @@ func (s *Server) handleAdminUpdateUpdates(w http.ResponseWriter, r *http.Request
 		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
 		return
 	}
-	// Update in-memory config
-	s.updateConfigMu.Lock()
-	s.updateConfig = &payload.Updates
+	// Update in-memory config - acquire locks in consistent order and release in reverse order
 	s.dirCacheMu.Lock()
 	s.dirCache = map[string]dirCacheEntry{}
 	s.dirCacheMu.Unlock()
+
+	s.updateConfigMu.Lock()
+	s.updateConfig = &payload.Updates
 	s.updateConfigMu.Unlock()
 	// Save to file
 	if err := s.saveUpdatesConfig(); err != nil {

@@ -236,3 +236,42 @@ type NewsResponseBody struct {
 	NewsResponse NewsResponsePayload `json:"newsResponse"`
 	Meta         Meta                `json:"meta"`
 }
+
+// AdminMaintenanceResponse returns maintenance configuration for admin UI.
+type AdminMaintenanceResponse struct {
+	Maintenance config.MaintenanceConfig `json:"maintenance"`
+	Meta        Meta                     `json:"meta"`
+}
+
+// AdminMaintenanceUpdatePayload is the request body for updating maintenance config.
+type AdminMaintenanceUpdatePayload struct {
+	Maintenance config.MaintenanceConfig `json:"maintenance"`
+}
+
+// AdminUpdatesResponse returns updates configuration for admin UI.
+type AdminUpdatesResponse struct {
+	Updates config.UpdateConfig `json:"updates"`
+	Meta    Meta                `json:"meta"`
+}
+
+// AdminUpdatesUpdatePayload is the request body for updating updates config.
+type AdminUpdatesUpdatePayload struct {
+	Updates config.UpdateConfig `json:"updates"`
+}
+
+// AdminNewsResponse returns news configuration for admin UI.
+type AdminNewsResponse struct {
+	News config.NewsConfig `json:"news"`
+	Meta Meta              `json:"meta"`
+}
+
+// AdminNewsUpdatePayload is the request body for updating news config.
+type AdminNewsUpdatePayload struct {
+	News config.NewsConfig `json:"news"`
+}
+
+// AdminMessageResponse is a simple message response for admin operations.
+type AdminMessageResponse struct {
+	Message string `json:"message"`
+	Meta    Meta   `json:"meta"`
+}

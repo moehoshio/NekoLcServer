@@ -125,6 +125,7 @@ func (s *Server) buildRouter() chi.Router {
 		router.Route("/v0/api", func(r chi.Router) {
 			r.Route("/auth", func(authRouter chi.Router) {
 				authRouter.Post("/login", s.handleLogin)
+				authRouter.Post("/register", s.handleRegister)
 				authRouter.Post("/refresh", s.handleRefresh)
 				authRouter.Post("/validate", s.handleValidate)
 				authRouter.Post("/logout", s.handleLogout)
@@ -144,6 +145,8 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Put("/updates", s.handleAdminUpdateUpdates)
 				adminRouter.Get("/news", s.handleAdminGetNews)
 				adminRouter.Put("/news", s.handleAdminUpdateNews)
+				adminRouter.Post("/scanPath", s.handleAdminScanPath)
+				adminRouter.Post("/generateUpdates", s.handleAdminGenerateUpdates)
 			})
 		})
 
@@ -153,6 +156,7 @@ func (s *Server) buildRouter() chi.Router {
 		}
 
 		router.Get("/app/login", s.handleAppLogin)
+		router.Get("/app/register", s.handleAppRegister)
 		router.Get("/app/feedback", s.handleAppFeedback)
 		router.Get("/app/admin", s.handleAppAdmin)
 	}
@@ -394,10 +398,13 @@ const appLoginPage = `<!doctype html>
 		.card { background: #111827; padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
 		h1 { margin: 0 0 12px 0; font-size: 22px; }
 		label { display: block; margin-top: 12px; color: #cbd5e1; }
-		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; }
+		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
 		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
 		button:hover { filter: brightness(1.05); }
 		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
+		.link { text-align: center; margin-top: 16px; }
+		.link a { color: #22d3ee; text-decoration: none; }
+		.link a:hover { text-decoration: underline; }
 	</style>
 </head>
 <body>
@@ -409,6 +416,7 @@ const appLoginPage = `<!doctype html>
 		<input id="password" type="password" autocomplete="current-password" />
 		<button onclick="login()">Login</button>
 		<div class="error" id="error"></div>
+		<div class="link">Don't have an account? <a href="/app/register">Register</a></div>
 	</div>
 	<script>
 		async function login() {
@@ -427,7 +435,70 @@ const appLoginPage = `<!doctype html>
 			const data = await res.json();
 			localStorage.setItem('accessToken', data.loginResponse.accessToken);
 			localStorage.setItem('refreshToken', data.loginResponse.refreshToken);
-			window.location.href = '/app/feedback';
+			window.location.href = '/app/admin';
+		}
+	</script>
+</body>
+</html>`
+
+const appRegisterPage = `<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>NekoLc Register</title>
+	<style>
+		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+		.card { background: #111827; padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
+		h1 { margin: 0 0 12px 0; font-size: 22px; }
+		label { display: block; margin-top: 12px; color: #cbd5e1; }
+		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
+		button:hover { filter: brightness(1.05); }
+		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
+		.success { color: #34d399; margin-top: 10px; min-height: 20px; }
+		.link { text-align: center; margin-top: 16px; }
+		.link a { color: #22d3ee; text-decoration: none; }
+		.link a:hover { text-decoration: underline; }
+	</style>
+</head>
+<body>
+	<div class="card">
+		<h1>Create Account</h1>
+		<label>Username</label>
+		<input id="username" autocomplete="username" placeholder="3-50 characters" />
+		<label>Password</label>
+		<input id="password" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
+		<label>Confirm Password</label>
+		<input id="confirmPassword" type="password" autocomplete="new-password" />
+		<button onclick="register()">Register</button>
+		<div class="error" id="error"></div>
+		<div class="success" id="success"></div>
+		<div class="link">Already have an account? <a href="/app/login">Sign in</a></div>
+	</div>
+	<script>
+		async function register() {
+			const username = document.getElementById('username').value.trim();
+			const password = document.getElementById('password').value;
+			const confirmPassword = document.getElementById('confirmPassword').value;
+			document.getElementById('error').innerText = '';
+			document.getElementById('success').innerText = '';
+			if (password !== confirmPassword) {
+				document.getElementById('error').innerText = 'Passwords do not match';
+				return;
+			}
+			const res = await fetch('/v0/api/auth/register', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ registerRequest: { username, password } })
+			});
+			if (!res.ok) {
+				const data = await res.json().catch(()=>({}));
+				document.getElementById('error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Registration failed';
+				return;
+			}
+			document.getElementById('success').innerText = 'Account created! Redirecting to login...';
+			setTimeout(() => { window.location.href = '/app/login'; }, 1500);
 		}
 	</script>
 </body>
@@ -480,6 +551,11 @@ const appFeedbackPage = `<!doctype html>
 func (s *Server) handleAppLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(appLoginPage))
+}
+
+func (s *Server) handleAppRegister(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(appRegisterPage))
 }
 
 func (s *Server) handleAppFeedback(w http.ResponseWriter, r *http.Request) {
@@ -918,8 +994,52 @@ const appAdminPage = `<!doctype html>
 			<!-- Updates Section -->
 			<div id="section-updates" class="section hidden">
 				<div class="card">
+					<h2>Auto-Generate from Directory</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Scan a directory to automatically generate update files with checksums.</p>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="scan-path">Directory Path</label>
+							<input type="text" id="scan-path" placeholder="./updates/windows-x64" />
+						</div>
+						<div class="form-group">
+							<label for="scan-baseurl">Base URL</label>
+							<input type="text" id="scan-baseurl" placeholder="https://example.com/updates/" />
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="scan-platform">Platform</label>
+							<select id="scan-platform">
+								<option value="windows">Windows</option>
+								<option value="linux">Linux</option>
+								<option value="macos">macOS</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="scan-arch">Architecture</label>
+							<select id="scan-arch">
+								<option value="x64">x64</option>
+								<option value="arm64">ARM64</option>
+								<option value="x86">x86</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="scan-type">Type</label>
+							<select id="scan-type">
+								<option value="core">Core</option>
+								<option value="resource">Resource</option>
+							</select>
+						</div>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="generateUpdates()">Generate & Save</button>
+						<button class="btn btn-secondary" onclick="scanPath()">Scan Only</button>
+					</div>
+					<div id="scan-results" style="margin-top: 16px;"></div>
+				</div>
+				<div class="card">
 					<h2>Updates Configuration</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Configure update packages for each platform and architecture.</p>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Current update packages for each platform and architecture.</p>
 					<div id="updates-content">
 						<div class="loading">Loading updates configuration...</div>
 					</div>
@@ -1113,6 +1233,61 @@ const appAdminPage = `<!doctype html>
 			} else {
 				showMessage('Failed to save updates configuration', true);
 			}
+		}
+		
+		async function scanPath() {
+			const path = document.getElementById('scan-path').value.trim();
+			const baseUrl = document.getElementById('scan-baseurl').value.trim();
+			const isCore = document.getElementById('scan-type').value === 'core';
+			if (!path) {
+				showMessage('Please enter a directory path', true);
+				return;
+			}
+			const res = await apiRequest('POST', '/v0/api/admin/scanPath', { path, baseUrl, isCore });
+			if (!res) return;
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Scan failed', true);
+				return;
+			}
+			const data = await res.json();
+			const container = document.getElementById('scan-results');
+			if (!data.files || data.files.length === 0) {
+				container.innerHTML = '<p style="color:#94a3b8;">No files found in directory.</p>';
+				return;
+			}
+			let html = '<p style="color:#22d3ee;">Found ' + data.count + ' file(s):</p>';
+			html += '<div style="max-height:200px;overflow-y:auto;background:#0f172a;padding:12px;border-radius:8px;font-family:monospace;font-size:12px;">';
+			data.files.forEach(f => {
+				html += '<div style="margin-bottom:4px;">' + f.fileName + ' <span style="color:#94a3b8;">(' + f.checksum.substring(0,16) + '...)</span></div>';
+			});
+			html += '</div>';
+			container.innerHTML = html;
+			showMessage('Scan complete: ' + data.count + ' files found');
+		}
+		
+		async function generateUpdates() {
+			const path = document.getElementById('scan-path').value.trim();
+			const baseUrl = document.getElementById('scan-baseurl').value.trim();
+			const platform = document.getElementById('scan-platform').value;
+			const architecture = document.getElementById('scan-arch').value;
+			const isCore = document.getElementById('scan-type').value === 'core';
+			if (!path) {
+				showMessage('Please enter a directory path', true);
+				return;
+			}
+			const res = await apiRequest('POST', '/v0/api/admin/generateUpdates', { path, baseUrl, platform, architecture, isCore });
+			if (!res) return;
+			if (!res.ok) {
+				const data = await res.json().catch(() => ({}));
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Generate failed', true);
+				return;
+			}
+			const data = await res.json();
+			showMessage('Generated update config with ' + data.count + ' files for ' + platform + '/' + architecture);
+			// Reload updates to show new config
+			updatesData = null;
+			loadUpdates();
 		}
 		
 		// News functions

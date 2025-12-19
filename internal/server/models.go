@@ -275,3 +275,37 @@ type AdminMessageResponse struct {
 	Message string `json:"message"`
 	Meta    Meta   `json:"meta"`
 }
+
+// RegisterPayload models the registration request body.
+type RegisterPayload struct {
+	RegisterRequest struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"registerRequest"`
+	Preferences *Preferences `json:"preferences"`
+}
+
+// RegisterResponseBody wraps registration response payloads with meta.
+type RegisterResponseBody struct {
+	RegisterResponse struct {
+		UserID   int64  `json:"userId"`
+		Username string `json:"username"`
+	} `json:"registerResponse"`
+	Meta Meta `json:"meta"`
+}
+
+// AdminScanPathPayload is the request body for scanning a directory to generate update config.
+type AdminScanPathPayload struct {
+	Path         string `json:"path"`
+	Platform     string `json:"platform"`
+	Architecture string `json:"architecture"`
+	BaseURL      string `json:"baseUrl"`
+	IsCore       bool   `json:"isCore"`
+}
+
+// AdminScanPathResponse returns the generated update files from scanning.
+type AdminScanPathResponse struct {
+	Files []UpdateFileResponse `json:"files"`
+	Count int                  `json:"count"`
+	Meta  Meta                 `json:"meta"`
+}

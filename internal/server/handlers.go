@@ -1016,63 +1016,6 @@ func (s *Server) handleAdminUpdateNews(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if s.authService == nil || !s.authService.Enabled() {
-		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
-		return
-	}
-	if s.store == nil {
-		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
-		return
-	}
-	var payload RegisterPayload
-	if err := s.decode(r, &payload); err != nil {
-		s.writeError(w, http.StatusBadRequest, s.languageFromPreferences(payload.Preferences), "InvalidRequest", err.Error())
-		return
-	}
-	lang := s.languageFromPreferences(payload.Preferences)
-	username := strings.TrimSpace(payload.RegisterRequest.Username)
-	password := strings.TrimSpace(payload.RegisterRequest.Password)
-	if username == "" || password == "" {
-		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username and password are required")
-		return
-	}
-	if len(username) < 3 || len(username) > 50 {
-		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username must be 3-50 characters")
-		return
-	}
-	if len(password) < 6 {
-		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "password must be at least 6 characters")
-		return
-	}
-	// Check if username already exists
-	_, err := s.store.GetUserByUsername(r.Context(), username)
-	if err == nil {
-		s.writeError(w, http.StatusConflict, lang, "Conflict", "username already exists")
-		return
-	}
-	if err != store.ErrNotFound {
-		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
-		return
-	}
-	// Hash password
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
-		return
-	}
-	// Create user with "user" role (not admin)
-	userID, err := s.store.CreateUser(r.Context(), username, string(hash), "user")
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
-		return
-	}
-	resp := RegisterResponseBody{Meta: s.meta()}
-	resp.RegisterResponse.UserID = userID
-	resp.RegisterResponse.Username = username
-	s.writeJSON(w, http.StatusCreated, resp)
-}
-
 func (s *Server) handleAdminScanPath(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.requireAdmin(w, r); err != nil {
 		return

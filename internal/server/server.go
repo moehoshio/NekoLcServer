@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/moehoshio/NekoLcServer/internal/auth"
 	"github.com/moehoshio/NekoLcServer/internal/config"
@@ -125,7 +126,6 @@ func (s *Server) buildRouter() chi.Router {
 		router.Route("/v0/api", func(r chi.Router) {
 			r.Route("/auth", func(authRouter chi.Router) {
 				authRouter.Post("/login", s.handleLogin)
-				authRouter.Post("/register", s.handleRegister)
 				authRouter.Post("/refresh", s.handleRefresh)
 				authRouter.Post("/validate", s.handleValidate)
 				authRouter.Post("/logout", s.handleLogout)
@@ -157,6 +157,7 @@ func (s *Server) buildRouter() chi.Router {
 
 		router.Get("/app/login", s.handleAppLogin)
 		router.Get("/app/register", s.handleAppRegister)
+		router.Post("/app/register", s.handleAppRegisterSubmit)
 		router.Get("/app/feedback", s.handleAppFeedback)
 		router.Get("/app/admin", s.handleAppAdmin)
 	}
@@ -487,7 +488,7 @@ const appRegisterPage = `<!doctype html>
 				document.getElementById('error').innerText = 'Passwords do not match';
 				return;
 			}
-			const res = await fetch('/v0/api/auth/register', {
+			const res = await fetch('/app/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ registerRequest: { username, password } })
@@ -556,6 +557,63 @@ func (s *Server) handleAppLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAppRegister(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(appRegisterPage))
+}
+
+func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil || !s.authService.Enabled() {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
+		return
+	}
+	var payload RegisterPayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.languageFromPreferences(payload.Preferences), "InvalidRequest", err.Error())
+		return
+	}
+	lang := s.languageFromPreferences(payload.Preferences)
+	username := strings.TrimSpace(payload.RegisterRequest.Username)
+	password := strings.TrimSpace(payload.RegisterRequest.Password)
+	if username == "" || password == "" {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username and password are required")
+		return
+	}
+	if len(username) < 3 || len(username) > 50 {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username must be 3-50 characters")
+		return
+	}
+	if len(password) < 6 {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "password must be at least 6 characters")
+		return
+	}
+	// Check if username already exists
+	_, err := s.store.GetUserByUsername(r.Context(), username)
+	if err == nil {
+		s.writeError(w, http.StatusConflict, lang, "Conflict", "username already exists")
+		return
+	}
+	if err != store.ErrNotFound {
+		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+		return
+	}
+	// Hash password
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+		return
+	}
+	// Create user with "user" role (not admin)
+	userID, err := s.store.CreateUser(r.Context(), username, string(hash), "user")
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+		return
+	}
+	resp := RegisterResponseBody{Meta: s.meta()}
+	resp.RegisterResponse.UserID = userID
+	resp.RegisterResponse.Username = username
+	s.writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handleAppFeedback(w http.ResponseWriter, r *http.Request) {

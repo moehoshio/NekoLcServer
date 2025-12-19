@@ -85,6 +85,7 @@ type SecurityConfig struct {
 	LoginURL                   string `json:"loginUrl"`
 	LogoutURL                  string `json:"logoutUrl"`
 	RefreshURL                 string `json:"refreshUrl"`
+	RegisterURL                string `json:"registerUrl,omitempty"`
 }
 
 // MaintenanceConfig reflects maintenance.json.

@@ -733,7 +733,7 @@ func TestRegisterSuccess(t *testing.T) {
 			"password": "password123",
 		},
 	}
-	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	rec := doRequest(t, srv, http.MethodPost, "/app/register", payload)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -758,12 +758,12 @@ func TestRegisterDuplicateUsername(t *testing.T) {
 			"password": "password123",
 		},
 	}
-	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	rec := doRequest(t, srv, http.MethodPost, "/app/register", payload)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 got %d: %s", rec.Code, rec.Body.String())
 	}
 	// Second registration with same username
-	rec = doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	rec = doRequest(t, srv, http.MethodPost, "/app/register", payload)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409 got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -781,7 +781,7 @@ func TestRegisterValidation(t *testing.T) {
 			"password": "password123",
 		},
 	}
-	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	rec := doRequest(t, srv, http.MethodPost, "/app/register", payload)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -792,7 +792,7 @@ func TestRegisterValidation(t *testing.T) {
 			"password": "12345",
 		},
 	}
-	rec = doRequest(t, srv, http.MethodPost, "/v0/api/auth/register", payload)
+	rec = doRequest(t, srv, http.MethodPost, "/app/register", payload)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 got %d: %s", rec.Code, rec.Body.String())
 	}

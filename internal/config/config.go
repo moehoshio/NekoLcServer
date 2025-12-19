@@ -79,13 +79,18 @@ type WebSocketConfig struct {
 
 // SecurityConfig mirrors the security section of launcher.json.
 type SecurityConfig struct {
-	EnableAuthentication       bool   `json:"enableAuthentication"`
-	TokenExpirationSec         int    `json:"tokenExpirationSec"`
-	RefreshTokenExpirationDays int    `json:"refreshTokenExpirationDays"`
-	LoginURL                   string `json:"loginUrl"`
-	LogoutURL                  string `json:"logoutUrl"`
-	RefreshURL                 string `json:"refreshUrl"`
-	RegisterURL                string `json:"registerUrl,omitempty"`
+	EnableAuthentication       bool             `json:"enableAuthentication"`
+	TokenExpirationSec         int              `json:"tokenExpirationSec"`
+	RefreshTokenExpirationDays int              `json:"refreshTokenExpirationDays"`
+	LoginURL                   string           `json:"loginUrl"`
+	LogoutURL                  string           `json:"logoutUrl"`
+	RefreshURL                 string           `json:"refreshUrl"`
+	UI                         SecurityUIConfig `json:"ui,omitempty"`
+}
+
+// SecurityUIConfig contains URLs for visual/UI pages related to authentication.
+type SecurityUIConfig struct {
+	RegisterURL string `json:"registerUrl,omitempty"`
 }
 
 // MaintenanceConfig reflects maintenance.json.

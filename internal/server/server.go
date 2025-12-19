@@ -403,9 +403,6 @@ const appLoginPage = `<!doctype html>
 		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
 		button:hover { filter: brightness(1.05); }
 		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
-		.link { text-align: center; margin-top: 16px; }
-		.link a { color: #22d3ee; text-decoration: none; }
-		.link a:hover { text-decoration: underline; }
 	</style>
 </head>
 <body>
@@ -417,7 +414,6 @@ const appLoginPage = `<!doctype html>
 		<input id="password" type="password" autocomplete="current-password" />
 		<button onclick="login()">Login</button>
 		<div class="error" id="error"></div>
-		<div class="link">Don't have an account? <a href="/app/register">Register</a></div>
 	</div>
 	<script>
 		async function login() {

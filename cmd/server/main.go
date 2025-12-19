@@ -54,12 +54,14 @@ func main() {
 		log.Fatalf("load launcher config: %v", err)
 	}
 
-	maintenanceCfg, err := config.LoadMaintenance(resolve(appCfg.Maintenance.ConfigPath))
+	maintenanceConfigPath := resolve(appCfg.Maintenance.ConfigPath)
+	maintenanceCfg, err := config.LoadMaintenance(maintenanceConfigPath)
 	if err != nil {
 		log.Fatalf("load maintenance config: %v", err)
 	}
 
-	newsCfg, err := config.LoadNews(resolve(appCfg.News.ConfigPath))
+	newsConfigPath := resolve(appCfg.News.ConfigPath)
+	newsCfg, err := config.LoadNews(newsConfigPath)
 	if err != nil {
 		log.Fatalf("load news config: %v", err)
 	}
@@ -94,7 +96,7 @@ func main() {
 	feedbackPath := filepath.Join(baseDir, "logs", "feedback.log")
 	updateAssetsDir := filepath.Dir(updateConfigPath)
 
-	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, newsCfg, updateCfg, updateConfigPath, updateAssetsDir, localizer, authSvc, st, feedbackPath)
+	srv, err := server.New(appCfg, launcherCfg, maintenanceCfg, maintenanceConfigPath, newsCfg, newsConfigPath, updateCfg, updateConfigPath, updateAssetsDir, localizer, authSvc, st, feedbackPath)
 	if err != nil {
 		log.Fatalf("bootstrap server: %v", err)
 	}

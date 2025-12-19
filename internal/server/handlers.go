@@ -854,3 +854,124 @@ func (s *Server) handleFeedbackLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeJSON(w, http.StatusOK, resp)
 }
+
+// Admin handlers for configuration management
+
+func (s *Server) handleAdminGetMaintenance(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	cfg := s.maintenanceConfig
+	if cfg == nil {
+		cfg = &config.MaintenanceConfig{}
+	}
+	resp := AdminMaintenanceResponse{
+		Maintenance: *cfg,
+		Meta:        s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminUpdateMaintenance(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	var payload AdminMaintenanceUpdatePayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	// Update in-memory config
+	s.maintenanceConfig = &payload.Maintenance
+	// Save to file
+	if err := s.saveMaintenanceConfig(); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	resp := AdminMessageResponse{
+		Message: "Maintenance configuration updated successfully",
+		Meta:    s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminGetUpdates(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	cfg := s.currentUpdateConfig()
+	if cfg == nil {
+		cfg = &config.UpdateConfig{Platforms: map[string]config.PlatformUpdates{}}
+	}
+	resp := AdminUpdatesResponse{
+		Updates: *cfg,
+		Meta:    s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminUpdateUpdates(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	var payload AdminUpdatesUpdatePayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	// Update in-memory config
+	s.updateConfigMu.Lock()
+	s.updateConfig = &payload.Updates
+	s.dirCacheMu.Lock()
+	s.dirCache = map[string]dirCacheEntry{}
+	s.dirCacheMu.Unlock()
+	s.updateConfigMu.Unlock()
+	// Save to file
+	if err := s.saveUpdatesConfig(); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	resp := AdminMessageResponse{
+		Message: "Updates configuration updated successfully",
+		Meta:    s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminGetNews(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	items := s.newsItems
+	if items == nil {
+		items = []config.NewsItem{}
+	}
+	resp := AdminNewsResponse{
+		News: config.NewsConfig{Items: items},
+		Meta: s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminUpdateNews(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	var payload AdminNewsUpdatePayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	// Update in-memory config
+	s.newsItems = normalizeNewsItems(&payload.News)
+	// Save to file
+	if err := s.saveNewsConfig(&payload.News); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	resp := AdminMessageResponse{
+		Message: "News configuration updated successfully",
+		Meta:    s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}

@@ -32,23 +32,25 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 
 // Server wires configuration, localization, and handlers together.
 type Server struct {
-	appConfig         *config.AppConfig
-	router            chi.Router
-	launcherConfig    *config.LauncherConfig
-	maintenanceConfig *config.MaintenanceConfig
-	newsItems         []config.NewsItem
-	updateConfig      *config.UpdateConfig
-	updateConfigPath  string
-	updateAssetsDir   string
-	localizer         *localization.Localizer
-	authService       *auth.Service
-	store             store.Store
-	feedbackLogPath   string
-	debug             bool
-	basePath          string
-	dirCacheMu        sync.RWMutex
-	dirCache          map[string]dirCacheEntry
-	updateConfigMu    sync.RWMutex
+	appConfig             *config.AppConfig
+	router                chi.Router
+	launcherConfig        *config.LauncherConfig
+	maintenanceConfig     *config.MaintenanceConfig
+	maintenanceConfigPath string
+	newsItems             []config.NewsItem
+	newsConfigPath        string
+	updateConfig          *config.UpdateConfig
+	updateConfigPath      string
+	updateAssetsDir       string
+	localizer             *localization.Localizer
+	authService           *auth.Service
+	store                 store.Store
+	feedbackLogPath       string
+	debug                 bool
+	basePath              string
+	dirCacheMu            sync.RWMutex
+	dirCache              map[string]dirCacheEntry
+	updateConfigMu        sync.RWMutex
 }
 
 type dirCacheEntry struct {
@@ -64,7 +66,9 @@ func New(
 	appCfg *config.AppConfig,
 	launcherCfg *config.LauncherConfig,
 	maintenanceCfg *config.MaintenanceConfig,
+	maintenanceCfgPath string,
 	newsCfg *config.NewsConfig,
+	newsCfgPath string,
 	updateCfg *config.UpdateConfig,
 	updateCfgPath string,
 	updateAssetsDir string,
@@ -80,20 +84,22 @@ func New(
 		return nil, fmt.Errorf("create feedback directory: %w", err)
 	}
 	srv := &Server{
-		appConfig:         appCfg,
-		launcherConfig:    launcherCfg,
-		maintenanceConfig: maintenanceCfg,
-		newsItems:         normalizeNewsItems(newsCfg),
-		updateConfig:      updateCfg,
-		updateConfigPath:  updateCfgPath,
-		updateAssetsDir:   updateAssetsDir,
-		localizer:         localizer,
-		authService:       authSvc,
-		store:             store,
-		feedbackLogPath:   feedbackPath,
-		debug:             appCfg.Debug.Enabled,
-		basePath:          normalizeBasePath(appCfg.Server.BasePath),
-		dirCache:          map[string]dirCacheEntry{},
+		appConfig:             appCfg,
+		launcherConfig:        launcherCfg,
+		maintenanceConfig:     maintenanceCfg,
+		maintenanceConfigPath: maintenanceCfgPath,
+		newsItems:             normalizeNewsItems(newsCfg),
+		newsConfigPath:        newsCfgPath,
+		updateConfig:          updateCfg,
+		updateConfigPath:      updateCfgPath,
+		updateAssetsDir:       updateAssetsDir,
+		localizer:             localizer,
+		authService:           authSvc,
+		store:                 store,
+		feedbackLogPath:       feedbackPath,
+		debug:                 appCfg.Debug.Enabled,
+		basePath:              normalizeBasePath(appCfg.Server.BasePath),
+		dirCache:              map[string]dirCacheEntry{},
 	}
 	srv.router = srv.buildRouter()
 	srv.startUpdateReloader()
@@ -129,6 +135,16 @@ func (s *Server) buildRouter() chi.Router {
 			r.Post("/news", s.handleNews)
 			r.Post("/feedbackLog", s.handleFeedbackLog)
 			r.Get("/feedbackLogs", s.handleFeedbackLogs)
+
+			// Admin API routes for configuration management
+			r.Route("/admin", func(adminRouter chi.Router) {
+				adminRouter.Get("/maintenance", s.handleAdminGetMaintenance)
+				adminRouter.Put("/maintenance", s.handleAdminUpdateMaintenance)
+				adminRouter.Get("/updates", s.handleAdminGetUpdates)
+				adminRouter.Put("/updates", s.handleAdminUpdateUpdates)
+				adminRouter.Get("/news", s.handleAdminGetNews)
+				adminRouter.Put("/news", s.handleAdminUpdateNews)
+			})
 		})
 
 		if s.debug {
@@ -138,6 +154,7 @@ func (s *Server) buildRouter() chi.Router {
 
 		router.Get("/app/login", s.handleAppLogin)
 		router.Get("/app/feedback", s.handleAppFeedback)
+		router.Get("/app/admin", s.handleAppAdmin)
 	}
 
 	if s.basePath == "" {
@@ -735,4 +752,475 @@ func modTimeSafe(path string) time.Time {
 		return time.Time{}
 	}
 	return info.ModTime()
+}
+
+// saveMaintenanceConfig writes the current maintenance configuration to its file.
+func (s *Server) saveMaintenanceConfig() error {
+	if s.maintenanceConfigPath == "" {
+		return errors.New("maintenance config path not set")
+	}
+	return saveJSONFile(s.maintenanceConfigPath, s.maintenanceConfig)
+}
+
+// saveUpdatesConfig writes the current updates configuration to its file.
+func (s *Server) saveUpdatesConfig() error {
+	if s.updateConfigPath == "" {
+		return errors.New("updates config path not set")
+	}
+	s.updateConfigMu.RLock()
+	cfg := s.updateConfig
+	s.updateConfigMu.RUnlock()
+	return saveJSONFile(s.updateConfigPath, cfg)
+}
+
+// saveNewsConfig writes the news configuration to its file.
+func (s *Server) saveNewsConfig(cfg *config.NewsConfig) error {
+	if s.newsConfigPath == "" {
+		return errors.New("news config path not set")
+	}
+	return saveJSONFile(s.newsConfigPath, cfg)
+}
+
+func saveJSONFile(path string, data interface{}) error {
+	file, err := os.Create(filepath.Clean(path))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(data)
+}
+
+const appAdminPage = `<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>NekoLc Admin Dashboard</title>
+	<style>
+		* { box-sizing: border-box; }
+		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; min-height: 100vh; }
+		.header { background: #111827; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1f2937; }
+		.header h1 { margin: 0; font-size: 20px; }
+		.header .user { display: flex; align-items: center; gap: 12px; }
+		.header button { background: #374151; border: none; padding: 8px 16px; border-radius: 6px; color: #e2e8f0; cursor: pointer; }
+		.header button:hover { background: #4b5563; }
+		.container { display: flex; min-height: calc(100vh - 60px); }
+		.sidebar { width: 220px; background: #111827; padding: 16px; border-right: 1px solid #1f2937; }
+		.sidebar button { width: 100%; text-align: left; padding: 12px 16px; margin-bottom: 8px; background: transparent; border: none; border-radius: 8px; color: #cbd5e1; cursor: pointer; font-size: 14px; }
+		.sidebar button:hover, .sidebar button.active { background: #1f2937; color: #f8fafc; }
+		.main { flex: 1; padding: 24px; overflow-y: auto; }
+		.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #1f2937; }
+		.card h2 { margin: 0 0 16px 0; font-size: 18px; color: #f8fafc; }
+		.form-group { margin-bottom: 16px; }
+		.form-group label { display: block; margin-bottom: 6px; color: #94a3b8; font-size: 14px; }
+		.form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: #e2e8f0; font-size: 14px; }
+		.form-group input:focus, .form-group textarea:focus { outline: none; border-color: #818cf8; }
+		.form-group textarea { resize: vertical; min-height: 80px; font-family: "Cascadia Code", Consolas, monospace; }
+		.form-row { display: flex; gap: 16px; }
+		.form-row .form-group { flex: 1; }
+		.toggle { display: flex; align-items: center; gap: 12px; }
+		.toggle input[type="checkbox"] { width: 44px; height: 24px; appearance: none; background: #374151; border-radius: 12px; position: relative; cursor: pointer; transition: background 0.2s; }
+		.toggle input[type="checkbox"]:checked { background: #22d3ee; }
+		.toggle input[type="checkbox"]::before { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #f8fafc; border-radius: 50%; transition: transform 0.2s; }
+		.toggle input[type="checkbox"]:checked::before { transform: translateX(20px); }
+		.btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
+		.btn-primary:hover { filter: brightness(1.1); }
+		.btn-secondary { background: #374151; color: #e2e8f0; }
+		.btn-secondary:hover { background: #4b5563; }
+		.btn-danger { background: #dc2626; color: #fff; }
+		.btn-danger:hover { background: #ef4444; }
+		.actions { display: flex; gap: 12px; margin-top: 16px; }
+		.message { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+		.message.success { background: #065f46; color: #a7f3d0; }
+		.message.error { background: #7f1d1d; color: #fca5a5; }
+		.hidden { display: none; }
+		.news-item { background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+		.news-item .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+		.news-item h3 { margin: 0; font-size: 16px; }
+		.platform-section { background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+		.platform-section h3 { margin: 0 0 12px 0; font-size: 16px; }
+		.arch-item { background: #0f172a; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
+		.arch-item h4 { margin: 0 0 8px 0; font-size: 14px; color: #94a3b8; }
+		.loading { display: flex; align-items: center; justify-content: center; padding: 40px; color: #94a3b8; }
+		.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+		.tabs button { padding: 8px 16px; background: transparent; border: 1px solid #374151; border-radius: 6px; color: #cbd5e1; cursor: pointer; }
+		.tabs button.active { background: #374151; color: #f8fafc; }
+	</style>
+</head>
+<body>
+	<div class="header">
+		<h1>🐱 NekoLc Admin Dashboard</h1>
+		<div class="user">
+			<span id="username">Admin</span>
+			<button onclick="logout()">Logout</button>
+		</div>
+	</div>
+	<div class="container">
+		<div class="sidebar">
+			<button class="active" onclick="showSection('maintenance')">🔧 Maintenance</button>
+			<button onclick="showSection('updates')">📦 Updates</button>
+			<button onclick="showSection('news')">📰 News</button>
+			<button onclick="showSection('feedback')">💬 Feedback</button>
+		</div>
+		<div class="main">
+			<div id="message" class="message hidden"></div>
+			
+			<!-- Maintenance Section -->
+			<div id="section-maintenance" class="section">
+				<div class="card">
+					<h2>Maintenance Configuration</h2>
+					<div class="form-group toggle">
+						<input type="checkbox" id="maint-active" />
+						<label for="maint-active">Maintenance Active</label>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="maint-status">Status</label>
+							<select id="maint-status">
+								<option value="none">None</option>
+								<option value="scheduled">Scheduled</option>
+								<option value="progress">In Progress</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="maint-poster">Poster URL</label>
+							<input type="text" id="maint-poster" placeholder="https://..." />
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="maint-message">Message</label>
+						<textarea id="maint-message" rows="2"></textarea>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="maint-start">Start Time</label>
+							<input type="datetime-local" id="maint-start" />
+						</div>
+						<div class="form-group">
+							<label for="maint-end">Expected End Time</label>
+							<input type="datetime-local" id="maint-end" />
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="maint-link">Announcement Link</label>
+						<input type="text" id="maint-link" placeholder="https://..." />
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveMaintenance()">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadMaintenance()">Reload</button>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Updates Section -->
+			<div id="section-updates" class="section hidden">
+				<div class="card">
+					<h2>Updates Configuration</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Configure update packages for each platform and architecture.</p>
+					<div id="updates-content">
+						<div class="loading">Loading updates configuration...</div>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveUpdates()">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadUpdates()">Reload</button>
+					</div>
+				</div>
+			</div>
+			
+			<!-- News Section -->
+			<div id="section-news" class="section hidden">
+				<div class="card">
+					<h2>News Items</h2>
+					<div id="news-list"></div>
+					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addNewsItem()">+ Add News Item</button>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveNews()">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadNews()">Reload</button>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Feedback Section -->
+			<div id="section-feedback" class="section hidden">
+				<div class="card">
+					<h2>Feedback Logs</h2>
+					<div id="feedback-list">
+						<div class="loading">Loading feedback...</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	
+	<script>
+		let maintenanceData = null;
+		let updatesData = null;
+		let newsData = null;
+		
+		function getToken() {
+			return localStorage.getItem('accessToken');
+		}
+		
+		function checkAuth() {
+			if (!getToken()) {
+				window.location.href = '/app/login';
+			}
+		}
+		
+		function logout() {
+			localStorage.removeItem('accessToken');
+			localStorage.removeItem('refreshToken');
+			window.location.href = '/app/login';
+		}
+		
+		function showMessage(text, isError = false) {
+			const msg = document.getElementById('message');
+			msg.textContent = text;
+			msg.className = 'message ' + (isError ? 'error' : 'success');
+			setTimeout(() => { msg.className = 'message hidden'; }, 4000);
+		}
+		
+		function showSection(name) {
+			document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+			document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+			document.getElementById('section-' + name).classList.remove('hidden');
+			document.querySelector('.sidebar button[onclick*="' + name + '"]').classList.add('active');
+			
+			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
+			if (name === 'updates' && !updatesData) loadUpdates();
+			if (name === 'news' && !newsData) loadNews();
+			if (name === 'feedback') loadFeedback();
+		}
+		
+		async function apiRequest(method, path, body = null) {
+			const opts = {
+				method,
+				headers: { 'Authorization': 'Bearer ' + getToken() }
+			};
+			if (body) {
+				opts.headers['Content-Type'] = 'application/json';
+				opts.body = JSON.stringify(body);
+			}
+			const res = await fetch(path, opts);
+			if (res.status === 401 || res.status === 403) {
+				logout();
+				return null;
+			}
+			return res;
+		}
+		
+		// Maintenance functions
+		async function loadMaintenance() {
+			const res = await apiRequest('GET', '/v0/api/admin/maintenance');
+			if (!res) return;
+			const data = await res.json();
+			maintenanceData = data.maintenance;
+			
+			document.getElementById('maint-active').checked = maintenanceData.maintenanceActive || false;
+			const info = maintenanceData.maintenanceInfo || {};
+			document.getElementById('maint-status').value = info.status || 'none';
+			document.getElementById('maint-message').value = info.message || '';
+			document.getElementById('maint-poster').value = info.posterUrl || '';
+			document.getElementById('maint-link').value = info.link || '';
+			if (info.startTime) {
+				document.getElementById('maint-start').value = info.startTime.slice(0, 16);
+			}
+			if (info.exEndTime) {
+				document.getElementById('maint-end').value = info.exEndTime.slice(0, 16);
+			}
+		}
+		
+		async function saveMaintenance() {
+			const payload = {
+				maintenance: {
+					maintenanceActive: document.getElementById('maint-active').checked,
+					maintenanceInfo: {
+						status: document.getElementById('maint-status').value,
+						message: document.getElementById('maint-message').value,
+						startTime: document.getElementById('maint-start').value ? new Date(document.getElementById('maint-start').value).toISOString() : '',
+						exEndTime: document.getElementById('maint-end').value ? new Date(document.getElementById('maint-end').value).toISOString() : '',
+						posterUrl: document.getElementById('maint-poster').value,
+						link: document.getElementById('maint-link').value
+					},
+					platformSpecific: maintenanceData?.platformSpecific || {}
+				}
+			};
+			const res = await apiRequest('PUT', '/v0/api/admin/maintenance', payload);
+			if (res && res.ok) {
+				showMessage('Maintenance configuration saved successfully');
+			} else {
+				showMessage('Failed to save maintenance configuration', true);
+			}
+		}
+		
+		// Updates functions
+		async function loadUpdates() {
+			const res = await apiRequest('GET', '/v0/api/admin/updates');
+			if (!res) return;
+			const data = await res.json();
+			updatesData = data.updates;
+			renderUpdates();
+		}
+		
+		function renderUpdates() {
+			const container = document.getElementById('updates-content');
+			if (!updatesData || !updatesData.platforms) {
+				container.innerHTML = '<p style="color:#94a3b8;">No platforms configured.</p>';
+				return;
+			}
+			let html = '';
+			for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
+				html += '<div class="platform-section">';
+				html += '<h3>' + platform.charAt(0).toUpperCase() + platform.slice(1) + '</h3>';
+				if (pdata.architectures) {
+					for (const [arch, adata] of Object.entries(pdata.architectures)) {
+						html += '<div class="arch-item">';
+						html += '<h4>' + arch + '</h4>';
+						html += '<div class="form-row">';
+						html += '<div class="form-group"><label>Core Version</label>';
+						html += '<input type="text" id="upd-' + platform + '-' + arch + '-core" value="' + (adata.latest?.coreVersion || '') + '" /></div>';
+						html += '<div class="form-group"><label>Resource Version</label>';
+						html += '<input type="text" id="upd-' + platform + '-' + arch + '-res" value="' + (adata.latest?.resourceVersion || '') + '" /></div>';
+						html += '</div>';
+						html += '</div>';
+					}
+				}
+				html += '</div>';
+			}
+			container.innerHTML = html || '<p style="color:#94a3b8;">No platforms configured.</p>';
+		}
+		
+		async function saveUpdates() {
+			// Collect updated versions from inputs
+			if (updatesData && updatesData.platforms) {
+				for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
+					if (pdata.architectures) {
+						for (const [arch, adata] of Object.entries(pdata.architectures)) {
+							const coreInput = document.getElementById('upd-' + platform + '-' + arch + '-core');
+							const resInput = document.getElementById('upd-' + platform + '-' + arch + '-res');
+							if (coreInput && adata.latest) adata.latest.coreVersion = coreInput.value;
+							if (resInput && adata.latest) adata.latest.resourceVersion = resInput.value;
+						}
+					}
+				}
+			}
+			const res = await apiRequest('PUT', '/v0/api/admin/updates', { updates: updatesData });
+			if (res && res.ok) {
+				showMessage('Updates configuration saved successfully');
+			} else {
+				showMessage('Failed to save updates configuration', true);
+			}
+		}
+		
+		// News functions
+		async function loadNews() {
+			const res = await apiRequest('GET', '/v0/api/admin/news');
+			if (!res) return;
+			const data = await res.json();
+			newsData = data.news;
+			renderNews();
+		}
+		
+		function renderNews() {
+			const container = document.getElementById('news-list');
+			if (!newsData || !newsData.items || newsData.items.length === 0) {
+				container.innerHTML = '<p style="color:#94a3b8;">No news items.</p>';
+				return;
+			}
+			let html = '';
+			newsData.items.forEach((item, idx) => {
+				html += '<div class="news-item" id="news-item-' + idx + '">';
+				html += '<div class="header-row"><h3>' + (item.title || 'Untitled') + '</h3>';
+				html += '<button class="btn btn-danger" onclick="removeNewsItem(' + idx + ')">Remove</button></div>';
+				html += '<div class="form-row">';
+				html += '<div class="form-group"><label>ID</label><input type="text" value="' + (item.id || '') + '" onchange="updateNewsField(' + idx + ', \'id\', this.value)" /></div>';
+				html += '<div class="form-group"><label>Title</label><input type="text" value="' + (item.title || '') + '" onchange="updateNewsField(' + idx + ', \'title\', this.value)" /></div>';
+				html += '</div>';
+				html += '<div class="form-group"><label>Summary</label><textarea onchange="updateNewsField(' + idx + ', \'summary\', this.value)">' + (item.summary || '') + '</textarea></div>';
+				html += '<div class="form-row">';
+				html += '<div class="form-group"><label>Category</label><input type="text" value="' + (item.category || '') + '" onchange="updateNewsField(' + idx + ', \'category\', this.value)" /></div>';
+				html += '<div class="form-group"><label>Priority</label><input type="number" value="' + (item.priority || 0) + '" onchange="updateNewsField(' + idx + ', \'priority\', parseInt(this.value))" /></div>';
+				html += '</div>';
+				html += '<div class="form-group"><label>Link</label><input type="text" value="' + (item.link || '') + '" onchange="updateNewsField(' + idx + ', \'link\', this.value)" /></div>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+		
+		function updateNewsField(idx, field, value) {
+			if (newsData && newsData.items && newsData.items[idx]) {
+				newsData.items[idx][field] = value;
+			}
+		}
+		
+		function addNewsItem() {
+			if (!newsData) newsData = { items: [] };
+			if (!newsData.items) newsData.items = [];
+			newsData.items.push({
+				id: 'news-' + Date.now(),
+				title: 'New Item',
+				summary: '',
+				content: '',
+				posterUrl: '',
+				link: '',
+				publishTime: new Date().toISOString(),
+				category: 'general',
+				tags: [],
+				priority: 0
+			});
+			renderNews();
+		}
+		
+		function removeNewsItem(idx) {
+			if (newsData && newsData.items) {
+				newsData.items.splice(idx, 1);
+				renderNews();
+			}
+		}
+		
+		async function saveNews() {
+			const res = await apiRequest('PUT', '/v0/api/admin/news', { news: newsData });
+			if (res && res.ok) {
+				showMessage('News configuration saved successfully');
+			} else {
+				showMessage('Failed to save news configuration', true);
+			}
+		}
+		
+		// Feedback functions
+		async function loadFeedback() {
+			const res = await apiRequest('GET', '/v0/api/feedbackLogs?limit=50');
+			if (!res) return;
+			const data = await res.json();
+			const container = document.getElementById('feedback-list');
+			if (!data.feedbackLogs || data.feedbackLogs.length === 0) {
+				container.innerHTML = '<p style="color:#94a3b8;">No feedback entries.</p>';
+				return;
+			}
+			let html = '<table style="width:100%;border-collapse:collapse;">';
+			html += '<thead><tr style="border-bottom:1px solid #374151;"><th style="text-align:left;padding:8px;">Time</th><th style="text-align:left;padding:8px;">Content</th></tr></thead>';
+			html += '<tbody>';
+			data.feedbackLogs.forEach(item => {
+				html += '<tr style="border-bottom:1px solid #1f2937;">';
+				html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;">' + (item.receivedAt || '') + '</td>';
+				html += '<td style="padding:8px;white-space:pre-wrap;">' + (item.content || '') + '</td>';
+				html += '</tr>';
+			});
+			html += '</tbody></table>';
+			container.innerHTML = html;
+		}
+		
+		// Initialize
+		checkAuth();
+		loadMaintenance();
+	</script>
+</body>
+</html>`
+
+func (s *Server) handleAppAdmin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(appAdminPage))
 }

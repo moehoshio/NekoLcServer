@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/moehoshio/NekoLcServer/internal/auth"
 	"github.com/moehoshio/NekoLcServer/internal/config"
@@ -49,11 +52,13 @@ func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mu
 	if err != nil {
 		t.Fatalf("load launcher: %v", err)
 	}
-	maintenanceCfg, err := config.LoadMaintenance(resolve(appCfg.Maintenance.ConfigPath))
+	maintenancePath := resolve(appCfg.Maintenance.ConfigPath)
+	maintenanceCfg, err := config.LoadMaintenance(maintenancePath)
 	if err != nil {
 		t.Fatalf("load maintenance: %v", err)
 	}
-	newsCfg, err := config.LoadNews(resolve(appCfg.News.ConfigPath))
+	newsPath := resolve(appCfg.News.ConfigPath)
+	newsCfg, err := config.LoadNews(newsPath)
 	if err != nil {
 		t.Fatalf("load news: %v", err)
 	}
@@ -70,7 +75,10 @@ func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mu
 	authService := auth.NewService(appCfg, memStore)
 	feedbackPath := filepath.Join(t.TempDir(), "feedback.log")
 	updateDir := filepath.Dir(updatePath)
-	srv, err := New(appCfg, launcherCfg, maintenanceCfg, newsCfg, updateCfg, updatePath, updateDir, localizer, authService, memStore, feedbackPath)
+	// Use temp paths for maintenance and news in tests to avoid modifying real config files
+	testMaintPath := filepath.Join(t.TempDir(), "maintenance.json")
+	testNewsPath := filepath.Join(t.TempDir(), "news.json")
+	srv, err := New(appCfg, launcherCfg, maintenanceCfg, testMaintPath, newsCfg, testNewsPath, updateCfg, updatePath, updateDir, localizer, authService, memStore, feedbackPath)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -496,4 +504,209 @@ func makeSignature(identifier string, timestamp int64, secret string) string {
 	payload := fmt.Sprintf("%s:%d:%s", identifier, timestamp, secret)
 	sum := sha256.Sum256([]byte(payload))
 	return base64.StdEncoding.EncodeToString(sum[:])
+}
+
+func doAuthRequest(t *testing.T, srv *Server, method, path string, payload interface{}, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	var body *bytes.Reader
+	if payload != nil {
+		body = bytes.NewReader(mustJSON(t, payload))
+	} else {
+		body = bytes.NewReader(nil)
+	}
+	req := httptest.NewRequest(method, path, body)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+	return rec
+}
+
+func loginAsAdmin(t *testing.T, srv *Server) string {
+	t.Helper()
+	// Create an admin user in memory store
+	memStore := srv.store
+	if memStore == nil {
+		t.Fatalf("store is nil")
+	}
+	// Use bcrypt to hash password
+	password := "adminpass123"
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	_, err = memStore.CreateUser(context.Background(), "testadmin", string(hash), "admin")
+	if err != nil {
+		t.Fatalf("create admin user: %v", err)
+	}
+	// Login to get token
+	payload := map[string]interface{}{
+		"loginRequest": map[string]interface{}{
+			"username": "testadmin",
+			"password": password,
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/login", payload)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var loginResp LoginResponseBody
+	if err := json.NewDecoder(rec.Body).Decode(&loginResp); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	return loginResp.LoginResponse.AccessToken
+}
+
+func TestAdminGetMaintenanceUnauthorized(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	rec := doAuthRequest(t, srv, http.MethodGet, "/v0/api/admin/maintenance", nil, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 got %d", rec.Code)
+	}
+}
+
+func TestAdminGetMaintenance(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	token := loginAsAdmin(t, srv)
+	rec := doAuthRequest(t, srv, http.MethodGet, "/v0/api/admin/maintenance", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp AdminMaintenanceResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	// Verify we got a response with maintenance data
+	if resp.Meta.APIVersion == "" {
+		t.Fatalf("expected meta.apiVersion in response")
+	}
+}
+
+func TestAdminUpdateMaintenance(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	token := loginAsAdmin(t, srv)
+	payload := map[string]interface{}{
+		"maintenance": map[string]interface{}{
+			"maintenanceActive": true,
+			"maintenanceInfo": map[string]interface{}{
+				"status":    "progress",
+				"message":   "Test maintenance",
+				"startTime": "2024-01-01T00:00:00Z",
+				"exEndTime": "2024-01-01T02:00:00Z",
+				"posterUrl": "",
+				"link":      "",
+			},
+			"platformSpecific": map[string]interface{}{},
+		},
+	}
+	rec := doAuthRequest(t, srv, http.MethodPut, "/v0/api/admin/maintenance", payload, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp AdminMessageResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Message == "" {
+		t.Fatalf("expected success message")
+	}
+}
+
+func TestAdminGetUpdates(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	token := loginAsAdmin(t, srv)
+	rec := doAuthRequest(t, srv, http.MethodGet, "/v0/api/admin/updates", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp AdminUpdatesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Updates.Platforms == nil {
+		t.Fatalf("expected platforms in response")
+	}
+}
+
+func TestAdminGetNews(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	token := loginAsAdmin(t, srv)
+	rec := doAuthRequest(t, srv, http.MethodGet, "/v0/api/admin/news", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp AdminNewsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.News.Items == nil {
+		t.Fatalf("expected items in response")
+	}
+}
+
+func TestAdminUpdateNews(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	token := loginAsAdmin(t, srv)
+	payload := map[string]interface{}{
+		"news": map[string]interface{}{
+			"items": []map[string]interface{}{
+				{
+					"id":          "test-001",
+					"title":       "Test News",
+					"summary":     "Test summary",
+					"content":     "Test content",
+					"posterUrl":   "",
+					"link":        "",
+					"publishTime": "2024-01-01T00:00:00Z",
+					"category":    "general",
+					"tags":        []string{},
+					"priority":    5,
+				},
+			},
+		},
+	}
+	rec := doAuthRequest(t, srv, http.MethodPut, "/v0/api/admin/news", payload, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp AdminMessageResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Message == "" {
+		t.Fatalf("expected success message")
+	}
+}
+
+func TestAppAdminPage(t *testing.T) {
+	srv := newTestServer(t, nil)
+	rec := doRequest(t, srv, http.MethodGet, "/app/admin", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "NekoLc Admin Dashboard") {
+		t.Fatalf("expected admin dashboard page content")
+	}
 }

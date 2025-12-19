@@ -11,9 +11,10 @@
     "enableAuthentication": false,
     "tokenExpirationSec": 3600,
     "refreshTokenExpirationDays": 30,
-    "loginUrl": "/v0/api/auth/login",
+    "loginUrl": "/app/login",
     "logoutUrl": "/v0/api/auth/logout",
-    "refreshUrl": "/v0/api/auth/refresh"
+    "refreshUrl": "/v0/api/auth/refresh",
+    "registerUrl": "/app/register"
   },
   "featuresFlags": {
     "ui": {

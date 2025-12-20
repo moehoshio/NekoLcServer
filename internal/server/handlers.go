@@ -130,38 +130,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fall back to JWT signature-based login
+	// Fall back to JWT signature-based login or require username/password for mysql method
 	switch s.authMethod() {
 	case "mysql":
-		username := strings.TrimSpace(req.Username)
-		password := strings.TrimSpace(req.Password)
-		if username == "" || password == "" {
-			s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username and password are required")
-			return
-		}
-		if s.store == nil {
-			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", "account store not configured")
-			return
-		}
-		user, err := s.lookupUser(username)
-		if err != nil {
-			s.writeError(w, http.StatusUnauthorized, lang, "Unauthorized", "invalid credentials")
-			return
-		}
-		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-			s.writeError(w, http.StatusUnauthorized, lang, "Unauthorized", "invalid credentials")
-			return
-		}
-		subject := fmt.Sprintf("user:%d", user.ID)
-		access, refresh, err := s.authService.IssueTokens(subject, user.Role)
-		if err != nil {
-			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
-			return
-		}
-		body := LoginResponseBody{Meta: s.meta()}
-		body.LoginResponse.AccessToken = access
-		body.LoginResponse.RefreshToken = refresh
-		s.writeJSON(w, http.StatusOK, body)
+		// Username/password is required for MySQL mode but was not provided
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "username and password are required")
 		return
 	case "jwt":
 		if req.Identifier == "" || req.Signature == "" || req.Timestamp == 0 {

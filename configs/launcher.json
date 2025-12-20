@@ -14,9 +14,7 @@
     "loginUrl": "/v0/api/auth/login",
     "logoutUrl": "/v0/api/auth/logout",
     "refreshUrl": "/v0/api/auth/refresh",
-    "ui": {
-      "registerUrl": "/app/register"
-    }
+    "registerUrl": "/v0/api/auth/register"
   },
   "featuresFlags": {
     "ui": {

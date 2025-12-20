@@ -158,6 +158,8 @@ func (s *Server) buildRouter() chi.Router {
 			router.Get("/debug/feedback.json", s.handleFeedbackJSON)
 		}
 
+		router.Get("/app", s.handleAppHome)
+		router.Get("/app/", s.handleAppHome)
 		router.Get("/app/login", s.handleAppLogin)
 		router.Get("/app/register", s.handleAppRegister)
 		router.Post("/app/register", s.handleAppRegisterSubmit)
@@ -389,6 +391,71 @@ func jsonRaw(raw []byte) interface{} {
 		return string(raw)
 	}
 	return obj
+}
+
+const appHomePage = `<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>NekoLcServer</title>
+	<style>
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body { font-family: "Segoe UI", sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%); color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+		.container { text-align: center; padding: 40px; }
+		.logo { font-size: 80px; margin-bottom: 20px; animation: float 3s ease-in-out infinite; }
+		@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+		h1 { font-size: 48px; font-weight: 700; margin-bottom: 16px; background: linear-gradient(120deg, #22d3ee, #818cf8, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+		.subtitle { font-size: 20px; color: #94a3b8; margin-bottom: 40px; }
+		.links { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+		.btn { padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 16px; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
+		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
+		.btn-primary:hover { filter: brightness(1.1); transform: translateY(-2px); box-shadow: 0 10px 40px rgba(34, 211, 238, 0.3); }
+		.btn-secondary { background: rgba(255, 255, 255, 0.1); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); }
+		.btn-secondary:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
+		.features { margin-top: 60px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; max-width: 900px; }
+		.feature { background: rgba(255, 255, 255, 0.05); padding: 24px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); }
+		.feature h3 { font-size: 18px; margin-bottom: 8px; color: #f8fafc; }
+		.feature p { font-size: 14px; color: #94a3b8; line-height: 1.6; }
+		.footer { margin-top: 60px; color: #64748b; font-size: 14px; }
+		.footer a { color: #818cf8; text-decoration: none; }
+		.footer a:hover { text-decoration: underline; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="logo">🐱</div>
+		<h1>NekoLcServer</h1>
+		<p class="subtitle">A modern launcher server for managing updates, news, and user authentication</p>
+		<div class="links">
+			<a href="/app/login" class="btn btn-primary">🔑 Sign In</a>
+			<a href="/app/register" class="btn btn-secondary">📝 Register</a>
+			<a href="/app/admin" class="btn btn-secondary">⚙️ Admin Dashboard</a>
+		</div>
+		<div class="features">
+			<div class="feature">
+				<h3>🚀 Update Management</h3>
+				<p>Configure and distribute updates for multiple platforms and architectures with automatic checksum verification.</p>
+			</div>
+			<div class="feature">
+				<h3>🔧 Maintenance Control</h3>
+				<p>Schedule and manage maintenance windows with platform-specific settings and customizable messages.</p>
+			</div>
+			<div class="feature">
+				<h3>📰 News System</h3>
+				<p>Publish and manage news items with categories, priorities, and rich content support.</p>
+			</div>
+		</div>
+		<div class="footer">
+			<p>Powered by <a href="https://github.com/moehoshio/NekoLcServer" target="_blank">NekoLcServer</a></p>
+		</div>
+	</div>
+</body>
+</html>`
+
+func (s *Server) handleAppHome(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(appHomePage))
 }
 
 const appLoginPage = `<!doctype html>
@@ -1114,6 +1181,16 @@ const appAdminPage = `<!doctype html>
 							<input type="text" id="launcher-logout-url" placeholder="/v0/api/auth/logout" />
 						</div>
 					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="launcher-refresh-url">Refresh URL</label>
+							<input type="text" id="launcher-refresh-url" placeholder="/v0/api/auth/refresh" />
+						</div>
+						<div class="form-group">
+							<label for="launcher-register-url">Register URL (UI)</label>
+							<input type="text" id="launcher-register-url" placeholder="/app/register" />
+						</div>
+					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveLauncher()">Save Changes</button>
 						<button class="btn btn-secondary" onclick="loadLauncher()">Reload</button>
@@ -1165,6 +1242,12 @@ const appAdminPage = `<!doctype html>
 						<button class="btn btn-primary" onclick="saveMaintenance()">Save Changes</button>
 						<button class="btn btn-secondary" onclick="loadMaintenance()">Reload</button>
 					</div>
+				</div>
+				<div class="card">
+					<h2>Platform-Specific Maintenance</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Configure maintenance settings per platform (e.g., windows-x64, linux-arm64).</p>
+					<div id="platform-maintenance-list"></div>
+					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addPlatformMaintenance()">+ Add Platform</button>
 				</div>
 			</div>
 			
@@ -1333,6 +1416,8 @@ const appAdminPage = `<!doctype html>
 			document.getElementById('launcher-refresh-exp').value = sec.refreshTokenExpirationDays || 30;
 			document.getElementById('launcher-login-url').value = sec.loginUrl || '';
 			document.getElementById('launcher-logout-url').value = sec.logoutUrl || '';
+			document.getElementById('launcher-refresh-url').value = sec.refreshUrl || '';
+			document.getElementById('launcher-register-url').value = (sec.ui && sec.ui.registerUrl) || '';
 		}
 		
 		async function saveLauncher() {
@@ -1352,7 +1437,11 @@ const appAdminPage = `<!doctype html>
 						tokenExpirationSec: parseInt(document.getElementById('launcher-token-exp').value) || 3600,
 						refreshTokenExpirationDays: parseInt(document.getElementById('launcher-refresh-exp').value) || 30,
 						loginUrl: document.getElementById('launcher-login-url').value,
-						logoutUrl: document.getElementById('launcher-logout-url').value
+						logoutUrl: document.getElementById('launcher-logout-url').value,
+						refreshUrl: document.getElementById('launcher-refresh-url').value,
+						ui: {
+							registerUrl: document.getElementById('launcher-register-url').value
+						}
 					},
 					featuresFlags: launcherData?.featuresFlags || {}
 				}
@@ -1383,6 +1472,79 @@ const appAdminPage = `<!doctype html>
 			}
 			if (info.exEndTime) {
 				document.getElementById('maint-end').value = info.exEndTime.slice(0, 16);
+			}
+			renderPlatformMaintenance();
+		}
+		
+		function renderPlatformMaintenance() {
+			const container = document.getElementById('platform-maintenance-list');
+			if (!maintenanceData || !maintenanceData.platformSpecific) {
+				container.innerHTML = '<p style="color:#94a3b8;">No platform-specific maintenance configured.</p>';
+				return;
+			}
+			const platforms = Object.entries(maintenanceData.platformSpecific);
+			if (platforms.length === 0) {
+				container.innerHTML = '<p style="color:#94a3b8;">No platform-specific maintenance configured.</p>';
+				return;
+			}
+			let html = '';
+			platforms.forEach(([key, pdata], idx) => {
+				const info = pdata.maintenanceInfo || {};
+				html += '<div class="platform-section" id="plat-maint-' + idx + '">';
+				html += '<div class="header-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+				html += '<h3 style="margin:0;">' + key + '</h3>';
+				html += '<button class="btn btn-danger" onclick="removePlatformMaintenance(\'' + key + '\')">Remove</button>';
+				html += '</div>';
+				html += '<div class="form-group toggle"><input type="checkbox" id="plat-maint-active-' + idx + '" ' + (pdata.maintenanceActive ? 'checked' : '') + ' onchange="updatePlatformMaint(\'' + key + '\', \'active\', this.checked)" />';
+				html += '<label for="plat-maint-active-' + idx + '">Maintenance Active</label></div>';
+				html += '<div class="form-row">';
+				html += '<div class="form-group"><label>Status</label><select id="plat-maint-status-' + idx + '" onchange="updatePlatformMaint(\'' + key + '\', \'status\', this.value)">';
+				html += '<option value="none"' + (info.status === 'none' ? ' selected' : '') + '>None</option>';
+				html += '<option value="scheduled"' + (info.status === 'scheduled' ? ' selected' : '') + '>Scheduled</option>';
+				html += '<option value="progress"' + (info.status === 'progress' ? ' selected' : '') + '>In Progress</option>';
+				html += '</select></div>';
+				html += '<div class="form-group"><label>Message</label><input type="text" value="' + (info.message || '') + '" onchange="updatePlatformMaint(\'' + key + '\', \'message\', this.value)" /></div>';
+				html += '</div>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+		
+		function addPlatformMaintenance() {
+			const key = prompt('Enter platform key (e.g., windows-x64, linux-arm64):');
+			if (!key || !key.trim()) return;
+			const platformKey = key.trim().toLowerCase();
+			if (!maintenanceData) maintenanceData = { maintenanceActive: false, maintenanceInfo: {}, platformSpecific: {} };
+			if (!maintenanceData.platformSpecific) maintenanceData.platformSpecific = {};
+			if (maintenanceData.platformSpecific[platformKey]) {
+				showMessage('Platform already exists', true);
+				return;
+			}
+			maintenanceData.platformSpecific[platformKey] = {
+				maintenanceActive: false,
+				maintenanceInfo: { status: 'none', message: '', startTime: '', exEndTime: '', posterUrl: '', link: '' }
+			};
+			renderPlatformMaintenance();
+			showMessage('Platform added. Remember to save changes.');
+		}
+		
+		function removePlatformMaintenance(key) {
+			if (!confirm('Remove maintenance settings for ' + key + '?')) return;
+			if (maintenanceData && maintenanceData.platformSpecific) {
+				delete maintenanceData.platformSpecific[key];
+				renderPlatformMaintenance();
+				showMessage('Platform removed. Remember to save changes.');
+			}
+		}
+		
+		function updatePlatformMaint(key, field, value) {
+			if (!maintenanceData || !maintenanceData.platformSpecific || !maintenanceData.platformSpecific[key]) return;
+			const p = maintenanceData.platformSpecific[key];
+			if (field === 'active') {
+				p.maintenanceActive = value;
+			} else {
+				if (!p.maintenanceInfo) p.maintenanceInfo = {};
+				p.maintenanceInfo[field] = value;
 			}
 		}
 		

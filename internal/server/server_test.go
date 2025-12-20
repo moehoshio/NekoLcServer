@@ -782,6 +782,26 @@ func TestAppRegisterPage(t *testing.T) {
 	}
 }
 
+func TestAppHomePage(t *testing.T) {
+	srv := newTestServer(t, nil)
+	// Test /app
+	rec := doRequest(t, srv, http.MethodGet, "/app", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "NekoLcServer") {
+		t.Fatalf("expected home page content")
+	}
+	// Test /app/
+	rec = doRequest(t, srv, http.MethodGet, "/app/", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d for /app/", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "NekoLcServer") {
+		t.Fatalf("expected home page content for /app/")
+	}
+}
+
 func TestRegisterSuccess(t *testing.T) {
 	srv := newTestServer(t, func(cfg *config.AppConfig) {
 		cfg.Authentication.Enabled = true

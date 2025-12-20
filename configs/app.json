@@ -7,6 +7,20 @@
     "releaseDate": "2025-12-17T00:00:00Z",
     "basePath": ""
   },
+  "database": {
+    "type": "sqlite",
+    "sqlite": {
+      "path": "./data/nekoserver.db"
+    },
+    "mysql": {
+      "host": "localhost",
+      "username": "app_user",
+      "password": "secure_password",
+      "port": 3306,
+      "database": "nekoserver",
+      "params": "parseTime=true&charset=utf8mb4"
+    }
+  },
   "authentication": {
     "enabled": true,
     "method": "jwt",

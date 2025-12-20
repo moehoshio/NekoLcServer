@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -39,6 +40,14 @@ type FeedbackLog struct {
 	Timestamp  int64
 }
 
+// ConfigEntry represents a configuration stored in database.
+type ConfigEntry struct {
+	ID        int64
+	Key       string
+	Value     json.RawMessage
+	UpdatedAt time.Time
+}
+
 // Store defines the persistence operations we need.
 type Store interface {
 	Ping(ctx context.Context) error
@@ -56,9 +65,24 @@ type Store interface {
 	// Feedback logs
 	SaveFeedback(ctx context.Context, entry FeedbackLog) error
 	ListFeedback(ctx context.Context, limit, offset int) ([]FeedbackLog, error)
+
+	// Configuration storage
+	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
+	SetConfig(ctx context.Context, key string, value json.RawMessage) error
+	ListConfigs(ctx context.Context) ([]ConfigEntry, error)
 }
 
 var ErrNotFound = errors.New("not found")
+
+// Configuration keys
+const (
+	ConfigKeyLauncher    = "launcher"
+	ConfigKeyMaintenance = "maintenance"
+	ConfigKeyNews        = "news"
+	ConfigKeyUpdates     = "updates"
+	ConfigKeyLanguages   = "languages"
+	ConfigKeyApp         = "app"
+)
 
 func ensureRole(role string) string {
 	if role == "admin" {

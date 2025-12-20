@@ -897,6 +897,44 @@ func (s *Server) handleFeedbackLogs(w http.ResponseWriter, r *http.Request) {
 
 // Admin handlers for configuration management
 
+func (s *Server) handleAdminGetLauncher(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	cfg := s.launcherConfig
+	if cfg == nil {
+		cfg = &config.LauncherConfig{}
+	}
+	resp := AdminLauncherResponse{
+		Launcher: *cfg,
+		Meta:     s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminUpdateLauncher(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	var payload AdminLauncherUpdatePayload
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	// Update in-memory config
+	s.launcherConfig = &payload.Launcher
+	// Save to database and file
+	if err := s.saveLauncherConfig(); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	resp := AdminMessageResponse{
+		Message: "Launcher configuration updated successfully",
+		Meta:    s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) handleAdminGetMaintenance(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.requireAdmin(w, r); err != nil {
 		return

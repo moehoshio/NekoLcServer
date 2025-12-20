@@ -140,6 +140,8 @@ func (s *Server) buildRouter() chi.Router {
 
 			// Admin API routes for configuration management
 			r.Route("/admin", func(adminRouter chi.Router) {
+				adminRouter.Get("/launcher", s.handleAdminGetLauncher)
+				adminRouter.Put("/launcher", s.handleAdminUpdateLauncher)
 				adminRouter.Get("/maintenance", s.handleAdminGetMaintenance)
 				adminRouter.Put("/maintenance", s.handleAdminUpdateMaintenance)
 				adminRouter.Get("/updates", s.handleAdminGetUpdates)
@@ -889,31 +891,80 @@ func modTimeSafe(path string) time.Time {
 	return info.ModTime()
 }
 
-// saveMaintenanceConfig writes the current maintenance configuration to its file.
-func (s *Server) saveMaintenanceConfig() error {
-	if s.maintenanceConfigPath == "" {
-		return errors.New("maintenance config path not set")
+// saveLauncherConfig writes the current launcher configuration to database.
+func (s *Server) saveLauncherConfig() error {
+	// Try to save to database first
+	if s.store != nil {
+		data, err := json.Marshal(s.launcherConfig)
+		if err != nil {
+			return err
+		}
+		if err := s.store.SetConfig(context.Background(), store.ConfigKeyLauncher, data); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save launcher config to database: %v\n", err)
+		}
 	}
-	return saveJSONFile(s.maintenanceConfigPath, s.maintenanceConfig)
+	return nil
 }
 
-// saveUpdatesConfig writes the current updates configuration to its file.
-func (s *Server) saveUpdatesConfig() error {
-	if s.updateConfigPath == "" {
-		return errors.New("updates config path not set")
+// saveMaintenanceConfig writes the current maintenance configuration to database and/or file.
+func (s *Server) saveMaintenanceConfig() error {
+	// Try to save to database first
+	if s.store != nil {
+		data, err := json.Marshal(s.maintenanceConfig)
+		if err != nil {
+			return err
+		}
+		if err := s.store.SetConfig(context.Background(), store.ConfigKeyMaintenance, data); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save maintenance config to database: %v\n", err)
+		}
 	}
+	// Also save to file if path is configured
+	if s.maintenanceConfigPath != "" {
+		return saveJSONFile(s.maintenanceConfigPath, s.maintenanceConfig)
+	}
+	return nil
+}
+
+// saveUpdatesConfig writes the current updates configuration to database and/or file.
+func (s *Server) saveUpdatesConfig() error {
 	s.updateConfigMu.RLock()
 	cfg := s.updateConfig
 	s.updateConfigMu.RUnlock()
-	return saveJSONFile(s.updateConfigPath, cfg)
+
+	// Try to save to database first
+	if s.store != nil {
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			return err
+		}
+		if err := s.store.SetConfig(context.Background(), store.ConfigKeyUpdates, data); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save updates config to database: %v\n", err)
+		}
+	}
+	// Also save to file if path is configured
+	if s.updateConfigPath != "" {
+		return saveJSONFile(s.updateConfigPath, cfg)
+	}
+	return nil
 }
 
-// saveNewsConfig writes the news configuration to its file.
+// saveNewsConfig writes the news configuration to database and/or file.
 func (s *Server) saveNewsConfig(cfg *config.NewsConfig) error {
-	if s.newsConfigPath == "" {
-		return errors.New("news config path not set")
+	// Try to save to database first
+	if s.store != nil {
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			return err
+		}
+		if err := s.store.SetConfig(context.Background(), store.ConfigKeyNews, data); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save news config to database: %v\n", err)
+		}
 	}
-	return saveJSONFile(s.newsConfigPath, cfg)
+	// Also save to file if path is configured
+	if s.newsConfigPath != "" {
+		return saveJSONFile(s.newsConfigPath, cfg)
+	}
+	return nil
 }
 
 func saveJSONFile(path string, data interface{}) error {
@@ -995,7 +1046,8 @@ const appAdminPage = `<!doctype html>
 	</div>
 	<div class="container">
 		<div class="sidebar">
-			<button class="active" onclick="showSection('maintenance')">🔧 Maintenance</button>
+			<button class="active" onclick="showSection('launcher')">🚀 Launcher</button>
+			<button onclick="showSection('maintenance')">🔧 Maintenance</button>
 			<button onclick="showSection('updates')">📦 Updates</button>
 			<button onclick="showSection('news')">📰 News</button>
 			<button onclick="showSection('feedback')">💬 Feedback</button>
@@ -1003,8 +1055,74 @@ const appAdminPage = `<!doctype html>
 		<div class="main">
 			<div id="message" class="message hidden"></div>
 			
+			<!-- Launcher Section -->
+			<div id="section-launcher" class="section">
+				<div class="card">
+					<h2>Launcher Configuration</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Configure launcher settings that clients receive.</p>
+					<div class="form-group">
+						<label for="launcher-hosts">Hosts (one per line)</label>
+						<textarea id="launcher-hosts" rows="3" placeholder="https://api.example.com"></textarea>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="launcher-retry-interval">Retry Interval (seconds)</label>
+							<input type="number" id="launcher-retry-interval" min="1" />
+						</div>
+						<div class="form-group">
+							<label for="launcher-max-retry">Max Retry Count</label>
+							<input type="number" id="launcher-max-retry" min="0" />
+						</div>
+					</div>
+					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;">WebSocket</h3>
+					<div class="form-group toggle">
+						<input type="checkbox" id="launcher-ws-enable" />
+						<label for="launcher-ws-enable">Enable WebSocket</label>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="launcher-ws-host">WebSocket Host</label>
+							<input type="text" id="launcher-ws-host" placeholder="wss://ws.example.com" />
+						</div>
+						<div class="form-group">
+							<label for="launcher-ws-heartbeat">Heartbeat Interval (seconds)</label>
+							<input type="number" id="launcher-ws-heartbeat" min="1" />
+						</div>
+					</div>
+					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;">Security</h3>
+					<div class="form-group toggle">
+						<input type="checkbox" id="launcher-auth-enable" />
+						<label for="launcher-auth-enable">Enable Authentication</label>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="launcher-token-exp">Token Expiration (seconds)</label>
+							<input type="number" id="launcher-token-exp" min="1" />
+						</div>
+						<div class="form-group">
+							<label for="launcher-refresh-exp">Refresh Token Expiration (days)</label>
+							<input type="number" id="launcher-refresh-exp" min="1" />
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="launcher-login-url">Login URL</label>
+							<input type="text" id="launcher-login-url" placeholder="/v0/api/auth/login" />
+						</div>
+						<div class="form-group">
+							<label for="launcher-logout-url">Logout URL</label>
+							<input type="text" id="launcher-logout-url" placeholder="/v0/api/auth/logout" />
+						</div>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveLauncher()">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadLauncher()">Reload</button>
+					</div>
+				</div>
+			</div>
+			
 			<!-- Maintenance Section -->
-			<div id="section-maintenance" class="section">
+			<div id="section-maintenance" class="section hidden">
 				<div class="card">
 					<h2>Maintenance Configuration</h2>
 					<div class="form-group toggle">
@@ -1135,6 +1253,7 @@ const appAdminPage = `<!doctype html>
 	</div>
 	
 	<script>
+		let launcherData = null;
 		let maintenanceData = null;
 		let updatesData = null;
 		let newsData = null;
@@ -1168,6 +1287,7 @@ const appAdminPage = `<!doctype html>
 			document.getElementById('section-' + name).classList.remove('hidden');
 			document.querySelector('.sidebar button[onclick*="' + name + '"]').classList.add('active');
 			
+			if (name === 'launcher' && !launcherData) loadLauncher();
 			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
 			if (name === 'updates' && !updatesData) loadUpdates();
 			if (name === 'news' && !newsData) loadNews();
@@ -1189,6 +1309,60 @@ const appAdminPage = `<!doctype html>
 				return null;
 			}
 			return res;
+		}
+		
+		// Launcher functions
+		async function loadLauncher() {
+			const res = await apiRequest('GET', '/v0/api/admin/launcher');
+			if (!res) return;
+			const data = await res.json();
+			launcherData = data.launcher;
+			
+			document.getElementById('launcher-hosts').value = (launcherData.host || []).join('\n');
+			document.getElementById('launcher-retry-interval').value = launcherData.retryIntervalSec || 5;
+			document.getElementById('launcher-max-retry').value = launcherData.maxRetryCount || 3;
+			
+			const ws = launcherData.webSocket || {};
+			document.getElementById('launcher-ws-enable').checked = ws.enable || false;
+			document.getElementById('launcher-ws-host').value = ws.socketHost || '';
+			document.getElementById('launcher-ws-heartbeat').value = ws.heartbeatIntervalSec || 30;
+			
+			const sec = launcherData.security || {};
+			document.getElementById('launcher-auth-enable').checked = sec.enableAuthentication || false;
+			document.getElementById('launcher-token-exp').value = sec.tokenExpirationSec || 3600;
+			document.getElementById('launcher-refresh-exp').value = sec.refreshTokenExpirationDays || 30;
+			document.getElementById('launcher-login-url').value = sec.loginUrl || '';
+			document.getElementById('launcher-logout-url').value = sec.logoutUrl || '';
+		}
+		
+		async function saveLauncher() {
+			const hosts = document.getElementById('launcher-hosts').value.trim().split('\n').filter(h => h.trim());
+			const payload = {
+				launcher: {
+					host: hosts,
+					retryIntervalSec: parseInt(document.getElementById('launcher-retry-interval').value) || 5,
+					maxRetryCount: parseInt(document.getElementById('launcher-max-retry').value) || 3,
+					webSocket: {
+						enable: document.getElementById('launcher-ws-enable').checked,
+						socketHost: document.getElementById('launcher-ws-host').value,
+						heartbeatIntervalSec: parseInt(document.getElementById('launcher-ws-heartbeat').value) || 30
+					},
+					security: {
+						enableAuthentication: document.getElementById('launcher-auth-enable').checked,
+						tokenExpirationSec: parseInt(document.getElementById('launcher-token-exp').value) || 3600,
+						refreshTokenExpirationDays: parseInt(document.getElementById('launcher-refresh-exp').value) || 30,
+						loginUrl: document.getElementById('launcher-login-url').value,
+						logoutUrl: document.getElementById('launcher-logout-url').value
+					},
+					featuresFlags: launcherData?.featuresFlags || {}
+				}
+			};
+			const res = await apiRequest('PUT', '/v0/api/admin/launcher', payload);
+			if (res && res.ok) {
+				showMessage('Launcher configuration saved successfully');
+			} else {
+				showMessage('Failed to save launcher configuration', true);
+			}
 		}
 		
 		// Maintenance functions
@@ -1449,7 +1623,7 @@ const appAdminPage = `<!doctype html>
 		
 		// Initialize
 		checkAuth();
-		loadMaintenance();
+		loadLauncher();
 	</script>
 </body>
 </html>`

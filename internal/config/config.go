@@ -19,6 +19,11 @@ type AppConfig struct {
 		ReleaseDate  string `json:"releaseDate"`
 		BasePath     string `json:"basePath"`
 	} `json:"server"`
+	Database struct {
+		Type   string       `json:"type"` // "mysql", "sqlite", or "memory"
+		MySQL  MySQLConfig  `json:"mysql"`
+		SQLite SQLiteConfig `json:"sqlite"`
+	} `json:"database"`
 	Authentication struct {
 		Enabled                    bool        `json:"enabled"`
 		Method                     string      `json:"method"`
@@ -124,6 +129,11 @@ type MySQLConfig struct {
 	Password string `json:"password"`
 	Database string `json:"database"`
 	Params   string `json:"params"`
+}
+
+// SQLiteConfig holds SQLite connection details.
+type SQLiteConfig struct {
+	Path string `json:"path"`
 }
 
 // JWTConfig holds JWT-specific options.

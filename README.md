@@ -1,45 +1,129 @@
 # NekoLc Server
 
-Golang implementation of the NekoLc API specification (v0.0.2). The server loads JSON configuration files from `configs/` and exposes the documented HTTP endpoints for launcher configuration, maintenance, updates, news, feedback logs, test utilities, and optional authentication.
+Golang implementation of the NekoLc API specification (v0.0.2). The server supports both file-based JSON configuration and database storage (MySQL/SQLite), with a visual admin dashboard for configuration management.
+
+## Features
+
+- **Database Storage**: Support for MySQL and SQLite to store all configurations
+- **Visual Admin Dashboard**: Web-based UI at `/app/admin` for managing all settings
+- **NekoLcApi Compliant**: Fully implements the NekoLc API specification
+- **Flexible Configuration**: Fall back to JSON files when database config is not available
 
 ## Prerequisites
 
 - Go 1.22+
-- Windows PowerShell 5.1 (for the included request script)
+- SQLite (built-in, no external dependencies) or MySQL 5.7+
+
+## Database Configuration
+
+The server supports three storage modes configured via `database.type` in `configs/app.json`:
+
+### SQLite (Recommended for single-instance deployments)
+
+```json
+{
+  "database": {
+    "type": "sqlite",
+    "sqlite": {
+      "path": "./data/nekoserver.db"
+    }
+  }
+}
+```
+
+### MySQL (Recommended for multi-instance deployments)
+
+```json
+{
+  "database": {
+    "type": "mysql",
+    "mysql": {
+      "host": "localhost",
+      "port": 3306,
+      "username": "app_user",
+      "password": "secure_password",
+      "database": "nekoserver",
+      "params": "parseTime=true&charset=utf8mb4"
+    }
+  }
+}
+```
+
+### In-Memory (For testing)
+
+```json
+{
+  "database": {
+    "type": "memory"
+  }
+}
+```
 
 ## Configuration
 
-Primary settings live in `configs/app.json`. Additional referenced files are resolved relative to the working directory first and then to the directory containing `app.json`:
+Primary settings live in `configs/app.json`. The server will try to load configurations from the database first, falling back to JSON files if not found:
 
 - `language.configPath` → localization bundle (`configs/languages.json`)
 - `launcher.configPath` → launcher response template
 - `maintenance.configPath` → maintenance windows per platform
 - `news.configPath` → news/announcement items returned by `/v0/api/news`
 - `update.configPath` → incremental/full update metadata
-- `authentication.method` → `jwt` (default) or `account` (account mode currently returns 501)
 
 Set `APP_CONFIG_PATH` or pass `-config` to point at an alternate `app.json`.
 
 ## Run the server
 
-```powershell
+```bash
 # From the repository root
-pwsh -File scripts/test_requests.ps1 -BaseUrl "http://localhost:8080" # optional validation script
-
-# Start the server (ctrl+c to stop)
 go run ./cmd/server
 ```
 
-The server listens on the port defined in `server.port`. Optional authentication can be enabled via `authentication.enabled` and related fields.
+The server will:
+1. Initialize the database (create tables if they don't exist)
+2. Create a default admin user if no users exist (credentials printed to console)
+3. Listen on the port defined in `server.port`
 
-### Authentication (JWT)
+## Admin Dashboard
 
-When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed with `authentication.jwtSecret` (HS256). Access tokens carry the `tokenType="access"` claim and expire according to `tokenExpirationSec`. Refresh tokens carry `tokenType="refresh"` and follow `refreshTokenExpirationDays`. Logout marks presented tokens as revoked until their natural expiration—set a strong, unique secret in production.
+Access the visual admin dashboard at `http://localhost:8080/app/admin`. Features:
 
-`authentication.method` controls the login flow:
+- **Launcher Configuration**: Manage hosts, WebSocket settings, security settings
+- **Maintenance**: Enable/disable maintenance mode with custom messages
+- **Updates**: Configure update packages for each platform and architecture
+- **News**: Create and manage news items
+- **Feedback**: View user feedback logs
 
-- `jwt` (default): Login requests must provide `identifier`, `timestamp` (Unix seconds), and `signature = base64(SHA256(identifier:timestamp:jwtSecret))`. Requests using username/password are rejected with HTTP 400. The timestamp must be within ±10 minutes of server time unless `debug.enabled=true`.
-- `account`: Not yet implemented; `/v0/api/auth/login` returns HTTP 501 when this method is selected.
+### First Login
+
+On first startup, the server creates a default admin account and prints the credentials:
+```
+IMPORTANT: Default admin account created!
+Username: admin
+Password: adm-xxxxxxxxxxxx
+```
+
+Use these credentials at `/app/login` to access the admin dashboard.
+
+## Admin API Endpoints
+
+The following admin API endpoints are available for configuration management (requires admin authentication):
+
+- `GET /v0/api/admin/launcher` - Get launcher configuration
+- `PUT /v0/api/admin/launcher` - Update launcher configuration
+- `GET /v0/api/admin/maintenance` - Get maintenance configuration
+- `PUT /v0/api/admin/maintenance` - Update maintenance configuration
+- `GET /v0/api/admin/updates` - Get updates configuration
+- `PUT /v0/api/admin/updates` - Update updates configuration
+- `GET /v0/api/admin/news` - Get news items
+- `PUT /v0/api/admin/news` - Update news items
+- `POST /v0/api/admin/scanPath` - Scan a directory for update files
+- `POST /v0/api/admin/generateUpdates` - Generate update config from directory
+
+## Authentication (JWT)
+
+When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed with `authentication.jwtSecret` (HS256). Access tokens carry the `tokenType="access"` claim and expire according to `tokenExpirationSec`. Refresh tokens carry `tokenType="refresh"` and follow `refreshTokenExpirationDays`.
+
+Authentication supports both username/password login and signature-based login for device authentication.
 
 ### Update diff payloads
 
@@ -91,11 +175,12 @@ Diff entries may point to direct files (`url`) or to JSON lists of URLs via `pat
 - Hash and size: files from `path` are hashed with `downloadMeta.hashAlgorithm` (sha256 only) and returned as hex (no `sha256:` prefix) with `size` in bytes.
 - Relative resolution: `path` is resolved relative to the directory containing `updates.json` unless absolute. `baseUrl` is not used for filesystem resolution—only URL output.
 - Caching: directory scans are cached and refreshed automatically when file mtimes change; `updates.json` itself is hot-reloaded on change.
+
 ## Tests
 
 Unit tests exercise core handlers via `httptest`:
 
-```powershell
+```bash
 go test ./...
 ```
 

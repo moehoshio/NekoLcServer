@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -88,6 +89,12 @@ func (s *MySQLStore) init() error {
             ts BIGINT NOT NULL,
             INDEX idx_feedback_received (received_at DESC),
             CONSTRAINT fk_feedback_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS configs (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            config_key VARCHAR(255) NOT NULL UNIQUE,
+            config_value JSON NOT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 	for _, stmt := range stmts {
@@ -211,4 +218,44 @@ func nullableInt(v sql.NullInt64) interface{} {
 		return v.Int64
 	}
 	return nil
+}
+
+func (s *MySQLStore) GetConfig(ctx context.Context, key string) (json.RawMessage, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	row := s.db.QueryRowContext(ctx, `SELECT config_value FROM configs WHERE config_key = ?`, key)
+	var value json.RawMessage
+	if err := row.Scan(&value); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return value, nil
+}
+
+func (s *MySQLStore) SetConfig(ctx context.Context, key string, value json.RawMessage) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO configs (config_key, config_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`, key, value)
+	return err
+}
+
+func (s *MySQLStore) ListConfigs(ctx context.Context) ([]ConfigEntry, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `SELECT id, config_key, config_value, updated_at FROM configs ORDER BY config_key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ConfigEntry{}
+	for rows.Next() {
+		var e ConfigEntry
+		if err := rows.Scan(&e.ID, &e.Key, &e.Value, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

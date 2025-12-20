@@ -713,6 +713,64 @@ func TestAppAdminPage(t *testing.T) {
 	}
 }
 
+func TestAdminGetLauncher(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	token := loginAsAdmin(t, srv)
+	rec := doAuthRequest(t, srv, http.MethodGet, "/v0/api/admin/launcher", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp AdminLauncherResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Meta.APIVersion == "" {
+		t.Fatalf("expected meta.apiVersion in response")
+	}
+}
+
+func TestAdminUpdateLauncher(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	token := loginAsAdmin(t, srv)
+	payload := map[string]interface{}{
+		"launcher": map[string]interface{}{
+			"host":             []string{"https://api.example.com"},
+			"retryIntervalSec": 10,
+			"maxRetryCount":    5,
+			"webSocket": map[string]interface{}{
+				"enable":               true,
+				"socketHost":           "wss://ws.example.com",
+				"heartbeatIntervalSec": 30,
+			},
+			"security": map[string]interface{}{
+				"enableAuthentication":       true,
+				"tokenExpirationSec":         7200,
+				"refreshTokenExpirationDays": 14,
+				"loginUrl":                   "/v0/api/auth/login",
+				"logoutUrl":                  "/v0/api/auth/logout",
+			},
+			"featuresFlags": map[string]interface{}{},
+		},
+	}
+	rec := doAuthRequest(t, srv, http.MethodPut, "/v0/api/admin/launcher", payload, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp AdminMessageResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Message == "" {
+		t.Fatalf("expected success message")
+	}
+}
+
 func TestAppRegisterPage(t *testing.T) {
 	srv := newTestServer(t, nil)
 	rec := doRequest(t, srv, http.MethodGet, "/app/register", nil)

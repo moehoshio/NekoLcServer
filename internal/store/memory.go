@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ type memoryStore struct {
 
 	refresh map[string]refreshRecord
 	logs    []FeedbackLog
+	configs map[string]json.RawMessage
 }
 
 type refreshRecord struct {
@@ -29,6 +31,7 @@ func NewMemory() Store {
 		nextUser: 1,
 		refresh:  map[string]refreshRecord{},
 		logs:     []FeedbackLog{},
+		configs:  map[string]json.RawMessage{},
 	}
 }
 
@@ -118,4 +121,32 @@ func (m *memoryStore) ListFeedback(ctx context.Context, limit, offset int) ([]Fe
 		res = append(res, m.logs[i])
 	}
 	return res, nil
+}
+
+func (m *memoryStore) GetConfig(ctx context.Context, key string) (json.RawMessage, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v, ok := m.configs[key]; ok {
+		return v, nil
+	}
+	return nil, ErrNotFound
+}
+
+func (m *memoryStore) SetConfig(ctx context.Context, key string, value json.RawMessage) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.configs[key] = value
+	return nil
+}
+
+func (m *memoryStore) ListConfigs(ctx context.Context) ([]ConfigEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]ConfigEntry, 0, len(m.configs))
+	var id int64 = 1
+	for k, v := range m.configs {
+		out = append(out, ConfigEntry{ID: id, Key: k, Value: v, UpdatedAt: time.Now()})
+		id++
+	}
+	return out, nil
 }

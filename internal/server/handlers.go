@@ -279,11 +279,11 @@ func (s *Server) handleRegisterInfo(w http.ResponseWriter, r *http.Request) {
 	// Return JSON response with register info
 	registerURL := s.basePath + "/v0/api/auth/register"
 	if s.launcherConfig != nil && s.launcherConfig.Security.RegisterURL != "" {
-		registerURL = s.launcherConfig.Security.RegisterURL
+		registerURL = s.prependBasePath(s.launcherConfig.Security.RegisterURL)
 	}
 	uiEndpoint := s.basePath + "/app/register"
 	if s.launcherConfig != nil && s.launcherConfig.Security.UI.RegisterURL != "" {
-		uiEndpoint = s.launcherConfig.Security.UI.RegisterURL
+		uiEndpoint = s.prependBasePath(s.launcherConfig.Security.UI.RegisterURL)
 	}
 
 	resp := RegisterInfoResponse{

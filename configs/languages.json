@@ -34,5 +34,23 @@
       "available": "有新版本可用",
       "description": "錯誤修復和改進"
     }
+  },
+  "zh-hans": {
+    "errors": {
+      "InvalidRequest": "请求无效。",
+      "NotFound": "找不到资源。",
+      "Unauthorized": "需要身份验证。",
+      "InternalError": "内部服务器错误。",
+      "NotImplemented": "功能尚未实现。",
+      "ServiceUnavailable": "服务目前无法使用。"
+    },
+    "maintenance": {
+      "scheduled": "预定维护",
+      "progress": "维护进行中"
+    },
+    "updates": {
+      "available": "有新版本可用",
+      "description": "错误修复和改进"
+    }
   }
 }

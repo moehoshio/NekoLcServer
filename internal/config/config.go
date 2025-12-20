@@ -90,6 +90,7 @@ type SecurityConfig struct {
 	LoginURL                   string           `json:"loginUrl"`
 	LogoutURL                  string           `json:"logoutUrl"`
 	RefreshURL                 string           `json:"refreshUrl"`
+	RegisterURL                string           `json:"registerUrl,omitempty"`
 	UI                         SecurityUIConfig `json:"ui,omitempty"`
 }
 

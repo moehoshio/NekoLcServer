@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -24,6 +26,13 @@ type SQLiteStore struct {
 func NewSQLiteStore(cfg SQLiteConfig) (*SQLiteStore, error) {
 	if cfg.Path == "" {
 		cfg.Path = "nekoserver.db"
+	}
+	// Ensure the directory exists
+	dir := filepath.Dir(cfg.Path)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("create database directory: %w", err)
+		}
 	}
 	db, err := sql.Open("sqlite", cfg.Path)
 	if err != nil {

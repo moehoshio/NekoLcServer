@@ -26,7 +26,7 @@ import (
 
 func main() {
 	var appConfigPath string
-	flag.StringVar(&appConfigPath, "config", "./configs/app.json", "Path to app configuration file")
+	flag.StringVar(&appConfigPath, "config", "./config.json", "Path to app configuration file")
 	flag.Parse()
 
 	if env := os.Getenv("APP_CONFIG_PATH"); env != "" {

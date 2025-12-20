@@ -1,5 +1,6 @@
 {
   "server": {
+    "appName": "Neko Launcher Server",
     "port": "8080",
     "apiVersion": "0.0.2",
     "minApiVersion": "0.0.2",
@@ -23,15 +24,7 @@
   },
   "authentication": {
     "enabled": true,
-    "method": "jwt",
-    "mysql": {
-      "host": "localhost",
-      "username": "app_user",
-      "password": "secure_password",
-      "port": 3306,
-      "database": "nekoserver",
-      "params": "parseTime=true&charset=utf8mb4"
-    },
+    "method": "jwt or account",
     "jwt": {
       "jwtSecret": "your-secret-key-change-this-in-production"
     },
@@ -41,21 +34,5 @@
   },
   "debug": {
     "enabled": false
-  },
-  "language": {
-    "default": "en",
-    "configPath": "./configs/languages.json"
-  },
-  "launcher": {
-    "configPath": "./configs/launcher.json"
-  },
-  "maintenance": {
-    "configPath": "./configs/maintenance.json"
-  },
-  "news": {
-    "configPath": "./configs/news.json"
-  },
-  "update": {
-    "configPath": "./configs/updates.json"
   }
 }

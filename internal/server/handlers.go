@@ -103,6 +103,34 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := s.languageFromPreferences(payload.Preferences)
 	req := payload.LoginRequest
+
+	// Try username/password login if store is available and credentials provided
+	if s.store != nil && req.Username != "" && req.Password != "" {
+		username := strings.TrimSpace(req.Username)
+		password := strings.TrimSpace(req.Password)
+		user, err := s.lookupUser(username)
+		if err != nil {
+			s.writeError(w, http.StatusUnauthorized, lang, "Unauthorized", "invalid credentials")
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+			s.writeError(w, http.StatusUnauthorized, lang, "Unauthorized", "invalid credentials")
+			return
+		}
+		subject := fmt.Sprintf("user:%d", user.ID)
+		access, refresh, err := s.authService.IssueTokens(subject, user.Role)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+			return
+		}
+		body := LoginResponseBody{Meta: s.meta()}
+		body.LoginResponse.AccessToken = access
+		body.LoginResponse.RefreshToken = refresh
+		s.writeJSON(w, http.StatusOK, body)
+		return
+	}
+
+	// Fall back to JWT signature-based login
 	switch s.authMethod() {
 	case "mysql":
 		username := strings.TrimSpace(req.Username)

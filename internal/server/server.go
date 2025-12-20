@@ -129,6 +129,7 @@ func (s *Server) buildRouter() chi.Router {
 				authRouter.Post("/refresh", s.handleRefresh)
 				authRouter.Post("/validate", s.handleValidate)
 				authRouter.Post("/logout", s.handleLogout)
+				authRouter.Post("/register", s.handleAppRegisterSubmit)
 			})
 			r.Post("/launcherConfig", s.handleLauncherConfig)
 			r.Post("/maintenance", s.handleMaintenance)
@@ -403,6 +404,9 @@ const appLoginPage = `<!doctype html>
 		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
 		button:hover { filter: brightness(1.05); }
 		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
+		.link { text-align: center; margin-top: 16px; }
+		.link a { color: #22d3ee; text-decoration: none; }
+		.link a:hover { text-decoration: underline; }
 	</style>
 </head>
 <body>
@@ -414,6 +418,7 @@ const appLoginPage = `<!doctype html>
 		<input id="password" type="password" autocomplete="current-password" />
 		<button onclick="login()">Login</button>
 		<div class="error" id="error"></div>
+		<div class="link">Don't have an account? <a href="/app/register">Create one</a></div>
 	</div>
 	<script>
 		async function login() {
@@ -484,7 +489,7 @@ const appRegisterPage = `<!doctype html>
 				document.getElementById('error').innerText = 'Passwords do not match';
 				return;
 			}
-			const res = await fetch('/app/register', {
+			const res = await fetch('/v0/api/auth/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ registerRequest: { username, password } })

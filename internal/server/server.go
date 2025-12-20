@@ -393,7 +393,7 @@ func jsonRaw(raw []byte) interface{} {
 	return obj
 }
 
-const appHomePage = `<!doctype html>
+var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
@@ -428,9 +428,9 @@ const appHomePage = `<!doctype html>
 		<h1>NekoLcServer</h1>
 		<p class="subtitle">A modern launcher server for managing updates, news, and user authentication</p>
 		<div class="links">
-			<a href="/app/login" class="btn btn-primary">🔑 Sign In</a>
-			<a href="/app/register" class="btn btn-secondary">📝 Register</a>
-			<a href="/app/admin" class="btn btn-secondary">⚙️ Admin Dashboard</a>
+			<a href="{{.BasePath}}/app/login" class="btn btn-primary">🔑 Sign In</a>
+			<a href="{{.BasePath}}/app/register" class="btn btn-secondary">📝 Register</a>
+			<a href="{{.BasePath}}/app/admin" class="btn btn-secondary">⚙️ Admin Dashboard</a>
 		</div>
 		<div class="features">
 			<div class="feature">
@@ -451,14 +451,14 @@ const appHomePage = `<!doctype html>
 		</div>
 	</div>
 </body>
-</html>`
+</html>`))
 
 func (s *Server) handleAppHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(appHomePage))
+	appHomeTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }
 
-const appLoginPage = `<!doctype html>
+var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
@@ -487,13 +487,14 @@ const appLoginPage = `<!doctype html>
 		<input id="password" type="password" autocomplete="current-password" />
 		<button onclick="login()">Login</button>
 		<div class="error" id="error"></div>
-		<div class="link">Don't have an account? <a href="/app/register">Create one</a></div>
+		<div class="link">Don't have an account? <a href="{{.BasePath}}/app/register">Create one</a></div>
 	</div>
 	<script>
+		const basePath = '{{.BasePath}}';
 		async function login() {
 			const username = document.getElementById('username').value.trim();
 			const password = document.getElementById('password').value;
-			const res = await fetch('/v0/api/auth/login', {
+			const res = await fetch(basePath + '/v0/api/auth/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ loginRequest: { username, password } })
@@ -506,13 +507,13 @@ const appLoginPage = `<!doctype html>
 			const data = await res.json();
 			localStorage.setItem('accessToken', data.loginResponse.accessToken);
 			localStorage.setItem('refreshToken', data.loginResponse.refreshToken);
-			window.location.href = '/app/admin';
+			window.location.href = basePath + '/app/admin';
 		}
 	</script>
 </body>
-</html>`
+</html>`))
 
-const appRegisterPage = `<!doctype html>
+var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
@@ -545,9 +546,10 @@ const appRegisterPage = `<!doctype html>
 		<button onclick="register()">Register</button>
 		<div class="error" id="error"></div>
 		<div class="success" id="success"></div>
-		<div class="link">Already have an account? <a href="/app/login">Sign in</a></div>
+		<div class="link">Already have an account? <a href="{{.BasePath}}/app/login">Sign in</a></div>
 	</div>
 	<script>
+		const basePath = '{{.BasePath}}';
 		async function register() {
 			const username = document.getElementById('username').value.trim();
 			const password = document.getElementById('password').value;
@@ -558,7 +560,7 @@ const appRegisterPage = `<!doctype html>
 				document.getElementById('error').innerText = 'Passwords do not match';
 				return;
 			}
-			const res = await fetch('/v0/api/auth/register', {
+			const res = await fetch(basePath + '/app/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ registerRequest: { username, password } })
@@ -569,13 +571,13 @@ const appRegisterPage = `<!doctype html>
 				return;
 			}
 			document.getElementById('success').innerText = 'Account created! Redirecting to login...';
-			setTimeout(() => { window.location.href = '/app/login'; }, 1500);
+			setTimeout(() => { window.location.href = basePath + '/app/login'; }, 1500);
 		}
 	</script>
 </body>
-</html>`
+</html>`))
 
-const appFeedbackPage = `<!doctype html>
+var appFeedbackTemplate = template.Must(template.New("appFeedback").Parse(`<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
@@ -597,11 +599,12 @@ const appFeedbackPage = `<!doctype html>
 	<div class="error" id="error"></div>
 	<table id="table"><thead><tr><th>When</th><th>Content</th><th>Client</th></tr></thead><tbody></tbody></table>
 	<script>
+		const basePath = '{{.BasePath}}';
 		async function loadLogs() {
 			const token = localStorage.getItem('accessToken');
-			if (!token) { window.location.href = '/app/login'; return; }
-			const res = await fetch('/v0/api/feedbackLogs?limit=50', { headers: { 'Authorization': 'Bearer ' + token } });
-			if (res.status === 401 || res.status === 403) { localStorage.removeItem('accessToken'); window.location.href = '/app/login'; return; }
+			if (!token) { window.location.href = basePath + '/app/login'; return; }
+			const res = await fetch(basePath + '/v0/api/feedbackLogs?limit=50', { headers: { 'Authorization': 'Bearer ' + token } });
+			if (res.status === 401 || res.status === 403) { localStorage.removeItem('accessToken'); window.location.href = basePath + '/app/login'; return; }
 			if (!res.ok) { document.getElementById('error').innerText = 'Failed to load logs'; return; }
 			const data = await res.json();
 			const tbody = document.querySelector('#table tbody');
@@ -617,16 +620,16 @@ const appFeedbackPage = `<!doctype html>
 		loadLogs();
 	</script>
 </body>
-</html>`
+</html>`))
 
 func (s *Server) handleAppLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(appLoginPage))
+	appLoginTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }
 
 func (s *Server) handleAppRegister(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(appRegisterPage))
+	appRegisterTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }
 
 func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request) {
@@ -688,7 +691,7 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleAppFeedback(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(appFeedbackPage))
+	appFeedbackTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }
 
 func (s *Server) diffFilesFromPath(path string, isCore bool) []UpdateFileResponse {
@@ -1045,7 +1048,7 @@ func saveJSONFile(path string, data interface{}) error {
 	return encoder.Encode(data)
 }
 
-const appAdminPage = `<!doctype html>
+var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
@@ -1336,6 +1339,7 @@ const appAdminPage = `<!doctype html>
 	</div>
 	
 	<script>
+		const basePath = '{{.BasePath}}';
 		let launcherData = null;
 		let maintenanceData = null;
 		let updatesData = null;
@@ -1347,14 +1351,14 @@ const appAdminPage = `<!doctype html>
 		
 		function checkAuth() {
 			if (!getToken()) {
-				window.location.href = '/app/login';
+				window.location.href = basePath + '/app/login';
 			}
 		}
 		
 		function logout() {
 			localStorage.removeItem('accessToken');
 			localStorage.removeItem('refreshToken');
-			window.location.href = '/app/login';
+			window.location.href = basePath + '/app/login';
 		}
 		
 		function showMessage(text, isError = false) {
@@ -1386,7 +1390,7 @@ const appAdminPage = `<!doctype html>
 				opts.headers['Content-Type'] = 'application/json';
 				opts.body = JSON.stringify(body);
 			}
-			const res = await fetch(path, opts);
+			const res = await fetch(basePath + path, opts);
 			if (res.status === 401 || res.status === 403) {
 				logout();
 				return null;
@@ -1794,9 +1798,9 @@ const appAdminPage = `<!doctype html>
 		loadLauncher();
 	</script>
 </body>
-</html>`
+</html>`))
 
 func (s *Server) handleAppAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(appAdminPage))
+	appAdminTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }

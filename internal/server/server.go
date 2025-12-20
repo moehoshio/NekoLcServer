@@ -1394,6 +1394,11 @@ const appAdminPage = `<!doctype html>
 			return res;
 		}
 		
+		function escapeHtml(str) {
+			if (!str) return '';
+			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+		}
+		
 		// Launcher functions
 		async function loadLauncher() {
 			const res = await apiRequest('GET', '/v0/api/admin/launcher');
@@ -1490,20 +1495,21 @@ const appAdminPage = `<!doctype html>
 			let html = '';
 			platforms.forEach(([key, pdata], idx) => {
 				const info = pdata.maintenanceInfo || {};
+				const safeKey = escapeHtml(key);
 				html += '<div class="platform-section" id="plat-maint-' + idx + '">';
 				html += '<div class="header-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
-				html += '<h3 style="margin:0;">' + key + '</h3>';
-				html += '<button class="btn btn-danger" onclick="removePlatformMaintenance(\'' + key + '\')">Remove</button>';
+				html += '<h3 style="margin:0;">' + safeKey + '</h3>';
+				html += '<button class="btn btn-danger" onclick="removePlatformMaintenance(\'' + safeKey + '\')">Remove</button>';
 				html += '</div>';
-				html += '<div class="form-group toggle"><input type="checkbox" id="plat-maint-active-' + idx + '" ' + (pdata.maintenanceActive ? 'checked' : '') + ' onchange="updatePlatformMaint(\'' + key + '\', \'active\', this.checked)" />';
+				html += '<div class="form-group toggle"><input type="checkbox" id="plat-maint-active-' + idx + '" ' + (pdata.maintenanceActive ? 'checked' : '') + ' onchange="updatePlatformMaint(\'' + safeKey + '\', \'active\', this.checked)" />';
 				html += '<label for="plat-maint-active-' + idx + '">Maintenance Active</label></div>';
 				html += '<div class="form-row">';
-				html += '<div class="form-group"><label>Status</label><select id="plat-maint-status-' + idx + '" onchange="updatePlatformMaint(\'' + key + '\', \'status\', this.value)">';
+				html += '<div class="form-group"><label>Status</label><select id="plat-maint-status-' + idx + '" onchange="updatePlatformMaint(\'' + safeKey + '\', \'status\', this.value)">';
 				html += '<option value="none"' + (info.status === 'none' ? ' selected' : '') + '>None</option>';
 				html += '<option value="scheduled"' + (info.status === 'scheduled' ? ' selected' : '') + '>Scheduled</option>';
 				html += '<option value="progress"' + (info.status === 'progress' ? ' selected' : '') + '>In Progress</option>';
 				html += '</select></div>';
-				html += '<div class="form-group"><label>Message</label><input type="text" value="' + (info.message || '') + '" onchange="updatePlatformMaint(\'' + key + '\', \'message\', this.value)" /></div>';
+				html += '<div class="form-group"><label>Message</label><input type="text" value="' + escapeHtml(info.message || '') + '" onchange="updatePlatformMaint(\'' + safeKey + '\', \'message\', this.value)" /></div>';
 				html += '</div>';
 				html += '</div>';
 			});

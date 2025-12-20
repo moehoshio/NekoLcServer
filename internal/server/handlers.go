@@ -128,6 +128,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		body := LoginResponseBody{Meta: s.meta()}
 		body.LoginResponse.AccessToken = access
 		body.LoginResponse.RefreshToken = refresh
+		body.LoginResponse.UserID = user.ID
+		body.LoginResponse.Username = user.Username
+		body.LoginResponse.Role = user.Role
 		s.writeJSON(w, http.StatusOK, body)
 		return
 	}

@@ -171,6 +171,7 @@ func (s *Server) buildRouter() chi.Router {
 		router.Post("/app/register", s.handleAppRegisterSubmit)
 		router.Get("/app/feedback", s.handleAppFeedback)
 		router.Get("/app/admin", s.handleAppAdmin)
+		router.Get("/app/dashboard", s.handleAppUserDashboard)
 	}
 
 	if s.basePath == "" {
@@ -426,36 +427,71 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 		.footer { margin-top: 60px; color: #64748b; font-size: 14px; }
 		.footer a { color: #818cf8; text-decoration: none; }
 		.footer a:hover { text-decoration: underline; }
+		.lang-switch { position: absolute; top: 16px; right: 16px; }
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #e2e8f0; cursor: pointer; }
 	</style>
 </head>
 <body>
+	<div class="lang-switch">
+		<select id="langSelect" onchange="changeLang()">
+			<option value="en">English</option>
+			<option value="zh-hans">简体中文</option>
+			<option value="zh-hant">繁體中文</option>
+		</select>
+	</div>
 	<div class="container">
 		<div class="logo">🐱</div>
 		<h1>NekoLcServer</h1>
-		<p class="subtitle">A modern launcher server for managing updates, news, and user authentication</p>
+		<p class="subtitle" id="subtitle">A modern launcher server for managing updates, news, and user authentication</p>
 		<div class="links">
-			<a href="{{.BasePath}}/app/login" class="btn btn-primary">🔑 Sign In</a>
-			<a href="{{.BasePath}}/app/register" class="btn btn-secondary">📝 Register</a>
-			<a href="{{.BasePath}}/app/admin" class="btn btn-secondary">⚙️ Admin Dashboard</a>
+			<a href="{{.BasePath}}/app/login" class="btn btn-primary" id="link-signin">🔑 Sign In</a>
+			<a href="{{.BasePath}}/app/register" class="btn btn-secondary" id="link-register">📝 Register</a>
+			<a href="{{.BasePath}}/app/admin" class="btn btn-secondary" id="link-admin">⚙️ Admin Dashboard</a>
 		</div>
 		<div class="features">
 			<div class="feature">
-				<h3>🚀 Update Management</h3>
-				<p>Configure and distribute updates for multiple platforms and architectures with automatic checksum verification.</p>
+				<h3 id="f1-title">🚀 Update Management</h3>
+				<p id="f1-desc">Configure and distribute updates for multiple platforms and architectures with automatic checksum verification.</p>
 			</div>
 			<div class="feature">
-				<h3>🔧 Maintenance Control</h3>
-				<p>Schedule and manage maintenance windows with platform-specific settings and customizable messages.</p>
+				<h3 id="f2-title">🔧 Maintenance Control</h3>
+				<p id="f2-desc">Schedule and manage maintenance windows with platform-specific settings and customizable messages.</p>
 			</div>
 			<div class="feature">
-				<h3>📰 News System</h3>
-				<p>Publish and manage news items with categories, priorities, and rich content support.</p>
+				<h3 id="f3-title">📰 News System</h3>
+				<p id="f3-desc">Publish and manage news items with categories, priorities, and rich content support.</p>
 			</div>
 		</div>
 		<div class="footer">
-			<p>Powered by <a href="https://github.com/moehoshio/NekoLcServer" target="_blank">NekoLcServer</a></p>
+			<p id="footer">Powered by <a href="https://github.com/moehoshio/NekoLcServer" target="_blank">NekoLcServer</a></p>
 		</div>
 	</div>
+	<script>
+		const i18n = {
+			'en': { subtitle: 'A modern launcher server for managing updates, news, and user authentication', signin: '🔑 Sign In', register: '📝 Register', admin: '⚙️ Admin Dashboard', f1t: '🚀 Update Management', f1d: 'Configure and distribute updates for multiple platforms and architectures with automatic checksum verification.', f2t: '🔧 Maintenance Control', f2d: 'Schedule and manage maintenance windows with platform-specific settings and customizable messages.', f3t: '📰 News System', f3d: 'Publish and manage news items with categories, priorities, and rich content support.' },
+			'zh-hans': { subtitle: '一个现代化的启动器服务器，用于管理更新、新闻和用户认证', signin: '🔑 登录', register: '📝 注册', admin: '⚙️ 管理面板', f1t: '🚀 更新管理', f1d: '配置和分发多平台多架构的更新，支持自动校验。', f2t: '🔧 维护控制', f2d: '安排和管理维护窗口，支持按平台设置和自定义消息。', f3t: '📰 新闻系统', f3d: '发布和管理新闻，支持分类、优先级和富文本内容。' },
+			'zh-hant': { subtitle: '一個現代化的啟動器伺服器，用於管理更新、新聞和使用者認證', signin: '🔑 登入', register: '📝 註冊', admin: '⚙️ 管理面板', f1t: '🚀 更新管理', f1d: '配置和分發多平台多架構的更新，支援自動校驗。', f2t: '🔧 維護控制', f2d: '安排和管理維護視窗，支援按平台設定和自訂訊息。', f3t: '📰 新聞系統', f3d: '發佈和管理新聞，支援分類、優先順序和富文本內容。' }
+		};
+		function getLang() { return localStorage.getItem('lang') || 'en'; }
+		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function applyLang() {
+			const lang = getLang();
+			document.getElementById('langSelect').value = lang;
+			const t = i18n[lang] || i18n['en'];
+			document.getElementById('subtitle').innerText = t.subtitle;
+			document.getElementById('link-signin').innerText = t.signin;
+			document.getElementById('link-register').innerText = t.register;
+			document.getElementById('link-admin').innerText = t.admin;
+			document.getElementById('f1-title').innerText = t.f1t;
+			document.getElementById('f1-desc').innerText = t.f1d;
+			document.getElementById('f2-title').innerText = t.f2t;
+			document.getElementById('f2-desc').innerText = t.f2d;
+			document.getElementById('f3-title').innerText = t.f3t;
+			document.getElementById('f3-desc').innerText = t.f3d;
+		}
+		applyLang();
+	</script>
 </body>
 </html>`))
 
@@ -482,24 +518,55 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 		.link { text-align: center; margin-top: 16px; }
 		.link a { color: #22d3ee; text-decoration: none; }
 		.link a:hover { text-decoration: underline; }
+		.lang-switch { position: absolute; top: 16px; right: 16px; }
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; cursor: pointer; }
 	</style>
 </head>
 <body>
+	<div class="lang-switch">
+		<select id="langSelect" onchange="changeLang()">
+			<option value="en">English</option>
+			<option value="zh-hans">简体中文</option>
+			<option value="zh-hant">繁體中文</option>
+		</select>
+	</div>
 	<div class="card">
-		<h1>Sign in</h1>
-		<label>Username</label>
+		<h1 id="title">Sign in</h1>
+		<label id="lbl-username">Username</label>
 		<input id="username" autocomplete="username" />
-		<label>Password</label>
+		<label id="lbl-password">Password</label>
 		<input id="password" type="password" autocomplete="current-password" />
-		<button onclick="login()">Login</button>
+		<button onclick="login()" id="btn-login">Login</button>
 		<div class="error" id="error"></div>
-		<div class="link">Don't have an account? <a href="{{.BasePath}}/app/register">Create one</a></div>
+		<div class="link"><span id="no-account">Don't have an account?</span> <a href="{{.BasePath}}/app/register" id="link-register">Create one</a></div>
 	</div>
 	<script>
 		const basePath = '{{.BasePath}}';
+		const i18n = {
+			'en': { title: 'Sign in', username: 'Username', password: 'Password', login: 'Login', noAccount: "Don't have an account?", createOne: 'Create one', loginFailed: 'Login failed' },
+			'zh-hans': { title: '登录', username: '用户名', password: '密码', login: '登录', noAccount: '没有账号？', createOne: '创建账号', loginFailed: '登录失败' },
+			'zh-hant': { title: '登入', username: '使用者名稱', password: '密碼', login: '登入', noAccount: '沒有帳號？', createOne: '建立帳號', loginFailed: '登入失敗' }
+		};
+		function getLang() { return localStorage.getItem('lang') || 'en'; }
+		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function applyLang() {
+			const lang = getLang();
+			document.getElementById('langSelect').value = lang;
+			const t = i18n[lang] || i18n['en'];
+			document.getElementById('title').innerText = t.title;
+			document.getElementById('lbl-username').innerText = t.username;
+			document.getElementById('lbl-password').innerText = t.password;
+			document.getElementById('btn-login').innerText = t.login;
+			document.getElementById('no-account').innerText = t.noAccount;
+			document.getElementById('link-register').innerText = t.createOne;
+		}
+		applyLang();
 		async function login() {
 			const username = document.getElementById('username').value.trim();
 			const password = document.getElementById('password').value;
+			const lang = getLang();
+			const t = i18n[lang] || i18n['en'];
 			const res = await fetch(basePath + '/v0/api/auth/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -507,13 +574,20 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(()=>({}));
-				document.getElementById('error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Login failed';
+				document.getElementById('error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || t.loginFailed;
 				return;
 			}
 			const data = await res.json();
 			localStorage.setItem('accessToken', data.loginResponse.accessToken);
 			localStorage.setItem('refreshToken', data.loginResponse.refreshToken);
-			window.location.href = basePath + '/app/admin';
+			localStorage.setItem('userRole', data.loginResponse.role || 'user');
+			localStorage.setItem('username', data.loginResponse.username || username);
+			// Redirect based on role
+			if (data.loginResponse.role === 'admin') {
+				window.location.href = basePath + '/app/admin';
+			} else {
+				window.location.href = basePath + '/app/dashboard';
+			}
 		}
 	</script>
 </body>
@@ -538,32 +612,64 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 		.link { text-align: center; margin-top: 16px; }
 		.link a { color: #22d3ee; text-decoration: none; }
 		.link a:hover { text-decoration: underline; }
+		.lang-switch { position: absolute; top: 16px; right: 16px; }
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; cursor: pointer; }
 	</style>
 </head>
 <body>
+	<div class="lang-switch">
+		<select id="langSelect" onchange="changeLang()">
+			<option value="en">English</option>
+			<option value="zh-hans">简体中文</option>
+			<option value="zh-hant">繁體中文</option>
+		</select>
+	</div>
 	<div class="card">
-		<h1>Create Account</h1>
-		<label>Username</label>
-		<input id="username" autocomplete="username" placeholder="3-50 characters" />
-		<label>Password</label>
-		<input id="password" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
-		<label>Confirm Password</label>
+		<h1 id="title">Create Account</h1>
+		<label id="lbl-username">Username</label>
+		<input id="username" autocomplete="username" />
+		<label id="lbl-password">Password</label>
+		<input id="password" type="password" autocomplete="new-password" />
+		<label id="lbl-confirm">Confirm Password</label>
 		<input id="confirmPassword" type="password" autocomplete="new-password" />
-		<button onclick="register()">Register</button>
+		<button onclick="register()" id="btn-register">Register</button>
 		<div class="error" id="error"></div>
 		<div class="success" id="success"></div>
-		<div class="link">Already have an account? <a href="{{.BasePath}}/app/login">Sign in</a></div>
+		<div class="link"><span id="have-account">Already have an account?</span> <a href="{{.BasePath}}/app/login" id="link-signin">Sign in</a></div>
 	</div>
 	<script>
 		const basePath = '{{.BasePath}}';
+		const i18n = {
+			'en': { title: 'Create Account', username: 'Username', password: 'Password', confirm: 'Confirm Password', register: 'Register', haveAccount: 'Already have an account?', signIn: 'Sign in', passwordMismatch: 'Passwords do not match', regFailed: 'Registration failed', created: 'Account created! Redirecting to login...' },
+			'zh-hans': { title: '创建账号', username: '用户名', password: '密码', confirm: '确认密码', register: '注册', haveAccount: '已有账号？', signIn: '登录', passwordMismatch: '两次密码不一致', regFailed: '注册失败', created: '账号创建成功！正在跳转到登录页面...' },
+			'zh-hant': { title: '建立帳號', username: '使用者名稱', password: '密碼', confirm: '確認密碼', register: '註冊', haveAccount: '已有帳號？', signIn: '登入', passwordMismatch: '兩次密碼不一致', regFailed: '註冊失敗', created: '帳號建立成功！正在跳轉到登入頁面...' }
+		};
+		function getLang() { return localStorage.getItem('lang') || 'en'; }
+		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function applyLang() {
+			const lang = getLang();
+			document.getElementById('langSelect').value = lang;
+			const t = i18n[lang] || i18n['en'];
+			document.getElementById('title').innerText = t.title;
+			document.getElementById('lbl-username').innerText = t.username;
+			document.getElementById('lbl-password').innerText = t.password;
+			document.getElementById('lbl-confirm').innerText = t.confirm;
+			document.getElementById('btn-register').innerText = t.register;
+			document.getElementById('have-account').innerText = t.haveAccount;
+			document.getElementById('link-signin').innerText = t.signIn;
+		}
+		applyLang();
 		async function register() {
 			const username = document.getElementById('username').value.trim();
 			const password = document.getElementById('password').value;
 			const confirmPassword = document.getElementById('confirmPassword').value;
+			const lang = getLang();
+			const t = i18n[lang] || i18n['en'];
 			document.getElementById('error').innerText = '';
 			document.getElementById('success').innerText = '';
 			if (password !== confirmPassword) {
-				document.getElementById('error').innerText = 'Passwords do not match';
+				document.getElementById('error').innerText = t.passwordMismatch;
 				return;
 			}
 			const res = await fetch(basePath + '/app/register', {
@@ -573,10 +679,10 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(()=>({}));
-				document.getElementById('error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Registration failed';
+				document.getElementById('error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || t.regFailed;
 				return;
 			}
-			document.getElementById('success').innerText = 'Account created! Redirecting to login...';
+			document.getElementById('success').innerText = t.created;
 			setTimeout(() => { window.location.href = basePath + '/app/login'; }, 1500);
 		}
 	</script>
@@ -1959,7 +2065,132 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 </body>
 </html>`))
 
+var appUserDashboardTemplate = template.Must(template.New("appUserDashboard").Parse(`<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>NekoLc Dashboard</title>
+	<style>
+		* { box-sizing: border-box; }
+		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
+		.header { background: #111827; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; }
+		.header h1 { margin: 0; font-size: 18px; }
+		.user { display: flex; align-items: center; gap: 12px; }
+		.user span { color: #94a3b8; }
+		.user button { padding: 8px 16px; border: none; border-radius: 6px; background: #374151; color: #e2e8f0; cursor: pointer; }
+		.user button:hover { background: #4b5563; }
+		.container { max-width: 1000px; margin: 0 auto; padding: 24px; }
+		.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
+		h2 { margin: 0 0 16px 0; color: #f8fafc; }
+		.welcome { font-size: 28px; margin-bottom: 8px; }
+		.subtitle { color: #94a3b8; margin-bottom: 24px; }
+		.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+		.info-item { background: #1f2937; padding: 16px; border-radius: 8px; }
+		.info-label { color: #94a3b8; font-size: 13px; margin-bottom: 4px; }
+		.info-value { font-size: 18px; font-weight: 600; }
+		.lang-switch { display: flex; align-items: center; gap: 8px; }
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0; cursor: pointer; }
+		.actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+		.actions a { padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
+		.btn-secondary { background: #374151; color: #e2e8f0; }
+	</style>
+</head>
+<body>
+	<div class="header">
+		<h1>🐱 NekoLc</h1>
+		<div class="user">
+			<div class="lang-switch">
+				<select id="langSelect" onchange="changeLang()">
+					<option value="en">English</option>
+					<option value="zh-hans">简体中文</option>
+					<option value="zh-hant">繁體中文</option>
+				</select>
+			</div>
+			<span id="username">User</span>
+			<button onclick="logout()" id="btn-logout">Logout</button>
+		</div>
+	</div>
+	<div class="container">
+		<div class="card">
+			<div class="welcome" id="welcome">Welcome!</div>
+			<div class="subtitle" id="subtitle">Here's your account overview</div>
+			<div class="info-grid">
+				<div class="info-item">
+					<div class="info-label" id="lbl-username">Username</div>
+					<div class="info-value" id="info-username">-</div>
+				</div>
+				<div class="info-item">
+					<div class="info-label" id="lbl-role">Role</div>
+					<div class="info-value" id="info-role">-</div>
+				</div>
+				<div class="info-item">
+					<div class="info-label" id="lbl-status">Status</div>
+					<div class="info-value" id="info-status" style="color: #34d399;">Active</div>
+				</div>
+			</div>
+			<div class="actions">
+				<a href="{{.BasePath}}/app" class="btn-secondary" id="link-home">Home</a>
+			</div>
+		</div>
+	</div>
+	<script>
+		const basePath = '{{.BasePath}}';
+		const i18n = {
+			'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin' },
+			'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员' },
+			'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員' }
+		};
+		function getLang() { return localStorage.getItem('lang') || 'en'; }
+		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function applyLang() {
+			const lang = getLang();
+			document.getElementById('langSelect').value = lang;
+			const t = i18n[lang] || i18n['en'];
+			document.getElementById('welcome').innerText = t.welcome;
+			document.getElementById('subtitle').innerText = t.subtitle;
+			document.getElementById('lbl-username').innerText = t.username;
+			document.getElementById('lbl-role').innerText = t.role;
+			document.getElementById('lbl-status').innerText = t.status;
+			document.getElementById('info-status').innerText = t.active;
+			document.getElementById('btn-logout').innerText = t.logout;
+			document.getElementById('link-home').innerText = t.home;
+			// Update role display
+			const role = localStorage.getItem('userRole') || 'user';
+			document.getElementById('info-role').innerText = role === 'admin' ? t.admin : t.user;
+		}
+		function checkAuth() {
+			if (!localStorage.getItem('accessToken')) {
+				window.location.href = basePath + '/app/login';
+			}
+		}
+		function logout() {
+			localStorage.removeItem('accessToken');
+			localStorage.removeItem('refreshToken');
+			localStorage.removeItem('userRole');
+			localStorage.removeItem('username');
+			window.location.href = basePath + '/app/login';
+		}
+		function init() {
+			checkAuth();
+			applyLang();
+			const username = localStorage.getItem('username') || 'User';
+			document.getElementById('username').innerText = username;
+			document.getElementById('info-username').innerText = username;
+		}
+		init();
+	</script>
+</body>
+</html>`))
+
 func (s *Server) handleAppAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	appAdminTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
+}
+
+func (s *Server) handleAppUserDashboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	appUserDashboardTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }

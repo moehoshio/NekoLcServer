@@ -129,6 +129,7 @@ func (s *Server) buildRouter() chi.Router {
 				authRouter.Post("/refresh", s.handleRefresh)
 				authRouter.Post("/validate", s.handleValidate)
 				authRouter.Post("/logout", s.handleLogout)
+				authRouter.Get("/register", s.handleRegisterInfo)
 				authRouter.Post("/register", s.handleAppRegisterSubmit)
 			})
 			r.Post("/launcherConfig", s.handleLauncherConfig)
@@ -1190,9 +1191,16 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							<input type="text" id="launcher-refresh-url" placeholder="/v0/api/auth/refresh" />
 						</div>
 						<div class="form-group">
-							<label for="launcher-register-url">Register URL (UI)</label>
-							<input type="text" id="launcher-register-url" placeholder="/app/register" />
+							<label for="launcher-register-url">Register URL (API)</label>
+							<input type="text" id="launcher-register-url" placeholder="/v0/api/auth/register" />
 						</div>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="launcher-register-ui-url">Register URL (UI)</label>
+							<input type="text" id="launcher-register-ui-url" placeholder="/app/register" />
+						</div>
+						<div class="form-group"></div>
 					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveLauncher()">Save Changes</button>
@@ -1426,7 +1434,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('launcher-login-url').value = sec.loginUrl || '';
 			document.getElementById('launcher-logout-url').value = sec.logoutUrl || '';
 			document.getElementById('launcher-refresh-url').value = sec.refreshUrl || '';
-			document.getElementById('launcher-register-url').value = (sec.ui && sec.ui.registerUrl) || '';
+			document.getElementById('launcher-register-url').value = sec.registerUrl || '/v0/api/auth/register';
+			document.getElementById('launcher-register-ui-url').value = (sec.ui && sec.ui.registerUrl) || '/app/register';
 		}
 		
 		async function saveLauncher() {
@@ -1448,8 +1457,9 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						loginUrl: document.getElementById('launcher-login-url').value,
 						logoutUrl: document.getElementById('launcher-logout-url').value,
 						refreshUrl: document.getElementById('launcher-refresh-url').value,
+						registerUrl: document.getElementById('launcher-register-url').value,
 						ui: {
-							registerUrl: document.getElementById('launcher-register-url').value
+							registerUrl: document.getElementById('launcher-register-ui-url').value
 						}
 					},
 					featuresFlags: launcherData?.featuresFlags || {}

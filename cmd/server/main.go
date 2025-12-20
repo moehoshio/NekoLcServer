@@ -86,6 +86,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("init mysql store: %v", err)
 		}
+	} else {
+		// Use in-memory store for non-MySQL modes to enable account features
+		st = store.NewMemory()
+	}
+	if st != nil {
 		if err := seedAdminUser(st); err != nil {
 			log.Fatalf("seed admin user: %v", err)
 		}
@@ -176,7 +181,12 @@ func seedAdminUser(st store.Store) error {
 	if _, err := st.CreateUser(ctx, "admin", string(hash), "admin"); err != nil {
 		return err
 	}
-	log.Printf("created default admin user: username=admin password=%s (please change immediately)", password)
+	log.Printf("============================================================")
+	log.Printf("IMPORTANT: Default admin account created!")
+	log.Printf("Username: admin")
+	log.Printf("Password: %s", password)
+	log.Printf("Please change this password immediately after first login!")
+	log.Printf("============================================================")
 	return nil
 }
 

@@ -411,20 +411,22 @@ func TestAuthDisabledLogin(t *testing.T) {
 	}
 }
 
-func TestJWTLoginRejectsUsernamePassword(t *testing.T) {
+func TestJWTLoginWithUsernamePassword(t *testing.T) {
 	srv := newTestServer(t, func(cfg *config.AppConfig) {
 		cfg.Authentication.Enabled = true
 		cfg.Authentication.Method = "jwt"
 	})
+	// With a store available, username/password login should work
+	// But with non-existent user, it should return 401
 	payload := map[string]interface{}{
 		"loginRequest": map[string]interface{}{
-			"username": "user",
+			"username": "nonexistent",
 			"password": "pass",
 		},
 	}
 	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/login", payload)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 got %d", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 got %d", rec.Code)
 	}
 }
 

@@ -1391,3 +1391,96 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// App-specific API handlers (for NekoLcServer UI, separate from NekoLcApi)
+
+// AppLoginRequest is the request body for app UI login
+type AppLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// AppLoginResponse is the response body for app UI login
+type AppLoginResponse struct {
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
+	UserID       int64  `json:"userId"`
+	Username     string `json:"username"`
+	Role         string `json:"role"`
+}
+
+func (s *Server) handleAppAPILogin(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil || !s.authService.Enabled() {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
+		return
+	}
+
+	var req AppLoginRequest
+	if err := s.decode(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	password := strings.TrimSpace(req.Password)
+	if username == "" || password == "" {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "username and password are required")
+		return
+	}
+
+	user, err := s.lookupUser(username)
+	if err != nil {
+		s.writeError(w, http.StatusUnauthorized, s.appConfig.Language.Default, "Unauthorized", "invalid credentials")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		s.writeError(w, http.StatusUnauthorized, s.appConfig.Language.Default, "Unauthorized", "invalid credentials")
+		return
+	}
+
+	subject := fmt.Sprintf("user:%d", user.ID)
+	access, refresh, err := s.authService.IssueTokens(subject, user.Role)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+
+	resp := AppLoginResponse{
+		AccessToken:  access,
+		RefreshToken: refresh,
+		UserID:       user.ID,
+		Username:     user.Username,
+		Role:         user.Role,
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAppAPILogout(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil || !s.authService.Enabled() {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
+		return
+	}
+
+	var payload struct {
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+
+	access := strings.TrimSpace(payload.AccessToken)
+	refresh := strings.TrimSpace(payload.RefreshToken)
+	if access == "" && refresh == "" {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "accessToken or refreshToken required")
+		return
+	}
+
+	s.authService.Revoke(access, refresh)
+	w.WriteHeader(http.StatusNoContent)
+}

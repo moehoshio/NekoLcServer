@@ -172,6 +172,13 @@ func (s *Server) buildRouter() chi.Router {
 		router.Get("/app/feedback", s.handleAppFeedback)
 		router.Get("/app/admin", s.handleAppAdmin)
 		router.Get("/app/dashboard", s.handleAppUserDashboard)
+
+		// App-specific API endpoints (for NekoLcServer UI, separate from NekoLcApi)
+		router.Route("/app/api", func(appApiRouter chi.Router) {
+			appApiRouter.Post("/login", s.handleAppAPILogin)
+			appApiRouter.Post("/logout", s.handleAppAPILogout)
+			appApiRouter.Post("/register", s.handleAppRegisterSubmit)
+		})
 	}
 
 	if s.basePath == "" {
@@ -567,10 +574,10 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 			const password = document.getElementById('password').value;
 			const lang = getLang();
 			const t = i18n[lang] || i18n['en'];
-			const res = await fetch(basePath + '/v0/api/auth/login', {
+			const res = await fetch(basePath + '/app/api/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ loginRequest: { username, password } })
+				body: JSON.stringify({ username, password })
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(()=>({}));
@@ -578,12 +585,12 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 				return;
 			}
 			const data = await res.json();
-			localStorage.setItem('accessToken', data.loginResponse.accessToken);
-			localStorage.setItem('refreshToken', data.loginResponse.refreshToken);
-			localStorage.setItem('userRole', data.loginResponse.role || 'user');
-			localStorage.setItem('username', data.loginResponse.username || username);
+			localStorage.setItem('accessToken', data.accessToken);
+			localStorage.setItem('refreshToken', data.refreshToken);
+			localStorage.setItem('userRole', data.role || 'user');
+			localStorage.setItem('username', data.username || username);
 			// Redirect based on role
-			if (data.loginResponse.role === 'admin') {
+			if (data.role === 'admin') {
 				window.location.href = basePath + '/app/admin';
 			} else {
 				window.location.href = basePath + '/app/dashboard';

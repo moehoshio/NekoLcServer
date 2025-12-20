@@ -1032,3 +1032,47 @@ func TestRegisterThenLogin(t *testing.T) {
 		t.Fatalf("expected role 'user' got '%s'", resp.LoginResponse.Role)
 	}
 }
+
+// TestAppAPILogin tests the app-specific login endpoint (/app/api/login)
+func TestAppAPILogin(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+
+	// First register a user via /app/register
+	registerPayload := map[string]interface{}{
+		"registerRequest": map[string]interface{}{
+			"username": "appuser",
+			"password": "apppassword123",
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/app/register", registerPayload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register expected 201 got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Now try to login with the app-specific endpoint
+	loginPayload := map[string]interface{}{
+		"username": "appuser",
+		"password": "apppassword123",
+	}
+	rec = doRequest(t, srv, http.MethodPost, "/app/api/login", loginPayload)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("app api login expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp AppLoginResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode app login response: %v", err)
+	}
+	if resp.AccessToken == "" {
+		t.Fatal("expected access token")
+	}
+	if resp.Username != "appuser" {
+		t.Fatalf("expected username 'appuser' got '%s'", resp.Username)
+	}
+	if resp.Role != "user" {
+		t.Fatalf("expected role 'user' got '%s'", resp.Role)
+	}
+}

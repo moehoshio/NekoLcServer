@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -43,57 +44,46 @@ func main() {
 		return resolvePath(baseDir, path)
 	}
 
-	languageBundle, err := config.LoadLanguages(resolve(appCfg.Language.ConfigPath))
+	// Initialize store based on database configuration
+	st, err := initStore(appCfg)
+	if err != nil {
+		log.Fatalf("init store: %v", err)
+	}
+
+	if st != nil {
+		if err := seedAdminUser(st); err != nil {
+			log.Fatalf("seed admin user: %v", err)
+		}
+	}
+
+	// Try to load configurations from database first, fall back to JSON files
+	languageBundle, err := loadLanguagesConfig(st, resolve(appCfg.Language.ConfigPath))
 	if err != nil {
 		log.Fatalf("load languages: %v", err)
 	}
 	localizer := localization.New(appCfg.Language.Default, languageBundle)
 
-	launcherCfg, err := config.LoadLauncher(resolve(appCfg.Launcher.ConfigPath))
+	launcherCfg, err := loadLauncherConfig(st, resolve(appCfg.Launcher.ConfigPath))
 	if err != nil {
 		log.Fatalf("load launcher config: %v", err)
 	}
 
 	maintenanceConfigPath := resolve(appCfg.Maintenance.ConfigPath)
-	maintenanceCfg, err := config.LoadMaintenance(maintenanceConfigPath)
+	maintenanceCfg, err := loadMaintenanceConfig(st, maintenanceConfigPath)
 	if err != nil {
 		log.Fatalf("load maintenance config: %v", err)
 	}
 
 	newsConfigPath := resolve(appCfg.News.ConfigPath)
-	newsCfg, err := config.LoadNews(newsConfigPath)
+	newsCfg, err := loadNewsConfig(st, newsConfigPath)
 	if err != nil {
 		log.Fatalf("load news config: %v", err)
 	}
 
 	updateConfigPath := resolve(appCfg.Update.ConfigPath)
-	updateCfg, err := config.LoadUpdates(updateConfigPath)
+	updateCfg, err := loadUpdatesConfig(st, updateConfigPath)
 	if err != nil {
 		log.Fatalf("load update config: %v", err)
-	}
-
-	var st store.Store
-	if strings.EqualFold(appCfg.Authentication.Method, "mysql") {
-		mysqlCfg := store.MySQLConfig{
-			Host:     appCfg.Authentication.MySQL.Host,
-			Port:     appCfg.Authentication.MySQL.Port,
-			Username: appCfg.Authentication.MySQL.Username,
-			Password: appCfg.Authentication.MySQL.Password,
-			Database: appCfg.Authentication.MySQL.Database,
-			Params:   appCfg.Authentication.MySQL.Params,
-		}
-		st, err = store.NewMySQLStore(mysqlCfg)
-		if err != nil {
-			log.Fatalf("init mysql store: %v", err)
-		}
-	} else {
-		// Use in-memory store for non-MySQL modes to enable account features
-		st = store.NewMemory()
-	}
-	if st != nil {
-		if err := seedAdminUser(st); err != nil {
-			log.Fatalf("seed admin user: %v", err)
-		}
 	}
 
 	authSvc := auth.NewService(appCfg, st)
@@ -138,6 +128,133 @@ func main() {
 		log.Fatalf("graceful shutdown failed: %v", err)
 	}
 	log.Printf("server shutdown complete")
+}
+
+func initStore(appCfg *config.AppConfig) (store.Store, error) {
+	dbType := strings.ToLower(strings.TrimSpace(appCfg.Database.Type))
+
+	// For backward compatibility, check authentication method if database type not set
+	if dbType == "" {
+		if strings.EqualFold(appCfg.Authentication.Method, "mysql") {
+			dbType = "mysql"
+		}
+	}
+
+	switch dbType {
+	case "mysql":
+		// Check new database config first, fall back to authentication config
+		mysqlCfg := store.MySQLConfig{
+			Host:     appCfg.Database.MySQL.Host,
+			Port:     appCfg.Database.MySQL.Port,
+			Username: appCfg.Database.MySQL.Username,
+			Password: appCfg.Database.MySQL.Password,
+			Database: appCfg.Database.MySQL.Database,
+			Params:   appCfg.Database.MySQL.Params,
+		}
+		// Fall back to authentication config for backward compatibility
+		if mysqlCfg.Host == "" {
+			mysqlCfg.Host = appCfg.Authentication.MySQL.Host
+			mysqlCfg.Port = appCfg.Authentication.MySQL.Port
+			mysqlCfg.Username = appCfg.Authentication.MySQL.Username
+			mysqlCfg.Password = appCfg.Authentication.MySQL.Password
+			mysqlCfg.Database = appCfg.Authentication.MySQL.Database
+			mysqlCfg.Params = appCfg.Authentication.MySQL.Params
+		}
+		return store.NewMySQLStore(mysqlCfg)
+
+	case "sqlite":
+		sqliteCfg := store.SQLiteConfig{
+			Path: appCfg.Database.SQLite.Path,
+		}
+		if sqliteCfg.Path == "" {
+			sqliteCfg.Path = "nekoserver.db"
+		}
+		return store.NewSQLiteStore(sqliteCfg)
+
+	default:
+		// Use in-memory store for memory mode or when not specified
+		return store.NewMemory(), nil
+	}
+}
+
+func loadLanguagesConfig(st store.Store, filePath string) (config.LanguageBundle, error) {
+	if st != nil {
+		ctx := context.Background()
+		data, err := st.GetConfig(ctx, store.ConfigKeyLanguages)
+		if err == nil {
+			var bundle config.LanguageBundle
+			if err := json.Unmarshal(data, &bundle); err == nil {
+				log.Printf("Loaded languages config from database")
+				return bundle, nil
+			}
+		}
+	}
+	// Fall back to file
+	return config.LoadLanguages(filePath)
+}
+
+func loadLauncherConfig(st store.Store, filePath string) (*config.LauncherConfig, error) {
+	if st != nil {
+		ctx := context.Background()
+		data, err := st.GetConfig(ctx, store.ConfigKeyLauncher)
+		if err == nil {
+			var cfg config.LauncherConfig
+			if err := json.Unmarshal(data, &cfg); err == nil {
+				log.Printf("Loaded launcher config from database")
+				return &cfg, nil
+			}
+		}
+	}
+	// Fall back to file
+	return config.LoadLauncher(filePath)
+}
+
+func loadMaintenanceConfig(st store.Store, filePath string) (*config.MaintenanceConfig, error) {
+	if st != nil {
+		ctx := context.Background()
+		data, err := st.GetConfig(ctx, store.ConfigKeyMaintenance)
+		if err == nil {
+			var cfg config.MaintenanceConfig
+			if err := json.Unmarshal(data, &cfg); err == nil {
+				log.Printf("Loaded maintenance config from database")
+				return &cfg, nil
+			}
+		}
+	}
+	// Fall back to file
+	return config.LoadMaintenance(filePath)
+}
+
+func loadNewsConfig(st store.Store, filePath string) (*config.NewsConfig, error) {
+	if st != nil {
+		ctx := context.Background()
+		data, err := st.GetConfig(ctx, store.ConfigKeyNews)
+		if err == nil {
+			var cfg config.NewsConfig
+			if err := json.Unmarshal(data, &cfg); err == nil {
+				log.Printf("Loaded news config from database")
+				return &cfg, nil
+			}
+		}
+	}
+	// Fall back to file
+	return config.LoadNews(filePath)
+}
+
+func loadUpdatesConfig(st store.Store, filePath string) (*config.UpdateConfig, error) {
+	if st != nil {
+		ctx := context.Background()
+		data, err := st.GetConfig(ctx, store.ConfigKeyUpdates)
+		if err == nil {
+			var cfg config.UpdateConfig
+			if err := json.Unmarshal(data, &cfg); err == nil {
+				log.Printf("Loaded updates config from database")
+				return &cfg, nil
+			}
+		}
+	}
+	// Fall back to file
+	return config.LoadUpdates(filePath)
 }
 
 func resolvePath(baseDir, cfgPath string) string {

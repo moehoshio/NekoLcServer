@@ -34,7 +34,8 @@ nekolc-server
 /tmp/
 
 # Database and data files
-/data/
+/data/*
+!data/.gitkeep
 *.db
 *.sqlite
 *.sqlite3

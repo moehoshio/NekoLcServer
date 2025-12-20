@@ -270,6 +270,17 @@ type AdminNewsUpdatePayload struct {
 	News config.NewsConfig `json:"news"`
 }
 
+// AdminLauncherResponse returns launcher configuration for admin UI.
+type AdminLauncherResponse struct {
+	Launcher config.LauncherConfig `json:"launcher"`
+	Meta     Meta                  `json:"meta"`
+}
+
+// AdminLauncherUpdatePayload is the request body for updating launcher config.
+type AdminLauncherUpdatePayload struct {
+	Launcher config.LauncherConfig `json:"launcher"`
+}
+
 // AdminMessageResponse is a simple message response for admin operations.
 type AdminMessageResponse struct {
 	Message string `json:"message"`

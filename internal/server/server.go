@@ -247,6 +247,29 @@ func (s *Server) meta() Meta {
 	}
 }
 
+// prependBasePath adds basePath prefix to a URL if it's a relative path (starts with /).
+// Absolute URLs (starting with http:// or https://) are returned unchanged.
+func (s *Server) prependBasePath(url string) string {
+	trimmed := strings.TrimSpace(url)
+	if trimmed == "" {
+		return trimmed
+	}
+	lower := strings.ToLower(trimmed)
+	// Absolute URLs don't need basePath
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return trimmed
+	}
+	// If the URL already starts with basePath, don't double-prepend
+	if s.basePath != "" && strings.HasPrefix(trimmed, s.basePath) {
+		return trimmed
+	}
+	// Prepend basePath to relative paths
+	if strings.HasPrefix(trimmed, "/") {
+		return s.basePath + trimmed
+	}
+	return s.basePath + "/" + trimmed
+}
+
 func (s *Server) writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

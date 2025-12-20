@@ -1227,20 +1227,27 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 </head>
 <body>
 	<div class="header">
-		<h1>🐱 NekoLc Admin Dashboard</h1>
+		<h1 id="admin-title">🐱 NekoLc Admin Dashboard</h1>
 		<div class="user">
+			<div class="lang-switch" style="margin-right:12px;">
+				<select id="langSelect" onchange="changeLang()" style="padding:6px 10px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e2e8f0;cursor:pointer;">
+					<option value="en">English</option>
+					<option value="zh-hans">简体中文</option>
+					<option value="zh-hant">繁體中文</option>
+				</select>
+			</div>
 			<span id="username">Admin</span>
-			<button onclick="logout()">Logout</button>
+			<button onclick="logout()" id="btn-logout">Logout</button>
 		</div>
 	</div>
 	<div class="container">
 		<div class="sidebar">
-			<button class="active" onclick="showSection('launcher')">🚀 Launcher</button>
-			<button onclick="showSection('maintenance')">🔧 Maintenance</button>
-			<button onclick="showSection('updates')">📦 Updates</button>
-			<button onclick="showSection('news')">📰 News</button>
-			<button onclick="showSection('users')">👥 Users</button>
-			<button onclick="showSection('feedback')">💬 Feedback</button>
+			<button class="active" onclick="showSection('launcher')" id="nav-launcher">🚀 Launcher</button>
+			<button onclick="showSection('maintenance')" id="nav-maintenance">🔧 Maintenance</button>
+			<button onclick="showSection('updates')" id="nav-updates">📦 Updates</button>
+			<button onclick="showSection('news')" id="nav-news">📰 News</button>
+			<button onclick="showSection('users')" id="nav-users">👥 Users</button>
+			<button onclick="showSection('feedback')" id="nav-feedback">💬 Feedback</button>
 		</div>
 		<div class="main">
 			<div id="message" class="message hidden"></div>
@@ -1248,82 +1255,82 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<!-- Launcher Section -->
 			<div id="section-launcher" class="section">
 				<div class="card">
-					<h2>Launcher Configuration</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Configure launcher settings that clients receive.</p>
+					<h2 id="launcher-title">Launcher Configuration</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="launcher-desc">Configure launcher settings that clients receive.</p>
 					<div class="form-group">
-						<label for="launcher-hosts">Hosts (one per line)</label>
+						<label for="launcher-hosts" id="lbl-hosts">Hosts (one per line)</label>
 						<textarea id="launcher-hosts" rows="3" placeholder="https://api.example.com"></textarea>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="launcher-retry-interval">Retry Interval (seconds)</label>
+							<label for="launcher-retry-interval" id="lbl-retry-interval">Retry Interval (seconds)</label>
 							<input type="number" id="launcher-retry-interval" min="1" />
 						</div>
 						<div class="form-group">
-							<label for="launcher-max-retry">Max Retry Count</label>
+							<label for="launcher-max-retry" id="lbl-max-retry">Max Retry Count</label>
 							<input type="number" id="launcher-max-retry" min="0" />
 						</div>
 					</div>
-					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;">WebSocket</h3>
+					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;" id="ws-title">WebSocket</h3>
 					<div class="form-group toggle">
 						<input type="checkbox" id="launcher-ws-enable" />
-						<label for="launcher-ws-enable">Enable WebSocket</label>
+						<label for="launcher-ws-enable" id="lbl-ws-enable">Enable WebSocket</label>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="launcher-ws-host">WebSocket Host</label>
+							<label for="launcher-ws-host" id="lbl-ws-host">WebSocket Host</label>
 							<input type="text" id="launcher-ws-host" placeholder="wss://ws.example.com" />
 						</div>
 						<div class="form-group">
-							<label for="launcher-ws-heartbeat">Heartbeat Interval (seconds)</label>
+							<label for="launcher-ws-heartbeat" id="lbl-ws-heartbeat">Heartbeat Interval (seconds)</label>
 							<input type="number" id="launcher-ws-heartbeat" min="1" />
 						</div>
 					</div>
-					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;">Security</h3>
+					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;" id="security-title">Security</h3>
 					<div class="form-group toggle">
 						<input type="checkbox" id="launcher-auth-enable" />
-						<label for="launcher-auth-enable">Enable Authentication</label>
+						<label for="launcher-auth-enable" id="lbl-auth-enable">Enable Authentication</label>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="launcher-token-exp">Token Expiration (seconds)</label>
+							<label for="launcher-token-exp" id="lbl-token-exp">Token Expiration (seconds)</label>
 							<input type="number" id="launcher-token-exp" min="1" />
 						</div>
 						<div class="form-group">
-							<label for="launcher-refresh-exp">Refresh Token Expiration (days)</label>
+							<label for="launcher-refresh-exp" id="lbl-refresh-exp">Refresh Token Expiration (days)</label>
 							<input type="number" id="launcher-refresh-exp" min="1" />
 						</div>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="launcher-login-url">Login URL</label>
+							<label for="launcher-login-url" id="lbl-login-url">Login URL</label>
 							<input type="text" id="launcher-login-url" placeholder="/v0/api/auth/login" />
 						</div>
 						<div class="form-group">
-							<label for="launcher-logout-url">Logout URL</label>
+							<label for="launcher-logout-url" id="lbl-logout-url">Logout URL</label>
 							<input type="text" id="launcher-logout-url" placeholder="/v0/api/auth/logout" />
 						</div>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="launcher-refresh-url">Refresh URL</label>
+							<label for="launcher-refresh-url" id="lbl-refresh-url">Refresh URL</label>
 							<input type="text" id="launcher-refresh-url" placeholder="/v0/api/auth/refresh" />
 						</div>
 						<div class="form-group">
-							<label for="launcher-register-url">Register URL (API)</label>
+							<label for="launcher-register-url" id="lbl-register-url">Register URL (API)</label>
 							<input type="text" id="launcher-register-url" placeholder="/v0/api/auth/register" />
 						</div>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="launcher-register-ui-url">Register URL (UI)</label>
+							<label for="launcher-register-ui-url" id="lbl-register-ui-url">Register URL (UI)</label>
 							<input type="text" id="launcher-register-ui-url" placeholder="/app/register" />
 						</div>
 						<div class="form-group"></div>
 					</div>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="saveLauncher()">Save Changes</button>
-						<button class="btn btn-secondary" onclick="loadLauncher()">Reload</button>
+						<button class="btn btn-primary" onclick="saveLauncher()" id="btn-save-launcher">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadLauncher()" id="btn-reload-launcher">Reload</button>
 					</div>
 				</div>
 			</div>
@@ -1522,6 +1529,312 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		let updatesData = null;
 		let newsData = null;
 		let usersData = null;
+		
+		// i18n translations
+		const i18n = {
+			'en': {
+				adminTitle: '🐱 NekoLc Admin Dashboard',
+				logout: 'Logout',
+				navLauncher: '🚀 Launcher',
+				navMaintenance: '🔧 Maintenance',
+				navUpdates: '📦 Updates',
+				navNews: '📰 News',
+				navUsers: '👥 Users',
+				navFeedback: '💬 Feedback',
+				launcherTitle: 'Launcher Configuration',
+				launcherDesc: 'Configure launcher settings that clients receive.',
+				hosts: 'Hosts (one per line)',
+				retryInterval: 'Retry Interval (seconds)',
+				maxRetry: 'Max Retry Count',
+				wsTitle: 'WebSocket',
+				wsEnable: 'Enable WebSocket',
+				wsHost: 'WebSocket Host',
+				wsHeartbeat: 'Heartbeat Interval (seconds)',
+				securityTitle: 'Security',
+				authEnable: 'Enable Authentication',
+				tokenExp: 'Token Expiration (seconds)',
+				refreshExp: 'Refresh Token Expiration (days)',
+				loginUrl: 'Login URL',
+				logoutUrl: 'Logout URL',
+				refreshUrl: 'Refresh URL',
+				registerUrl: 'Register URL (API)',
+				registerUiUrl: 'Register URL (UI)',
+				saveChanges: 'Save Changes',
+				reload: 'Reload',
+				savedSuccess: 'Saved successfully',
+				saveFailed: 'Failed to save',
+				maintTitle: 'Maintenance Configuration',
+				maintActive: 'Maintenance Active',
+				status: 'Status',
+				statusNone: 'None',
+				statusScheduled: 'Scheduled',
+				statusProgress: 'In Progress',
+				posterUrl: 'Poster URL',
+				message: 'Message',
+				startTime: 'Start Time',
+				endTime: 'Expected End Time',
+				announcementLink: 'Announcement Link',
+				platformMaintTitle: 'Platform-Specific Maintenance',
+				platformMaintDesc: 'Configure maintenance settings per platform (e.g., windows-x64, linux-arm64).',
+				addPlatform: '+ Add Platform',
+				remove: 'Remove',
+				updatesAutoGen: 'Auto-Generate from Directory',
+				updatesAutoGenDesc: 'Scan a directory to automatically generate update files with checksums.',
+				dirPath: 'Directory Path',
+				baseUrl: 'Base URL',
+				platform: 'Platform',
+				architecture: 'Architecture',
+				hashAlg: 'Hash Algorithm',
+				generate: 'Generate',
+				updatesConfig: 'Updates Configuration',
+				updatesConfigDesc: 'Configure update settings for different platforms and architectures.',
+				isCore: 'Is Core',
+				addFile: 'Add File',
+				newsTitle: 'News Management',
+				newsDesc: 'Create and manage news items.',
+				addNewsItem: '+ Add News Item',
+				title: 'Title',
+				content: 'Content',
+				category: 'Category',
+				priority: 'Priority',
+				publishTime: 'Publish Time',
+				usersTitle: 'User Management',
+				usersDesc: 'View and manage user accounts.',
+				createUser: '+ Create User',
+				id: 'ID',
+				username: 'Username',
+				role: 'Role',
+				created: 'Created',
+				actions: 'Actions',
+				edit: 'Edit',
+				delete: 'Delete',
+				feedbackTitle: 'Feedback Logs',
+				time: 'Time',
+				loading: 'Loading...',
+				noData: 'No data available.',
+				confirmDelete: 'Are you sure you want to delete',
+				deleteSuccess: 'Deleted successfully',
+				deleteFailed: 'Failed to delete',
+				password: 'Password',
+				save: 'Save',
+				cancel: 'Cancel'
+			},
+			'zh-hans': {
+				adminTitle: '🐱 NekoLc 管理面板',
+				logout: '登出',
+				navLauncher: '🚀 启动器',
+				navMaintenance: '🔧 维护',
+				navUpdates: '📦 更新',
+				navNews: '📰 新闻',
+				navUsers: '👥 用户',
+				navFeedback: '💬 反馈',
+				launcherTitle: '启动器配置',
+				launcherDesc: '配置客户端接收的启动器设置。',
+				hosts: '主机地址（每行一个）',
+				retryInterval: '重试间隔（秒）',
+				maxRetry: '最大重试次数',
+				wsTitle: 'WebSocket',
+				wsEnable: '启用 WebSocket',
+				wsHost: 'WebSocket 主机',
+				wsHeartbeat: '心跳间隔（秒）',
+				securityTitle: '安全',
+				authEnable: '启用身份验证',
+				tokenExp: '令牌过期时间（秒）',
+				refreshExp: '刷新令牌过期时间（天）',
+				loginUrl: '登录 URL',
+				logoutUrl: '登出 URL',
+				refreshUrl: '刷新 URL',
+				registerUrl: '注册 URL (API)',
+				registerUiUrl: '注册 URL (UI)',
+				saveChanges: '保存更改',
+				reload: '重新加载',
+				savedSuccess: '保存成功',
+				saveFailed: '保存失败',
+				maintTitle: '维护配置',
+				maintActive: '维护中',
+				status: '状态',
+				statusNone: '无',
+				statusScheduled: '已计划',
+				statusProgress: '进行中',
+				posterUrl: '海报 URL',
+				message: '消息',
+				startTime: '开始时间',
+				endTime: '预计结束时间',
+				announcementLink: '公告链接',
+				platformMaintTitle: '平台特定维护',
+				platformMaintDesc: '为不同平台配置维护设置（例如：windows-x64、linux-arm64）。',
+				addPlatform: '+ 添加平台',
+				remove: '移除',
+				updatesAutoGen: '从目录自动生成',
+				updatesAutoGenDesc: '扫描目录以自动生成带校验和的更新文件。',
+				dirPath: '目录路径',
+				baseUrl: '基础 URL',
+				platform: '平台',
+				architecture: '架构',
+				hashAlg: '哈希算法',
+				generate: '生成',
+				updatesConfig: '更新配置',
+				updatesConfigDesc: '为不同平台和架构配置更新设置。',
+				isCore: '核心文件',
+				addFile: '添加文件',
+				newsTitle: '新闻管理',
+				newsDesc: '创建和管理新闻项目。',
+				addNewsItem: '+ 添加新闻',
+				title: '标题',
+				content: '内容',
+				category: '分类',
+				priority: '优先级',
+				publishTime: '发布时间',
+				usersTitle: '用户管理',
+				usersDesc: '查看和管理用户账户。',
+				createUser: '+ 创建用户',
+				id: 'ID',
+				username: '用户名',
+				role: '角色',
+				created: '创建时间',
+				actions: '操作',
+				edit: '编辑',
+				delete: '删除',
+				feedbackTitle: '反馈日志',
+				time: '时间',
+				loading: '加载中...',
+				noData: '暂无数据。',
+				confirmDelete: '确定要删除',
+				deleteSuccess: '删除成功',
+				deleteFailed: '删除失败',
+				password: '密码',
+				save: '保存',
+				cancel: '取消'
+			},
+			'zh-hant': {
+				adminTitle: '🐱 NekoLc 管理面板',
+				logout: '登出',
+				navLauncher: '🚀 啟動器',
+				navMaintenance: '🔧 維護',
+				navUpdates: '📦 更新',
+				navNews: '📰 新聞',
+				navUsers: '👥 使用者',
+				navFeedback: '💬 意見回饋',
+				launcherTitle: '啟動器設定',
+				launcherDesc: '設定客戶端接收的啟動器設定。',
+				hosts: '主機位址（每行一個）',
+				retryInterval: '重試間隔（秒）',
+				maxRetry: '最大重試次數',
+				wsTitle: 'WebSocket',
+				wsEnable: '啟用 WebSocket',
+				wsHost: 'WebSocket 主機',
+				wsHeartbeat: '心跳間隔（秒）',
+				securityTitle: '安全性',
+				authEnable: '啟用身份驗證',
+				tokenExp: '令牌過期時間（秒）',
+				refreshExp: '重新整理令牌過期時間（天）',
+				loginUrl: '登入 URL',
+				logoutUrl: '登出 URL',
+				refreshUrl: '重新整理 URL',
+				registerUrl: '註冊 URL (API)',
+				registerUiUrl: '註冊 URL (UI)',
+				saveChanges: '儲存變更',
+				reload: '重新載入',
+				savedSuccess: '儲存成功',
+				saveFailed: '儲存失敗',
+				maintTitle: '維護設定',
+				maintActive: '維護中',
+				status: '狀態',
+				statusNone: '無',
+				statusScheduled: '已排程',
+				statusProgress: '進行中',
+				posterUrl: '海報 URL',
+				message: '訊息',
+				startTime: '開始時間',
+				endTime: '預計結束時間',
+				announcementLink: '公告連結',
+				platformMaintTitle: '平台特定維護',
+				platformMaintDesc: '為不同平台設定維護設定（例如：windows-x64、linux-arm64）。',
+				addPlatform: '+ 新增平台',
+				remove: '移除',
+				updatesAutoGen: '從目錄自動產生',
+				updatesAutoGenDesc: '掃描目錄以自動產生帶校驗和的更新檔案。',
+				dirPath: '目錄路徑',
+				baseUrl: '基礎 URL',
+				platform: '平台',
+				architecture: '架構',
+				hashAlg: '雜湊演算法',
+				generate: '產生',
+				updatesConfig: '更新設定',
+				updatesConfigDesc: '為不同平台和架構設定更新設定。',
+				isCore: '核心檔案',
+				addFile: '新增檔案',
+				newsTitle: '新聞管理',
+				newsDesc: '建立和管理新聞項目。',
+				addNewsItem: '+ 新增新聞',
+				title: '標題',
+				content: '內容',
+				category: '分類',
+				priority: '優先順序',
+				publishTime: '發布時間',
+				usersTitle: '使用者管理',
+				usersDesc: '檢視和管理使用者帳戶。',
+				createUser: '+ 建立使用者',
+				id: 'ID',
+				username: '使用者名稱',
+				role: '角色',
+				created: '建立時間',
+				actions: '操作',
+				edit: '編輯',
+				delete: '刪除',
+				feedbackTitle: '意見回饋記錄',
+				time: '時間',
+				loading: '載入中...',
+				noData: '暫無資料。',
+				confirmDelete: '確定要刪除',
+				deleteSuccess: '刪除成功',
+				deleteFailed: '刪除失敗',
+				password: '密碼',
+				save: '儲存',
+				cancel: '取消'
+			}
+		};
+		
+		function getLang() { return localStorage.getItem('lang') || 'en'; }
+		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function t(key) { const lang = getLang(); return (i18n[lang] && i18n[lang][key]) || i18n['en'][key] || key; }
+		
+		function applyLang() {
+			const lang = getLang();
+			document.getElementById('langSelect').value = lang;
+			// Header
+			document.getElementById('admin-title').innerText = t('adminTitle');
+			document.getElementById('btn-logout').innerText = t('logout');
+			// Navigation
+			document.getElementById('nav-launcher').innerText = t('navLauncher');
+			document.getElementById('nav-maintenance').innerText = t('navMaintenance');
+			document.getElementById('nav-updates').innerText = t('navUpdates');
+			document.getElementById('nav-news').innerText = t('navNews');
+			document.getElementById('nav-users').innerText = t('navUsers');
+			document.getElementById('nav-feedback').innerText = t('navFeedback');
+			// Launcher section
+			document.getElementById('launcher-title').innerText = t('launcherTitle');
+			document.getElementById('launcher-desc').innerText = t('launcherDesc');
+			document.getElementById('lbl-hosts').innerText = t('hosts');
+			document.getElementById('lbl-retry-interval').innerText = t('retryInterval');
+			document.getElementById('lbl-max-retry').innerText = t('maxRetry');
+			document.getElementById('ws-title').innerText = t('wsTitle');
+			document.getElementById('lbl-ws-enable').innerText = t('wsEnable');
+			document.getElementById('lbl-ws-host').innerText = t('wsHost');
+			document.getElementById('lbl-ws-heartbeat').innerText = t('wsHeartbeat');
+			document.getElementById('security-title').innerText = t('securityTitle');
+			document.getElementById('lbl-auth-enable').innerText = t('authEnable');
+			document.getElementById('lbl-token-exp').innerText = t('tokenExp');
+			document.getElementById('lbl-refresh-exp').innerText = t('refreshExp');
+			document.getElementById('lbl-login-url').innerText = t('loginUrl');
+			document.getElementById('lbl-logout-url').innerText = t('logoutUrl');
+			document.getElementById('lbl-refresh-url').innerText = t('refreshUrl');
+			document.getElementById('lbl-register-url').innerText = t('registerUrl');
+			document.getElementById('lbl-register-ui-url').innerText = t('registerUiUrl');
+			document.getElementById('btn-save-launcher').innerText = t('saveChanges');
+			document.getElementById('btn-reload-launcher').innerText = t('reload');
+		}
 		
 		function getToken() {
 			return localStorage.getItem('accessToken');
@@ -2067,6 +2380,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		
 		// Initialize
 		checkAuth();
+		applyLang();
 		loadLauncher();
 	</script>
 </body>

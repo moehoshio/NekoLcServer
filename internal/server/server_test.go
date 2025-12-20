@@ -989,3 +989,46 @@ func TestRegisterValidation(t *testing.T) {
 		t.Fatalf("expected 400 got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestRegisterThenLogin(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+	// Register a new user
+	registerPayload := map[string]interface{}{
+		"registerRequest": map[string]interface{}{
+			"username": "loginuser",
+			"password": "mypassword123",
+		},
+	}
+	rec := doRequest(t, srv, http.MethodPost, "/app/register", registerPayload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("register expected 201 got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Now try to login with the same credentials
+	loginPayload := map[string]interface{}{
+		"loginRequest": map[string]interface{}{
+			"username": "loginuser",
+			"password": "mypassword123",
+		},
+	}
+	rec = doRequest(t, srv, http.MethodPost, "/v0/api/auth/login", loginPayload)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp LoginResponseBody
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	if resp.LoginResponse.AccessToken == "" {
+		t.Fatal("expected access token")
+	}
+	if resp.LoginResponse.Username != "loginuser" {
+		t.Fatalf("expected username 'loginuser' got '%s'", resp.LoginResponse.Username)
+	}
+	if resp.LoginResponse.Role != "user" {
+		t.Fatalf("expected role 'user' got '%s'", resp.LoginResponse.Role)
+	}
+}

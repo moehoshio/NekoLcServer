@@ -189,8 +189,70 @@ func loadLanguagesConfig(st store.Store, filePath string) (config.LanguageBundle
 			}
 		}
 	}
-	// Fall back to file
-	return config.LoadLanguages(filePath)
+	// Fall back to file if path is valid
+	if filePath != "" {
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			return config.LoadLanguages(filePath)
+		}
+	}
+	// Return default language bundle
+	log.Printf("Using default language config")
+	return config.LanguageBundle{
+		"en": config.LanguagePack{
+			Errors: map[string]string{
+				"InvalidRequest":     "The request is invalid.",
+				"NotFound":           "Resource not found.",
+				"Unauthorized":       "Authentication required.",
+				"InternalError":      "Internal server error.",
+				"NotImplemented":     "Feature not implemented.",
+				"ServiceUnavailable": "Service is currently unavailable.",
+			},
+			Maintenance: map[string]string{
+				"scheduled": "Scheduled maintenance",
+				"progress":  "Maintenance in progress",
+			},
+			Updates: map[string]string{
+				"available":   "New version available",
+				"description": "Bug fixes and improvements",
+			},
+		},
+		"zh-hant": config.LanguagePack{
+			Errors: map[string]string{
+				"InvalidRequest":     "請求無效。",
+				"NotFound":           "找不到資源。",
+				"Unauthorized":       "需要身份驗證。",
+				"InternalError":      "內部伺服器錯誤。",
+				"NotImplemented":     "功能尚未實作。",
+				"ServiceUnavailable": "服務目前無法使用。",
+			},
+			Maintenance: map[string]string{
+				"scheduled": "預定維護",
+				"progress":  "維護進行中",
+			},
+			Updates: map[string]string{
+				"available":   "有新版本可用",
+				"description": "錯誤修復和改進",
+			},
+		},
+		"zh-hans": config.LanguagePack{
+			Errors: map[string]string{
+				"InvalidRequest":     "请求无效。",
+				"NotFound":           "找不到资源。",
+				"Unauthorized":       "需要身份验证。",
+				"InternalError":      "内部服务器错误。",
+				"NotImplemented":     "功能尚未实现。",
+				"ServiceUnavailable": "服务目前无法使用。",
+			},
+			Maintenance: map[string]string{
+				"scheduled": "预定维护",
+				"progress":  "维护进行中",
+			},
+			Updates: map[string]string{
+				"available":   "有新版本可用",
+				"description": "错误修复和改进",
+			},
+		},
+	}, nil
 }
 
 func loadLauncherConfig(st store.Store, filePath string) (*config.LauncherConfig, error) {
@@ -205,8 +267,36 @@ func loadLauncherConfig(st store.Store, filePath string) (*config.LauncherConfig
 			}
 		}
 	}
-	// Fall back to file
-	return config.LoadLauncher(filePath)
+	// Fall back to file if path is valid
+	if filePath != "" {
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			return config.LoadLauncher(filePath)
+		}
+	}
+	// Return default launcher config
+	log.Printf("Using default launcher config")
+	return &config.LauncherConfig{
+		Host:             []string{"localhost:8080"},
+		RetryIntervalSec: 5,
+		MaxRetryCount:    3,
+		WebSocket: config.WebSocketConfig{
+			Enable:               false,
+			HeartbeatIntervalSec: 30,
+		},
+		Security: config.SecurityConfig{
+			EnableAuthentication:       true,
+			TokenExpirationSec:         3600,
+			RefreshTokenExpirationDays: 30,
+			LoginURL:                   "/v0/api/auth/login",
+			LogoutURL:                  "/v0/api/auth/logout",
+			RefreshURL:                 "/v0/api/auth/refresh",
+			RegisterURL:                "/v0/api/auth/register",
+			UI: config.SecurityUIConfig{
+				RegisterURL: "/app/register",
+			},
+		},
+		FeaturesFlags: map[string]interface{}{},
+	}, nil
 }
 
 func loadMaintenanceConfig(st store.Store, filePath string) (*config.MaintenanceConfig, error) {
@@ -221,8 +311,22 @@ func loadMaintenanceConfig(st store.Store, filePath string) (*config.Maintenance
 			}
 		}
 	}
-	// Fall back to file
-	return config.LoadMaintenance(filePath)
+	// Fall back to file if path is valid
+	if filePath != "" {
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			return config.LoadMaintenance(filePath)
+		}
+	}
+	// Return default maintenance config
+	log.Printf("Using default maintenance config")
+	return &config.MaintenanceConfig{
+		MaintenanceActive: false,
+		MaintenanceInfo: config.MaintenanceInfo{
+			Status:  "",
+			Message: "",
+		},
+		PlatformSpecific: map[string]config.PlatformMaintenance{},
+	}, nil
 }
 
 func loadNewsConfig(st store.Store, filePath string) (*config.NewsConfig, error) {
@@ -237,8 +341,17 @@ func loadNewsConfig(st store.Store, filePath string) (*config.NewsConfig, error)
 			}
 		}
 	}
-	// Fall back to file
-	return config.LoadNews(filePath)
+	// Fall back to file if path is valid
+	if filePath != "" {
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			return config.LoadNews(filePath)
+		}
+	}
+	// Return default news config
+	log.Printf("Using default news config")
+	return &config.NewsConfig{
+		Items: []config.NewsItem{},
+	}, nil
 }
 
 func loadUpdatesConfig(st store.Store, filePath string) (*config.UpdateConfig, error) {
@@ -253,8 +366,17 @@ func loadUpdatesConfig(st store.Store, filePath string) (*config.UpdateConfig, e
 			}
 		}
 	}
-	// Fall back to file
-	return config.LoadUpdates(filePath)
+	// Fall back to file if path is valid
+	if filePath != "" {
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			return config.LoadUpdates(filePath)
+		}
+	}
+	// Return default updates config
+	log.Printf("Using default updates config")
+	return &config.UpdateConfig{
+		Platforms: map[string]config.PlatformUpdates{},
+	}, nil
 }
 
 func resolvePath(baseDir, cfgPath string) string {

@@ -30,7 +30,7 @@ func newTestServer(t *testing.T, mutate func(*config.AppConfig)) *Server {
 func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mutateUpdate func(*config.UpdateConfig)) *Server {
 	t.Helper()
 	root := filepath.Clean(filepath.Join("..", ".."))
-	appCfgPath := filepath.Join(root, "configs", "app.json")
+	appCfgPath := filepath.Join(root, "config.json")
 	appCfg, err := config.LoadAppConfig(appCfgPath)
 	if err != nil {
 		t.Fatalf("load app config: %v", err)
@@ -38,46 +38,158 @@ func newTestServerWithConfig(t *testing.T, mutateApp func(*config.AppConfig), mu
 	if mutateApp != nil {
 		mutateApp(appCfg)
 	}
-	resolve := func(p string) string {
-		if filepath.IsAbs(p) {
-			return p
-		}
-		return filepath.Join(root, filepath.Clean(strings.TrimPrefix(p, "./")))
+
+	// Use default in-memory configurations since configs are now stored in database
+	langBundle := config.LanguageBundle{
+		"en": config.LanguagePack{
+			Errors: map[string]string{
+				"InvalidRequest":     "The request is invalid.",
+				"NotFound":           "Resource not found.",
+				"Unauthorized":       "Authentication required.",
+				"InternalError":      "Internal server error.",
+				"NotImplemented":     "Feature not implemented.",
+				"ServiceUnavailable": "Service is currently unavailable.",
+			},
+			Maintenance: map[string]string{
+				"scheduled": "Scheduled maintenance",
+				"progress":  "Maintenance in progress",
+			},
+			Updates: map[string]string{
+				"available":   "New version available",
+				"description": "Bug fixes and improvements",
+			},
+		},
 	}
-	langBundle, err := config.LoadLanguages(resolve(appCfg.Language.ConfigPath))
-	if err != nil {
-		t.Fatalf("load languages: %v", err)
+
+	launcherCfg := &config.LauncherConfig{
+		Host:             []string{"localhost:8080", "api.example.com"},
+		RetryIntervalSec: 5,
+		MaxRetryCount:    3,
+		WebSocket: config.WebSocketConfig{
+			Enable:               false,
+			SocketHost:           "",
+			HeartbeatIntervalSec: 30,
+		},
+		Security: config.SecurityConfig{
+			EnableAuthentication:       false,
+			TokenExpirationSec:         3600,
+			RefreshTokenExpirationDays: 30,
+			LoginURL:                   "/v0/api/auth/login",
+			LogoutURL:                  "/v0/api/auth/logout",
+			RefreshURL:                 "/v0/api/auth/refresh",
+			RegisterURL:                "/v0/api/auth/register",
+		},
+		FeaturesFlags: map[string]interface{}{},
 	}
-	launcherCfg, err := config.LoadLauncher(resolve(appCfg.Launcher.ConfigPath))
-	if err != nil {
-		t.Fatalf("load launcher: %v", err)
+
+	maintenanceCfg := &config.MaintenanceConfig{
+		MaintenanceActive: false,
+		MaintenanceInfo: config.MaintenanceInfo{
+			Status:  "scheduled",
+			Message: "Scheduled maintenance",
+			Start:   "2024-06-01T12:00:00Z",
+			End:     "2024-06-01T14:00:00Z",
+			Poster:  "https://example.com/maintenance-poster.jpg",
+			Link:    "https://example.com/maintenance-announcement",
+		},
+		PlatformSpecific: map[string]config.PlatformMaintenance{
+			"linux-x64": {
+				MaintenanceActive: true,
+				MaintenanceInfo: config.MaintenanceInfo{
+					Status:  "progress",
+					Message: "Linux x64 servers undergoing maintenance",
+				},
+			},
+			"windows-x64": {
+				MaintenanceActive: false,
+				MaintenanceInfo: config.MaintenanceInfo{
+					Status:  "",
+					Message: "No scheduled maintenance for Windows x64",
+				},
+			},
+		},
 	}
-	maintenancePath := resolve(appCfg.Maintenance.ConfigPath)
-	maintenanceCfg, err := config.LoadMaintenance(maintenancePath)
-	if err != nil {
-		t.Fatalf("load maintenance: %v", err)
+
+	newsCfg := &config.NewsConfig{
+		Items: []config.NewsItem{
+			{
+				ID:          "news-001",
+				Title:       "Welcome to NekoLc",
+				Summary:     "A brief introduction to NekoLc",
+				Content:     "Welcome! NekoLc is a launcher server for managing updates.",
+				PosterURL:   "https://example.com/welcome-poster.jpg",
+				Link:        "https://example.com/news/welcome",
+				PublishTime: "2024-01-15T10:00:00Z",
+				Category:    "announcement",
+				Tags:        []string{"welcome", "introduction"},
+				Priority:    10,
+			},
+		},
 	}
-	newsPath := resolve(appCfg.News.ConfigPath)
-	newsCfg, err := config.LoadNews(newsPath)
-	if err != nil {
-		t.Fatalf("load news: %v", err)
-	}
-	updatePath := resolve(appCfg.Update.ConfigPath)
-	updateCfg, err := config.LoadUpdates(updatePath)
-	if err != nil {
-		t.Fatalf("load updates: %v", err)
+
+	updateCfg := &config.UpdateConfig{
+		Platforms: map[string]config.PlatformUpdates{
+			"linux": {
+				Architectures: map[string]config.ArchUpdates{
+					"x64": {
+						Latest: config.FullPackage{
+							CoreVersion:     "1.2.0",
+							ResourceVersion: "1.0.5",
+							Core: []config.DownloadEntry{
+								{
+									URL:      "https://cdn.example.com/linux-x64/core-1.2.0.tar.gz",
+									FileName: "core-1.2.0.tar.gz",
+									Checksum: "sha256:abc123",
+									Size:     15000000,
+									DownloadMeta: config.DownloadMeta{
+										HashAlgorithm:      "sha256",
+										SuggestMultiThread: true,
+									},
+								},
+							},
+							Resource: []config.DownloadEntry{
+								{
+									Path:    "/path/to/one",
+									BaseURL: "https://cdn.example.com/linux-x64/",
+									DownloadMeta: config.DownloadMeta{
+										HashAlgorithm:      "sha256",
+										SuggestMultiThread: false,
+									},
+								},
+							},
+						},
+						Diffs: []config.DiffFile{},
+					},
+				},
+			},
+			"windows": {
+				Architectures: map[string]config.ArchUpdates{
+					"x64": {
+						Latest: config.FullPackage{
+							CoreVersion:     "1.2.0",
+							ResourceVersion: "1.0.5",
+							Core:            []config.DownloadEntry{},
+							Resource:        []config.DownloadEntry{},
+						},
+						Diffs: []config.DiffFile{},
+					},
+				},
+			},
+		},
 	}
 	if mutateUpdate != nil {
 		mutateUpdate(updateCfg)
 	}
+
 	localizer := localization.New(appCfg.Language.Default, langBundle)
 	memStore := store.NewMemory()
 	authService := auth.NewService(appCfg, memStore)
 	feedbackPath := filepath.Join(t.TempDir(), "feedback.log")
-	updateDir := filepath.Dir(updatePath)
+	updateDir := t.TempDir()
 	// Use temp paths for maintenance and news in tests to avoid modifying real config files
 	testMaintPath := filepath.Join(t.TempDir(), "maintenance.json")
 	testNewsPath := filepath.Join(t.TempDir(), "news.json")
+	updatePath := filepath.Join(t.TempDir(), "updates.json")
 	srv, err := New(appCfg, launcherCfg, maintenanceCfg, testMaintPath, newsCfg, testNewsPath, updateCfg, updatePath, updateDir, localizer, authService, memStore, feedbackPath)
 	if err != nil {
 		t.Fatalf("new server: %v", err)

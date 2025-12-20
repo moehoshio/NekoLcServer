@@ -151,6 +151,11 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Put("/news", s.handleAdminUpdateNews)
 				adminRouter.Post("/scanPath", s.handleAdminScanPath)
 				adminRouter.Post("/generateUpdates", s.handleAdminGenerateUpdates)
+				// User management
+				adminRouter.Get("/users", s.handleAdminListUsers)
+				adminRouter.Post("/users", s.handleAdminCreateUser)
+				adminRouter.Put("/users/{id}", s.handleAdminUpdateUser)
+				adminRouter.Delete("/users/{id}", s.handleAdminDeleteUser)
 			})
 		})
 
@@ -1121,6 +1126,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<button onclick="showSection('maintenance')">🔧 Maintenance</button>
 			<button onclick="showSection('updates')">📦 Updates</button>
 			<button onclick="showSection('news')">📰 News</button>
+			<button onclick="showSection('users')">👥 Users</button>
 			<button onclick="showSection('feedback')">💬 Feedback</button>
 		</div>
 		<div class="main">
@@ -1334,6 +1340,56 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				</div>
 			</div>
 			
+			<!-- Users Section -->
+			<div id="section-users" class="section hidden">
+				<div class="card">
+					<h2>User Management</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Manage user accounts and permissions.</p>
+					<div class="actions" style="margin-bottom: 16px;">
+						<button class="btn btn-primary" onclick="showAddUserForm()">+ Add User</button>
+						<button class="btn btn-secondary" onclick="loadUsers()">Reload</button>
+					</div>
+					<div id="add-user-form" style="display:none; margin-bottom: 16px; padding: 16px; background: #0b1220; border-radius: 8px;">
+						<h3 style="margin-bottom: 12px;">New User</h3>
+						<div class="form-row">
+							<div class="form-group">
+								<label>Username</label>
+								<input type="text" id="new-user-username" placeholder="Username" />
+							</div>
+							<div class="form-group">
+								<label>Password</label>
+								<input type="password" id="new-user-password" placeholder="Password" />
+							</div>
+						</div>
+						<div class="form-group">
+							<label>Role</label>
+							<select id="new-user-role">
+								<option value="user">User</option>
+								<option value="admin">Admin</option>
+							</select>
+						</div>
+						<div class="actions">
+							<button class="btn btn-primary" onclick="createUser()">Create User</button>
+							<button class="btn btn-secondary" onclick="hideAddUserForm()">Cancel</button>
+						</div>
+					</div>
+					<table class="data-table" style="width: 100%;">
+						<thead>
+							<tr>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">ID</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Username</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Role</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Created</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Actions</th>
+							</tr>
+						</thead>
+						<tbody id="users-table-body">
+							<tr><td colspan="5" style="padding: 20px; text-align: center; color: #94a3b8;">Loading users...</td></tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+			
 			<!-- Feedback Section -->
 			<div id="section-feedback" class="section hidden">
 				<div class="card">
@@ -1352,6 +1408,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		let maintenanceData = null;
 		let updatesData = null;
 		let newsData = null;
+		let usersData = null;
 		
 		function getToken() {
 			return localStorage.getItem('accessToken');
@@ -1386,6 +1443,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
 			if (name === 'updates' && !updatesData) loadUpdates();
 			if (name === 'news' && !newsData) loadNews();
+			if (name === 'users' && !usersData) loadUsers();
 			if (name === 'feedback') loadFeedback();
 		}
 		
@@ -1777,6 +1835,97 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				showMessage('News configuration saved successfully');
 			} else {
 				showMessage('Failed to save news configuration', true);
+			}
+		}
+		
+		// User management functions
+		async function loadUsers() {
+			const res = await apiRequest('GET', '/v0/api/admin/users');
+			if (!res) return;
+			const data = await res.json();
+			usersData = data.users || [];
+			renderUsersTable();
+		}
+		
+		function renderUsersTable() {
+			const tbody = document.getElementById('users-table-body');
+			if (!usersData || usersData.length === 0) {
+				tbody.innerHTML = '<tr><td colspan="5" style="padding: 20px; text-align: center; color: #94a3b8;">No users found.</td></tr>';
+				return;
+			}
+			let html = '';
+			usersData.forEach(user => {
+				html += '<tr style="border-bottom: 1px solid #1f2937;">';
+				html += '<td style="padding: 10px;">' + user.id + '</td>';
+				html += '<td style="padding: 10px;">' + escapeHtml(user.username) + '</td>';
+				html += '<td style="padding: 10px;"><span style="padding: 4px 8px; border-radius: 4px; background: ' + (user.role === 'admin' ? '#7c3aed' : '#374151') + '; font-size: 12px;">' + user.role + '</span></td>';
+				html += '<td style="padding: 10px; color: #94a3b8;">' + user.createdAt + '</td>';
+				html += '<td style="padding: 10px;">';
+				html += '<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 4px;" onclick="editUser(' + user.id + ')">Edit</button>';
+				html += '<button class="btn btn-danger" style="padding: 4px 8px; font-size: 12px; background: #dc2626;" onclick="deleteUser(' + user.id + ', \'' + escapeHtml(user.username) + '\')">Delete</button>';
+				html += '</td>';
+				html += '</tr>';
+			});
+			tbody.innerHTML = html;
+		}
+		
+		function showAddUserForm() {
+			document.getElementById('add-user-form').style.display = 'block';
+		}
+		
+		function hideAddUserForm() {
+			document.getElementById('add-user-form').style.display = 'none';
+			document.getElementById('new-user-username').value = '';
+			document.getElementById('new-user-password').value = '';
+			document.getElementById('new-user-role').value = 'user';
+		}
+		
+		async function createUser() {
+			const username = document.getElementById('new-user-username').value.trim();
+			const password = document.getElementById('new-user-password').value;
+			const role = document.getElementById('new-user-role').value;
+			if (!username || !password) {
+				showMessage('Username and password are required', true);
+				return;
+			}
+			const res = await apiRequest('POST', '/v0/api/admin/users', { username, password, role });
+			if (res && res.ok) {
+				showMessage('User created successfully');
+				hideAddUserForm();
+				usersData = null;
+				loadUsers();
+			} else {
+				showMessage('Failed to create user', true);
+			}
+		}
+		
+		async function editUser(id) {
+			const user = usersData.find(u => u.id === id);
+			if (!user) return;
+			const newRole = prompt('Enter new role for ' + user.username + ' (user or admin):', user.role);
+			if (newRole === null) return;
+			const newPassword = prompt('Enter new password (leave empty to keep current):');
+			const payload = { role: newRole };
+			if (newPassword) payload.password = newPassword;
+			const res = await apiRequest('PUT', '/v0/api/admin/users/' + id, payload);
+			if (res && res.ok) {
+				showMessage('User updated successfully');
+				usersData = null;
+				loadUsers();
+			} else {
+				showMessage('Failed to update user', true);
+			}
+		}
+		
+		async function deleteUser(id, username) {
+			if (!confirm('Are you sure you want to delete user "' + username + '"?')) return;
+			const res = await apiRequest('DELETE', '/v0/api/admin/users/' + id);
+			if (res && res.status === 204) {
+				showMessage('User deleted successfully');
+				usersData = null;
+				loadUsers();
+			} else {
+				showMessage('Failed to delete user', true);
 			}
 		}
 		

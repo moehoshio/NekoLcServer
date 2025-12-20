@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/store"
 	"golang.org/x/crypto/bcrypt"
@@ -1229,4 +1231,160 @@ func (s *Server) handleAdminGenerateUpdates(w http.ResponseWriter, r *http.Reque
 		Meta:  s.meta(),
 	}
 	s.writeJSON(w, http.StatusOK, resp)
+}
+
+// AdminUserListResponse is the response for listing users.
+type AdminUserListResponse struct {
+	Users []AdminUserInfo `json:"users"`
+	Total int64           `json:"total"`
+	Meta  Meta            `json:"meta"`
+}
+
+// AdminUserInfo represents user information for admin views (without password).
+type AdminUserInfo struct {
+	ID        int64  `json:"id"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// AdminUpdateUserRequest is the request body for updating a user.
+type AdminUpdateUserRequest struct {
+	Password string `json:"password,omitempty"`
+	Role     string `json:"role"`
+}
+
+// AdminCreateUserRequest is the request body for creating a user.
+type AdminCreateUserRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
+}
+
+func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "User store not configured")
+		return
+	}
+	ctx := r.Context()
+	users, err := s.store.ListUsers(ctx, 200, 0)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	total, _ := s.store.CountUsers(ctx)
+	resp := AdminUserListResponse{
+		Users: make([]AdminUserInfo, 0, len(users)),
+		Total: total,
+		Meta:  s.meta(),
+	}
+	for _, u := range users {
+		resp.Users = append(resp.Users, AdminUserInfo{
+			ID:        u.ID,
+			Username:  u.Username,
+			Role:      u.Role,
+			CreatedAt: u.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt: u.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "User store not configured")
+		return
+	}
+	var req AdminCreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Password) == "" {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "username and password required")
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	ctx := r.Context()
+	id, err := s.store.CreateUser(ctx, strings.TrimSpace(req.Username), string(hash), req.Role)
+	if err != nil {
+		s.writeError(w, http.StatusConflict, s.appConfig.Language.Default, "InvalidRequest", "username already exists or error: "+err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":   id,
+		"meta": s.meta(),
+	})
+}
+
+func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "User store not configured")
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid user id")
+		return
+	}
+	var req AdminUpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	ctx := r.Context()
+	var passwordHash string
+	if req.Password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+			return
+		}
+		passwordHash = string(hash)
+	}
+	if err := s.store.UpdateUser(ctx, id, passwordHash, req.Role); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "User updated successfully",
+		"meta":    s.meta(),
+	})
+}
+
+func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "User store not configured")
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid user id")
+		return
+	}
+	ctx := r.Context()
+	if err := s.store.DeleteUser(ctx, id); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -167,6 +167,9 @@ type LoginResponseBody struct {
 	LoginResponse struct {
 		AccessToken  string `json:"accessToken"`
 		RefreshToken string `json:"refreshToken"`
+		UserID       int64  `json:"userId,omitempty"`
+		Username     string `json:"username,omitempty"`
+		Role         string `json:"role,omitempty"`
 	} `json:"loginResponse"`
 	Meta Meta `json:"meta"`
 }

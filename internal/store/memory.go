@@ -59,6 +59,76 @@ func (m *memoryStore) GetUserByUsername(ctx context.Context, username string) (*
 	return u, nil
 }
 
+func (m *memoryStore) GetUserByID(ctx context.Context, id int64) (*User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, u := range m.users {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *memoryStore) ListUsers(ctx context.Context, limit, offset int) ([]User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	users := make([]User, 0, len(m.users))
+	for _, u := range m.users {
+		users = append(users, *u)
+	}
+	// Sort by ID (simple bubble sort for small data)
+	for i := 0; i < len(users); i++ {
+		for j := i + 1; j < len(users); j++ {
+			if users[i].ID > users[j].ID {
+				users[i], users[j] = users[j], users[i]
+			}
+		}
+	}
+	if offset >= len(users) {
+		return []User{}, nil
+	}
+	end := offset + limit
+	if end > len(users) {
+		end = len(users)
+	}
+	return users[offset:end], nil
+}
+
+func (m *memoryStore) UpdateUser(ctx context.Context, id int64, passwordHash, role string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, u := range m.users {
+		if u.ID == id {
+			if passwordHash != "" {
+				u.Password = passwordHash
+			}
+			u.Role = ensureRole(role)
+			u.UpdatedAt = time.Now()
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (m *memoryStore) DeleteUser(ctx context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for username, u := range m.users {
+		if u.ID == id {
+			delete(m.users, username)
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (m *memoryStore) CountUsers(ctx context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return int64(len(m.users)), nil
+}
+
 func (m *memoryStore) HasUsers(ctx context.Context) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

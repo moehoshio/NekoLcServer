@@ -55,6 +55,11 @@ type Store interface {
 	// Users
 	CreateUser(ctx context.Context, username, passwordHash, role string) (int64, error)
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
+	GetUserByID(ctx context.Context, id int64) (*User, error)
+	ListUsers(ctx context.Context, limit, offset int) ([]User, error)
+	UpdateUser(ctx context.Context, id int64, passwordHash, role string) error
+	DeleteUser(ctx context.Context, id int64) error
+	CountUsers(ctx context.Context) (int64, error)
 	HasUsers(ctx context.Context) (bool, error)
 
 	// Refresh tokens

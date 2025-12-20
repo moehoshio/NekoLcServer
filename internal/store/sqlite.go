@@ -117,6 +117,74 @@ func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (*
 	return &u, nil
 }
 
+func (s *SQLiteStore) GetUserByID(ctx context.Context, id int64) (*User, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE id=?`, id)
+	var u User
+	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (s *SQLiteStore) ListUsers(ctx context.Context, limit, offset int) ([]User, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users ORDER BY id ASC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []User{}
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) UpdateUser(ctx context.Context, id int64, passwordHash, role string) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	if passwordHash != "" {
+		_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, passwordHash, ensureRole(role), id)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, ensureRole(role), id)
+	return err
+}
+
+func (s *SQLiteStore) DeleteUser(ctx context.Context, id int64) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) CountUsers(ctx context.Context) (int64, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`)
+	var count int64
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (s *SQLiteStore) HasUsers(ctx context.Context) (bool, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()

@@ -12,6 +12,7 @@ import (
 // AppConfig represents the top-level server configuration loaded from app.json.
 type AppConfig struct {
 	Server struct {
+		AppName      string `json:"appName"`
 		Port         string `json:"port"`
 		APIVersion   string `json:"apiVersion"`
 		MinAPIVer    string `json:"minApiVersion"`

@@ -304,8 +304,16 @@ func (s *Server) handleLauncherConfig(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusInternalServerError, s.languageFromPreferences(payload.Preferences), "InternalError", "Launcher configuration missing")
 		return
 	}
+	// Create a copy of the launcher config with basePath prepended to security URLs
+	cfgCopy := *s.launcherConfig
+	cfgCopy.Security.LoginURL = s.prependBasePath(cfgCopy.Security.LoginURL)
+	cfgCopy.Security.LogoutURL = s.prependBasePath(cfgCopy.Security.LogoutURL)
+	cfgCopy.Security.RefreshURL = s.prependBasePath(cfgCopy.Security.RefreshURL)
+	cfgCopy.Security.RegisterURL = s.prependBasePath(cfgCopy.Security.RegisterURL)
+	cfgCopy.Security.UI.RegisterURL = s.prependBasePath(cfgCopy.Security.UI.RegisterURL)
+
 	body := LauncherConfigResponseBody{
-		LauncherConfigResponse: *s.launcherConfig,
+		LauncherConfigResponse: cfgCopy,
 		Meta:                   s.meta(),
 	}
 	s.writeJSON(w, http.StatusOK, body)

@@ -1076,3 +1076,29 @@ func TestAppAPILogin(t *testing.T) {
 		t.Fatalf("expected role 'user' got '%s'", resp.Role)
 	}
 }
+
+// TestGetRegister tests the GET /v0/api/auth/register endpoint
+// Per API spec: returns 200 with registerResponse.registerUrl
+func TestGetRegister(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+
+	rec := doRequest(t, srv, http.MethodGet, "/v0/api/auth/register", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp RegisterGetResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode register get response: %v", err)
+	}
+	if resp.RegisterResponse.RegisterURL == "" {
+		t.Fatal("expected registerUrl in response")
+	}
+	// Should contain /app/register path
+	if !strings.Contains(resp.RegisterResponse.RegisterURL, "/app/register") {
+		t.Fatalf("expected registerUrl to contain '/app/register' got '%s'", resp.RegisterResponse.RegisterURL)
+	}
+}

@@ -48,6 +48,42 @@ type ConfigEntry struct {
 	UpdatedAt time.Time
 }
 
+// APIEvent represents a tracked API call event.
+type APIEvent struct {
+	ID         int64
+	Endpoint   string
+	Method     string
+	StatusCode int
+	DeviceID   string
+	Platform   string
+	Arch       string
+	CreatedAt  time.Time
+}
+
+// APIStats holds aggregated statistics for API usage.
+type APIStats struct {
+	TotalRequests   int64            `json:"totalRequests"`
+	TodayRequests   int64            `json:"todayRequests"`
+	EndpointCounts  map[string]int64 `json:"endpointCounts"`
+	PlatformCounts  map[string]int64 `json:"platformCounts"`
+	DailyStats      []DailyStat      `json:"dailyStats"`
+	TotalUsers      int64            `json:"totalUsers"`
+	TotalFeedback   int64            `json:"totalFeedback"`
+	RecentEndpoints []EndpointStat   `json:"recentEndpoints"`
+}
+
+// DailyStat represents daily request counts.
+type DailyStat struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+// EndpointStat represents endpoint-specific statistics.
+type EndpointStat struct {
+	Endpoint string `json:"endpoint"`
+	Count    int64  `json:"count"`
+}
+
 // Store defines the persistence operations we need.
 type Store interface {
 	Ping(ctx context.Context) error
@@ -75,6 +111,11 @@ type Store interface {
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
 	SetConfig(ctx context.Context, key string, value json.RawMessage) error
 	ListConfigs(ctx context.Context) ([]ConfigEntry, error)
+
+	// API event tracking
+	SaveAPIEvent(ctx context.Context, event APIEvent) error
+	GetAPIStats(ctx context.Context, days int) (*APIStats, error)
+	CountFeedback(ctx context.Context) (int64, error)
 }
 
 var ErrNotFound = errors.New("not found")

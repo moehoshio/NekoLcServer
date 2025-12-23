@@ -96,6 +96,18 @@ func (s *MySQLStore) init() error {
             config_value JSON NOT NULL,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS api_events (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            endpoint VARCHAR(255) NOT NULL,
+            method VARCHAR(16) NOT NULL,
+            status_code INT NOT NULL,
+            device_id VARCHAR(255) NULL,
+            platform VARCHAR(64) NULL,
+            arch VARCHAR(64) NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_api_events_created (created_at DESC),
+            INDEX idx_api_events_endpoint (endpoint)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -326,4 +338,119 @@ func (s *MySQLStore) ListConfigs(ctx context.Context) ([]ConfigEntry, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func (s *MySQLStore) SaveAPIEvent(ctx context.Context, event APIEvent) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO api_events (endpoint, method, status_code, device_id, platform, arch, created_at) VALUES (?,?,?,?,?,?,?)`,
+		event.Endpoint, event.Method, event.StatusCode, event.DeviceID, event.Platform, event.Arch, event.CreatedAt)
+	return err
+}
+
+func (s *MySQLStore) GetAPIStats(ctx context.Context, days int) (*APIStats, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	stats := &APIStats{
+		EndpointCounts:  make(map[string]int64),
+		PlatformCounts:  make(map[string]int64),
+		DailyStats:      []DailyStat{},
+		RecentEndpoints: []EndpointStat{},
+	}
+
+	// Total requests
+	row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_events`)
+	if err := row.Scan(&stats.TotalRequests); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	// Today's requests
+	row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_events WHERE DATE(created_at) = CURDATE()`)
+	if err := row.Scan(&stats.TodayRequests); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	// Total users
+	row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`)
+	if err := row.Scan(&stats.TotalUsers); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	// Total feedback
+	row = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM feedback_logs`)
+	if err := row.Scan(&stats.TotalFeedback); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	// Endpoint counts
+	rows, err := s.db.QueryContext(ctx, `SELECT endpoint, COUNT(*) as cnt FROM api_events GROUP BY endpoint ORDER BY cnt DESC LIMIT 20`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var endpoint string
+		var count int64
+		if err := rows.Scan(&endpoint, &count); err != nil {
+			return nil, err
+		}
+		stats.EndpointCounts[endpoint] = count
+		stats.RecentEndpoints = append(stats.RecentEndpoints, EndpointStat{Endpoint: endpoint, Count: count})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Platform counts
+	rows2, err := s.db.QueryContext(ctx, `SELECT COALESCE(platform, 'unknown'), COUNT(*) as cnt FROM api_events WHERE platform IS NOT NULL AND platform != '' GROUP BY platform ORDER BY cnt DESC LIMIT 10`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var platform string
+		var count int64
+		if err := rows2.Scan(&platform, &count); err != nil {
+			return nil, err
+		}
+		stats.PlatformCounts[platform] = count
+	}
+	if err := rows2.Err(); err != nil {
+		return nil, err
+	}
+
+	// Daily stats for the last N days
+	if days <= 0 {
+		days = 7
+	}
+	rows3, err := s.db.QueryContext(ctx, `SELECT DATE(created_at) as day, COUNT(*) as cnt FROM api_events WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY) GROUP BY DATE(created_at) ORDER BY day ASC`, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows3.Close()
+	for rows3.Next() {
+		var day string
+		var count int64
+		if err := rows3.Scan(&day, &count); err != nil {
+			return nil, err
+		}
+		stats.DailyStats = append(stats.DailyStats, DailyStat{Date: day, Count: count})
+	}
+	if err := rows3.Err(); err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
+func (s *MySQLStore) CountFeedback(ctx context.Context) (int64, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	row := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM feedback_logs`)
+	var count int64
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }

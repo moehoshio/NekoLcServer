@@ -424,7 +424,7 @@ func (s *SQLiteStore) GetAPIStats(ctx context.Context, days int) (*APIStats, err
 	if days <= 0 {
 		days = 7
 	}
-	rows3, err := s.db.QueryContext(ctx, `SELECT DATE(created_at) as day, COUNT(*) as cnt FROM api_events WHERE created_at >= DATE('now', '-' || ? || ' days') AND created_at IS NOT NULL GROUP BY DATE(created_at) ORDER BY day ASC`, days)
+	rows3, err := s.db.QueryContext(ctx, `SELECT DATE(created_at) as day, COUNT(*) as cnt FROM api_events WHERE created_at >= DATE('now', '-' || ? || ' days') GROUP BY DATE(created_at) ORDER BY day ASC`, days)
 	if err != nil {
 		return nil, err
 	}

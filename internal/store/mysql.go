@@ -403,7 +403,7 @@ func (s *MySQLStore) GetAPIStats(ctx context.Context, days int) (*APIStats, erro
 	}
 
 	// Platform counts
-	rows2, err := s.db.QueryContext(ctx, `SELECT COALESCE(platform, 'unknown'), COUNT(*) as cnt FROM api_events WHERE platform IS NOT NULL AND platform != '' GROUP BY platform ORDER BY cnt DESC LIMIT 10`)
+	rows2, err := s.db.QueryContext(ctx, `SELECT platform, COUNT(*) as cnt FROM api_events WHERE platform IS NOT NULL AND platform != '' GROUP BY platform ORDER BY cnt DESC LIMIT 10`)
 	if err != nil {
 		return nil, err
 	}

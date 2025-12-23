@@ -13,9 +13,10 @@ type memoryStore struct {
 	users    map[string]*User
 	nextUser int64
 
-	refresh map[string]refreshRecord
-	logs    []FeedbackLog
-	configs map[string]json.RawMessage
+	refresh   map[string]refreshRecord
+	logs      []FeedbackLog
+	configs   map[string]json.RawMessage
+	apiEvents []APIEvent
 }
 
 type refreshRecord struct {
@@ -27,11 +28,12 @@ type refreshRecord struct {
 // NewMemory creates an in-memory store for tests.
 func NewMemory() Store {
 	return &memoryStore{
-		users:    map[string]*User{},
-		nextUser: 1,
-		refresh:  map[string]refreshRecord{},
-		logs:     []FeedbackLog{},
-		configs:  map[string]json.RawMessage{},
+		users:     map[string]*User{},
+		nextUser:  1,
+		refresh:   map[string]refreshRecord{},
+		logs:      []FeedbackLog{},
+		configs:   map[string]json.RawMessage{},
+		apiEvents: []APIEvent{},
 	}
 }
 
@@ -219,4 +221,77 @@ func (m *memoryStore) ListConfigs(ctx context.Context) ([]ConfigEntry, error) {
 		id++
 	}
 	return out, nil
+}
+
+func (m *memoryStore) SaveAPIEvent(ctx context.Context, event APIEvent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	event.ID = int64(len(m.apiEvents) + 1)
+	m.apiEvents = append(m.apiEvents, event)
+	return nil
+}
+
+func (m *memoryStore) GetAPIStats(ctx context.Context, days int) (*APIStats, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	stats := &APIStats{
+		EndpointCounts:  make(map[string]int64),
+		PlatformCounts:  make(map[string]int64),
+		DailyStats:      []DailyStat{},
+		RecentEndpoints: []EndpointStat{},
+		TotalRequests:   int64(len(m.apiEvents)),
+		TotalUsers:      int64(len(m.users)),
+		TotalFeedback:   int64(len(m.logs)),
+	}
+
+	if days <= 0 {
+		days = 7
+	}
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	cutoff := today.AddDate(0, 0, -days)
+
+	dailyCounts := make(map[string]int64)
+
+	for _, event := range m.apiEvents {
+		// Count by endpoint
+		stats.EndpointCounts[event.Endpoint]++
+
+		// Count by platform
+		if event.Platform != "" {
+			stats.PlatformCounts[event.Platform]++
+		}
+
+		// Today's count
+		eventDate := time.Date(event.CreatedAt.Year(), event.CreatedAt.Month(), event.CreatedAt.Day(), 0, 0, 0, 0, time.UTC)
+		if eventDate.Equal(today) {
+			stats.TodayRequests++
+		}
+
+		// Daily stats
+		if event.CreatedAt.After(cutoff) {
+			dateStr := event.CreatedAt.Format("2006-01-02")
+			dailyCounts[dateStr]++
+		}
+	}
+
+	// Convert endpoint counts to sorted list
+	for endpoint, count := range stats.EndpointCounts {
+		stats.RecentEndpoints = append(stats.RecentEndpoints, EndpointStat{Endpoint: endpoint, Count: count})
+	}
+
+	// Convert daily counts to sorted list
+	for dateStr, count := range dailyCounts {
+		stats.DailyStats = append(stats.DailyStats, DailyStat{Date: dateStr, Count: count})
+	}
+
+	return stats, nil
+}
+
+func (m *memoryStore) CountFeedback(ctx context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return int64(len(m.logs)), nil
 }

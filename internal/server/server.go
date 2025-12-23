@@ -118,6 +118,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(s.apiTrackingMiddleware)
 
 	mount := func(router chi.Router) {
 		router.Get("/v0/testing/ping", s.handlePing)
@@ -156,6 +157,8 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Post("/users", s.handleAdminCreateUser)
 				adminRouter.Put("/users/{id}", s.handleAdminUpdateUser)
 				adminRouter.Delete("/users/{id}", s.handleAdminDeleteUser)
+				// Statistics
+				adminRouter.Get("/stats", s.handleAdminGetStats)
 			})
 		})
 
@@ -428,6 +431,48 @@ func jsonRaw(raw []byte) interface{} {
 		return string(raw)
 	}
 	return obj
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code.
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// apiTrackingMiddleware logs API events for statistics.
+func (s *Server) apiTrackingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip tracking for static assets and certain paths
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/app") && !strings.HasPrefix(path, "/app/api") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Wrap the response writer to capture status code
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+
+		// Track API events asynchronously if store is available
+		if s.store != nil && strings.Contains(path, "/v0/") {
+			go func(endpoint, method string, statusCode int) {
+				event := store.APIEvent{
+					Endpoint:   endpoint,
+					Method:     method,
+					StatusCode: statusCode,
+					CreatedAt:  time.Now().UTC(),
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = s.store.SaveAPIEvent(ctx, event)
+			}(path, r.Method, wrapped.statusCode)
+		}
+	})
 }
 
 var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype html>
@@ -1265,7 +1310,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 	</div>
 	<div class="container">
 		<div class="sidebar">
-			<button class="active" onclick="showSection('launcher')" id="nav-launcher">🚀 Launcher</button>
+			<button class="active" onclick="showSection('stats')" id="nav-stats">📊 Statistics</button>
+			<button onclick="showSection('launcher')" id="nav-launcher">🚀 Launcher</button>
 			<button onclick="showSection('maintenance')" id="nav-maintenance">🔧 Maintenance</button>
 			<button onclick="showSection('updates')" id="nav-updates">📦 Updates</button>
 			<button onclick="showSection('news')" id="nav-news">📰 News</button>
@@ -1275,8 +1321,62 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		<div class="main">
 			<div id="message" class="message hidden"></div>
 			
+			<!-- Statistics Section -->
+			<div id="section-stats" class="section">
+				<div class="card">
+					<h2 id="stats-title">📊 Statistics Overview</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="stats-desc">View server usage statistics and analytics.</p>
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+						<div style="background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); padding: 24px; border-radius: 12px;">
+							<div style="font-size: 14px; opacity: 0.9;" id="lbl-total-requests">Total Requests</div>
+							<div style="font-size: 32px; font-weight: 700;" id="stat-total-requests">-</div>
+						</div>
+						<div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); padding: 24px; border-radius: 12px;">
+							<div style="font-size: 14px; opacity: 0.9;" id="lbl-today-requests">Today's Requests</div>
+							<div style="font-size: 32px; font-weight: 700;" id="stat-today-requests">-</div>
+						</div>
+						<div style="background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); padding: 24px; border-radius: 12px;">
+							<div style="font-size: 14px; opacity: 0.9;" id="lbl-total-users">Total Users</div>
+							<div style="font-size: 32px; font-weight: 700;" id="stat-total-users">-</div>
+						</div>
+						<div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 24px; border-radius: 12px;">
+							<div style="font-size: 14px; opacity: 0.9;" id="lbl-total-feedback">Total Feedback</div>
+							<div style="font-size: 32px; font-weight: 700;" id="stat-total-feedback">-</div>
+						</div>
+					</div>
+					<div class="actions" style="margin-bottom: 24px;">
+						<button class="btn btn-secondary" onclick="loadStats()">🔄 Refresh</button>
+						<select id="stats-days" onchange="loadStats()" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0;">
+							<option value="7">Last 7 days</option>
+							<option value="14">Last 14 days</option>
+							<option value="30">Last 30 days</option>
+						</select>
+					</div>
+				</div>
+				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+					<div class="card">
+						<h3 style="margin-bottom: 16px;">📈 Daily Requests</h3>
+						<div id="daily-chart" style="height: 200px; background: #0f172a; border-radius: 8px; padding: 16px; display: flex; align-items: flex-end; gap: 8px; justify-content: space-around;">
+							<div style="color: #94a3b8; text-align: center;">Loading...</div>
+						</div>
+					</div>
+					<div class="card">
+						<h3 style="margin-bottom: 16px;">🔗 Top Endpoints</h3>
+						<div id="endpoints-list" style="max-height: 200px; overflow-y: auto;">
+							<div style="color: #94a3b8;">Loading...</div>
+						</div>
+					</div>
+				</div>
+				<div class="card" style="margin-top: 20px;">
+					<h3 style="margin-bottom: 16px;">💻 Platform Distribution</h3>
+					<div id="platforms-list" style="display: flex; flex-wrap: wrap; gap: 12px;">
+						<div style="color: #94a3b8;">Loading...</div>
+					</div>
+				</div>
+			</div>
+			
 			<!-- Launcher Section -->
-			<div id="section-launcher" class="section">
+			<div id="section-launcher" class="section hidden">
 				<div class="card">
 					<h2 id="launcher-title">Launcher Configuration</h2>
 					<p style="color: #94a3b8; margin-bottom: 16px;" id="launcher-desc">Configure launcher settings that clients receive.</p>
@@ -1552,18 +1652,29 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		let updatesData = null;
 		let newsData = null;
 		let usersData = null;
+		let statsData = null;
 		
 		// i18n translations
 		const i18n = {
 			'en': {
 				adminTitle: '🐱 NekoLc Admin Dashboard',
 				logout: 'Logout',
+				navStats: '📊 Statistics',
 				navLauncher: '🚀 Launcher',
 				navMaintenance: '🔧 Maintenance',
 				navUpdates: '📦 Updates',
 				navNews: '📰 News',
 				navUsers: '👥 Users',
 				navFeedback: '💬 Feedback',
+				statsTitle: '📊 Statistics Overview',
+				statsDesc: 'View server usage statistics and analytics.',
+				totalRequests: 'Total Requests',
+				todayRequests: "Today's Requests",
+				totalUsers: 'Total Users',
+				totalFeedback: 'Total Feedback',
+				dailyRequests: 'Daily Requests',
+				topEndpoints: 'Top Endpoints',
+				platformDistribution: 'Platform Distribution',
 				launcherTitle: 'Launcher Configuration',
 				launcherDesc: 'Configure launcher settings that clients receive.',
 				hosts: 'Hosts (one per line)',
@@ -1645,12 +1756,22 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			'zh-hans': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
+				navStats: '📊 统计',
 				navLauncher: '🚀 启动器',
 				navMaintenance: '🔧 维护',
 				navUpdates: '📦 更新',
 				navNews: '📰 新闻',
 				navUsers: '👥 用户',
 				navFeedback: '💬 反馈',
+				statsTitle: '📊 统计概览',
+				statsDesc: '查看服务器使用统计和分析。',
+				totalRequests: '总请求数',
+				todayRequests: '今日请求',
+				totalUsers: '总用户数',
+				totalFeedback: '总反馈数',
+				dailyRequests: '每日请求',
+				topEndpoints: '热门端点',
+				platformDistribution: '平台分布',
 				launcherTitle: '启动器配置',
 				launcherDesc: '配置客户端接收的启动器设置。',
 				hosts: '主机地址（每行一个）',
@@ -1732,12 +1853,22 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			'zh-hant': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
+				navStats: '📊 統計',
 				navLauncher: '🚀 啟動器',
 				navMaintenance: '🔧 維護',
 				navUpdates: '📦 更新',
 				navNews: '📰 新聞',
 				navUsers: '👥 使用者',
 				navFeedback: '💬 意見回饋',
+				statsTitle: '📊 統計概覽',
+				statsDesc: '檢視伺服器使用統計和分析。',
+				totalRequests: '總請求數',
+				todayRequests: '今日請求',
+				totalUsers: '總使用者數',
+				totalFeedback: '總意見回饋數',
+				dailyRequests: '每日請求',
+				topEndpoints: '熱門端點',
+				platformDistribution: '平台分佈',
 				launcherTitle: '啟動器設定',
 				launcherDesc: '設定客戶端接收的啟動器設定。',
 				hosts: '主機位址（每行一個）',
@@ -1830,12 +1961,20 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('admin-title').innerText = t('adminTitle');
 			document.getElementById('btn-logout').innerText = t('logout');
 			// Navigation
+			document.getElementById('nav-stats').innerText = t('navStats');
 			document.getElementById('nav-launcher').innerText = t('navLauncher');
 			document.getElementById('nav-maintenance').innerText = t('navMaintenance');
 			document.getElementById('nav-updates').innerText = t('navUpdates');
 			document.getElementById('nav-news').innerText = t('navNews');
 			document.getElementById('nav-users').innerText = t('navUsers');
 			document.getElementById('nav-feedback').innerText = t('navFeedback');
+			// Statistics section
+			document.getElementById('stats-title').innerText = t('statsTitle');
+			document.getElementById('stats-desc').innerText = t('statsDesc');
+			document.getElementById('lbl-total-requests').innerText = t('totalRequests');
+			document.getElementById('lbl-today-requests').innerText = t('todayRequests');
+			document.getElementById('lbl-total-users').innerText = t('totalUsers');
+			document.getElementById('lbl-total-feedback').innerText = t('totalFeedback');
 			// Launcher section
 			document.getElementById('launcher-title').innerText = t('launcherTitle');
 			document.getElementById('launcher-desc').innerText = t('launcherDesc');
@@ -1888,6 +2027,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('section-' + name).classList.remove('hidden');
 			document.querySelector('.sidebar button[onclick*="' + name + '"]').classList.add('active');
 			
+			if (name === 'stats' && !statsData) loadStats();
 			if (name === 'launcher' && !launcherData) loadLauncher();
 			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
 			if (name === 'updates' && !updatesData) loadUpdates();
@@ -1916,6 +2056,94 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		function escapeHtml(str) {
 			if (!str) return '';
 			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+		}
+		
+		// Statistics functions
+		async function loadStats() {
+			const days = document.getElementById('stats-days')?.value || 7;
+			const res = await apiRequest('GET', '/v0/api/admin/stats?days=' + days);
+			if (!res) return;
+			const data = await res.json();
+			statsData = data.stats;
+			
+			// Update summary cards
+			document.getElementById('stat-total-requests').innerText = statsData.totalRequests?.toLocaleString() || '0';
+			document.getElementById('stat-today-requests').innerText = statsData.todayRequests?.toLocaleString() || '0';
+			document.getElementById('stat-total-users').innerText = statsData.totalUsers?.toLocaleString() || '0';
+			document.getElementById('stat-total-feedback').innerText = statsData.totalFeedback?.toLocaleString() || '0';
+			
+			// Render daily chart
+			renderDailyChart(statsData.dailyStats || []);
+			
+			// Render endpoints list
+			renderEndpointsList(statsData.recentEndpoints || []);
+			
+			// Render platforms
+			renderPlatformsList(statsData.platformCounts || {});
+		}
+		
+		function renderDailyChart(dailyStats) {
+			const container = document.getElementById('daily-chart');
+			if (!dailyStats || dailyStats.length === 0) {
+				container.innerHTML = '<div style="color: #94a3b8; text-align: center; width: 100%;">No data available</div>';
+				return;
+			}
+			
+			const maxCount = Math.max(...dailyStats.map(d => d.count), 1);
+			let html = '';
+			dailyStats.forEach(stat => {
+				const height = Math.max((stat.count / maxCount) * 150, 4);
+				const date = stat.date.split('-').slice(1).join('/');
+				html += '<div style="display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 40px;">';
+				html += '<div style="background: linear-gradient(180deg, #22d3ee 0%, #818cf8 100%); width: 80%; height: ' + height + 'px; border-radius: 4px 4px 0 0; transition: height 0.3s;"></div>';
+				html += '<div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">' + date + '</div>';
+				html += '<div style="font-size: 10px; color: #64748b;">' + stat.count + '</div>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+		
+		function renderEndpointsList(endpoints) {
+			const container = document.getElementById('endpoints-list');
+			if (!endpoints || endpoints.length === 0) {
+				container.innerHTML = '<div style="color: #94a3b8;">No endpoint data available</div>';
+				return;
+			}
+			
+			let html = '';
+			endpoints.slice(0, 10).forEach((ep, idx) => {
+				const percent = endpoints[0]?.count > 0 ? (ep.count / endpoints[0].count * 100) : 0;
+				html += '<div style="display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #1f2937;">';
+				html += '<span style="color: #64748b; width: 20px;">' + (idx + 1) + '</span>';
+				html += '<div style="flex: 1;">';
+				html += '<div style="font-size: 13px; margin-bottom: 4px;">' + escapeHtml(ep.endpoint) + '</div>';
+				html += '<div style="background: #1f2937; height: 4px; border-radius: 2px; overflow: hidden;">';
+				html += '<div style="background: linear-gradient(90deg, #22d3ee, #818cf8); height: 100%; width: ' + percent + '%;"></div>';
+				html += '</div></div>';
+				html += '<span style="color: #94a3b8; font-size: 13px;">' + ep.count.toLocaleString() + '</span>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+		
+		function renderPlatformsList(platformCounts) {
+			const container = document.getElementById('platforms-list');
+			const platforms = Object.entries(platformCounts);
+			if (!platforms || platforms.length === 0) {
+				container.innerHTML = '<div style="color: #94a3b8;">No platform data available</div>';
+				return;
+			}
+			
+			const colors = ['#22d3ee', '#a855f7', '#22c55e', '#f59e0b', '#ef4444', '#6366f1'];
+			let html = '';
+			platforms.forEach(([platform, count], idx) => {
+				const color = colors[idx % colors.length];
+				html += '<div style="background: ' + color + '20; border: 1px solid ' + color + '40; padding: 12px 20px; border-radius: 8px; display: flex; flex-direction: column; align-items: center;">';
+				html += '<div style="font-size: 24px; font-weight: 700; color: ' + color + ';">' + count.toLocaleString() + '</div>';
+				html += '<div style="font-size: 13px; color: #94a3b8;">' + escapeHtml(platform) + '</div>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
 		}
 		
 		// Launcher functions
@@ -2404,7 +2632,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		// Initialize
 		checkAuth();
 		applyLang();
-		loadLauncher();
+		loadStats();
 	</script>
 </body>
 </html>`))

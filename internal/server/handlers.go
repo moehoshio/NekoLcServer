@@ -1476,3 +1476,38 @@ func (s *Server) handleAppAPILogout(w http.ResponseWriter, r *http.Request) {
 	s.authService.Revoke(access, refresh)
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// AdminStatsResponse returns statistics for the admin dashboard.
+type AdminStatsResponse struct {
+	Stats store.APIStats `json:"stats"`
+	Meta  Meta           `json:"meta"`
+}
+
+func (s *Server) handleAdminGetStats(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Store not configured")
+		return
+	}
+
+	days := 7
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			days = n
+		}
+	}
+
+	stats, err := s.store.GetAPIStats(r.Context(), days)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+
+	resp := AdminStatsResponse{
+		Stats: *stats,
+		Meta:  s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}

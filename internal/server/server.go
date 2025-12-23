@@ -459,7 +459,7 @@ func (s *Server) apiTrackingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(wrapped, r)
 
 		// Track API events asynchronously if store is available
-		if s.store != nil && strings.Contains(path, "/v0/") {
+		if s.store != nil && strings.HasPrefix(path, "/v0/") {
 			go func(endpoint, method string, statusCode int) {
 				event := store.APIEvent{
 					Endpoint:   endpoint,
@@ -469,7 +469,9 @@ func (s *Server) apiTrackingMiddleware(next http.Handler) http.Handler {
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				_ = s.store.SaveAPIEvent(ctx, event)
+				if err := s.store.SaveAPIEvent(ctx, event); err != nil {
+					fmt.Fprintf(os.Stderr, "failed to save API event: %v\n", err)
+				}
 			}(path, r.Method, wrapped.statusCode)
 		}
 	})

@@ -819,6 +819,10 @@ var appFeedbackTemplate = template.Must(template.New("appFeedback").Parse(`<!doc
 	<table id="table"><thead><tr><th>When</th><th>Content</th><th>Client</th></tr></thead><tbody></tbody></table>
 	<script>
 		const basePath = '{{.BasePath}}';
+		function escapeHtml(str) {
+			if (!str) return '';
+			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+		}
 		async function loadLogs() {
 			const token = localStorage.getItem('accessToken');
 			if (!token) { window.location.href = basePath + '/app/login'; return; }
@@ -832,7 +836,12 @@ var appFeedbackTemplate = template.Must(template.New("appFeedback").Parse(`<!doc
 				const tr = document.createElement('tr');
 				const when = document.createElement('td'); when.innerText = item.receivedAt || ''; tr.appendChild(when);
 				const content = document.createElement('td'); content.className='content'; content.innerText = item.content || ''; tr.appendChild(content);
-				const info = document.createElement('td'); info.innerHTML = '<div class="code">' + JSON.stringify(item.clientInfo || {}, null, 2) + '</div>'; tr.appendChild(info);
+				const info = document.createElement('td');
+				const codeDiv = document.createElement('div');
+				codeDiv.className = 'code';
+				codeDiv.textContent = JSON.stringify(item.clientInfo || {}, null, 2);
+				info.appendChild(codeDiv);
+				tr.appendChild(info);
 				tbody.appendChild(tr);
 			}
 		}
@@ -2556,17 +2565,19 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			}
 			let html = '';
 			for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
+				const safePlatform = escapeHtml(platform);
 				html += '<div class="platform-section">';
-				html += '<h3>' + platform.charAt(0).toUpperCase() + platform.slice(1) + '</h3>';
+				html += '<h3>' + escapeHtml(platform.charAt(0).toUpperCase() + platform.slice(1)) + '</h3>';
 				if (pdata.architectures) {
 					for (const [arch, adata] of Object.entries(pdata.architectures)) {
+						const safeArch = escapeHtml(arch);
 						html += '<div class="arch-item">';
-						html += '<h4>' + arch + '</h4>';
+						html += '<h4>' + safeArch + '</h4>';
 						html += '<div class="form-row">';
 						html += '<div class="form-group"><label>Core Version</label>';
-						html += '<input type="text" id="upd-' + platform + '-' + arch + '-core" value="' + (adata.latest?.coreVersion || '') + '" /></div>';
+						html += '<input type="text" id="upd-' + safePlatform + '-' + safeArch + '-core" value="' + escapeHtml(adata.latest?.coreVersion || '') + '" /></div>';
 						html += '<div class="form-group"><label>Resource Version</label>';
-						html += '<input type="text" id="upd-' + platform + '-' + arch + '-res" value="' + (adata.latest?.resourceVersion || '') + '" /></div>';
+						html += '<input type="text" id="upd-' + safePlatform + '-' + safeArch + '-res" value="' + escapeHtml(adata.latest?.resourceVersion || '') + '" /></div>';
 						html += '</div>';
 						html += '</div>';
 					}
@@ -2582,8 +2593,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
 					if (pdata.architectures) {
 						for (const [arch, adata] of Object.entries(pdata.architectures)) {
-							const coreInput = document.getElementById('upd-' + platform + '-' + arch + '-core');
-							const resInput = document.getElementById('upd-' + platform + '-' + arch + '-res');
+							const safePlatform = escapeHtml(platform);
+							const safeArch = escapeHtml(arch);
+							const coreInput = document.getElementById('upd-' + safePlatform + '-' + safeArch + '-core');
+							const resInput = document.getElementById('upd-' + safePlatform + '-' + safeArch + '-res');
 							if (coreInput && adata.latest) adata.latest.coreVersion = coreInput.value;
 							if (resInput && adata.latest) adata.latest.resourceVersion = resInput.value;
 						}
@@ -2622,7 +2635,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			let html = '<p style="color:#22d3ee;">Found ' + data.count + ' file(s):</p>';
 			html += '<div style="max-height:200px;overflow-y:auto;background:#0f172a;padding:12px;border-radius:8px;font-family:monospace;font-size:12px;">';
 			data.files.forEach(f => {
-				html += '<div style="margin-bottom:4px;">' + f.fileName + ' <span style="color:#94a3b8;">(' + f.checksum.substring(0,16) + '...)</span></div>';
+				html += '<div style="margin-bottom:4px;">' + escapeHtml(f.fileName) + ' <span style="color:#94a3b8;">(' + escapeHtml(f.checksum.substring(0,16)) + '...)</span></div>';
 			});
 			html += '</div>';
 			container.innerHTML = html;
@@ -2671,18 +2684,18 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			let html = '';
 			newsData.items.forEach((item, idx) => {
 				html += '<div class="news-item" id="news-item-' + idx + '">';
-				html += '<div class="header-row"><h3>' + (item.title || 'Untitled') + '</h3>';
+				html += '<div class="header-row"><h3>' + escapeHtml(item.title || 'Untitled') + '</h3>';
 				html += '<button class="btn btn-danger" onclick="removeNewsItem(' + idx + ')">Remove</button></div>';
 				html += '<div class="form-row">';
-				html += '<div class="form-group"><label>ID</label><input type="text" value="' + (item.id || '') + '" onchange="updateNewsField(' + idx + ', \'id\', this.value)" /></div>';
-				html += '<div class="form-group"><label>Title</label><input type="text" value="' + (item.title || '') + '" onchange="updateNewsField(' + idx + ', \'title\', this.value)" /></div>';
+				html += '<div class="form-group"><label>ID</label><input type="text" value="' + escapeHtml(item.id || '') + '" onchange="updateNewsField(' + idx + ', \'id\', this.value)" /></div>';
+				html += '<div class="form-group"><label>Title</label><input type="text" value="' + escapeHtml(item.title || '') + '" onchange="updateNewsField(' + idx + ', \'title\', this.value)" /></div>';
 				html += '</div>';
-				html += '<div class="form-group"><label>Summary</label><textarea onchange="updateNewsField(' + idx + ', \'summary\', this.value)">' + (item.summary || '') + '</textarea></div>';
+				html += '<div class="form-group"><label>Summary</label><textarea onchange="updateNewsField(' + idx + ', \'summary\', this.value)">' + escapeHtml(item.summary || '') + '</textarea></div>';
 				html += '<div class="form-row">';
-				html += '<div class="form-group"><label>Category</label><input type="text" value="' + (item.category || '') + '" onchange="updateNewsField(' + idx + ', \'category\', this.value)" /></div>';
+				html += '<div class="form-group"><label>Category</label><input type="text" value="' + escapeHtml(item.category || '') + '" onchange="updateNewsField(' + idx + ', \'category\', this.value)" /></div>';
 				html += '<div class="form-group"><label>Priority</label><input type="number" value="' + (item.priority || 0) + '" onchange="updateNewsField(' + idx + ', \'priority\', parseInt(this.value))" /></div>';
 				html += '</div>';
-				html += '<div class="form-group"><label>Link</label><input type="text" value="' + (item.link || '') + '" onchange="updateNewsField(' + idx + ', \'link\', this.value)" /></div>';
+				html += '<div class="form-group"><label>Link</label><input type="text" value="' + escapeHtml(item.link || '') + '" onchange="updateNewsField(' + idx + ', \'link\', this.value)" /></div>';
 				html += '</div>';
 			});
 			container.innerHTML = html;
@@ -2748,8 +2761,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				html += '<tr style="border-bottom: 1px solid #1f2937;">';
 				html += '<td style="padding: 10px;">' + user.id + '</td>';
 				html += '<td style="padding: 10px;">' + escapeHtml(user.username) + '</td>';
-				html += '<td style="padding: 10px;"><span style="padding: 4px 8px; border-radius: 4px; background: ' + (user.role === 'admin' ? '#7c3aed' : '#374151') + '; font-size: 12px;">' + user.role + '</span></td>';
-				html += '<td style="padding: 10px; color: #94a3b8;">' + user.createdAt + '</td>';
+				html += '<td style="padding: 10px;"><span style="padding: 4px 8px; border-radius: 4px; background: ' + (user.role === 'admin' ? '#7c3aed' : '#374151') + '; font-size: 12px;">' + escapeHtml(user.role) + '</span></td>';
+				html += '<td style="padding: 10px; color: #94a3b8;">' + escapeHtml(user.createdAt) + '</td>';
 				html += '<td style="padding: 10px;">';
 				html += '<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 4px;" onclick="editUser(' + user.id + ')">Edit</button>';
 				html += '<button class="btn btn-danger" style="padding: 4px 8px; font-size: 12px; background: #dc2626;" onclick="deleteUser(' + user.id + ', \'' + escapeHtml(user.username) + '\')">Delete</button>';
@@ -2915,7 +2928,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			html += '<tbody>';
 			data.feedbackLogs.forEach(item => {
 				html += '<tr style="border-bottom:1px solid #1f2937;">';
-				html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:13px;">' + (item.receivedAt || '') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:13px;">' + escapeHtml(item.receivedAt || '') + '</td>';
 				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.platform || '-') + '</td>';
 				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.coreVersion || '-') + '</td>';
 				html += '<td style="padding:8px;white-space:pre-wrap;">' + escapeHtml(item.content || '') + '</td>';

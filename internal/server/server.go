@@ -2565,19 +2565,17 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			}
 			let html = '';
 			for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
-				const safePlatform = escapeHtml(platform);
 				html += '<div class="platform-section">';
 				html += '<h3>' + escapeHtml(platform.charAt(0).toUpperCase() + platform.slice(1)) + '</h3>';
 				if (pdata.architectures) {
 					for (const [arch, adata] of Object.entries(pdata.architectures)) {
-						const safeArch = escapeHtml(arch);
 						html += '<div class="arch-item">';
-						html += '<h4>' + safeArch + '</h4>';
+						html += '<h4>' + escapeHtml(arch) + '</h4>';
 						html += '<div class="form-row">';
 						html += '<div class="form-group"><label>Core Version</label>';
-						html += '<input type="text" id="upd-' + safePlatform + '-' + safeArch + '-core" value="' + escapeHtml(adata.latest?.coreVersion || '') + '" /></div>';
+						html += '<input type="text" data-platform="' + escapeHtml(platform) + '" data-arch="' + escapeHtml(arch) + '" data-type="core" value="' + escapeHtml(adata.latest?.coreVersion || '') + '" /></div>';
 						html += '<div class="form-group"><label>Resource Version</label>';
-						html += '<input type="text" id="upd-' + safePlatform + '-' + safeArch + '-res" value="' + escapeHtml(adata.latest?.resourceVersion || '') + '" /></div>';
+						html += '<input type="text" data-platform="' + escapeHtml(platform) + '" data-arch="' + escapeHtml(arch) + '" data-type="res" value="' + escapeHtml(adata.latest?.resourceVersion || '') + '" /></div>';
 						html += '</div>';
 						html += '</div>';
 					}
@@ -2588,20 +2586,24 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		}
 		
 		async function saveUpdates() {
-			// Collect updated versions from inputs
+			// Collect updated versions from inputs using data attributes
 			if (updatesData && updatesData.platforms) {
-				for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
-					if (pdata.architectures) {
-						for (const [arch, adata] of Object.entries(pdata.architectures)) {
-							const safePlatform = escapeHtml(platform);
-							const safeArch = escapeHtml(arch);
-							const coreInput = document.getElementById('upd-' + safePlatform + '-' + safeArch + '-core');
-							const resInput = document.getElementById('upd-' + safePlatform + '-' + safeArch + '-res');
-							if (coreInput && adata.latest) adata.latest.coreVersion = coreInput.value;
-							if (resInput && adata.latest) adata.latest.resourceVersion = resInput.value;
+				const inputs = document.querySelectorAll('#updates-content input[data-platform]');
+				inputs.forEach(input => {
+					const platform = input.dataset.platform;
+					const arch = input.dataset.arch;
+					const type = input.dataset.type;
+					if (updatesData.platforms[platform] && 
+						updatesData.platforms[platform].architectures && 
+						updatesData.platforms[platform].architectures[arch] &&
+						updatesData.platforms[platform].architectures[arch].latest) {
+						if (type === 'core') {
+							updatesData.platforms[platform].architectures[arch].latest.coreVersion = input.value;
+						} else if (type === 'res') {
+							updatesData.platforms[platform].architectures[arch].latest.resourceVersion = input.value;
 						}
 					}
-				}
+				});
 			}
 			const res = await apiRequest('PUT', '/v0/api/admin/updates', { updates: updatesData });
 			if (res && res.ok) {

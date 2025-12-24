@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -129,8 +130,12 @@ func (s *SQLiteStore) init() error {
 		`ALTER TABLE feedback_logs ADD COLUMN region TEXT NULL`,
 	}
 	for _, stmt := range migrations {
-		// Ignore errors for adding columns that already exist
-		s.db.Exec(stmt)
+		// Ignore "duplicate column" errors which occur when column already exists
+		// SQLite error message contains "duplicate column name"
+		_, err := s.db.Exec(stmt)
+		if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migration failed: %w", err)
+		}
 	}
 	return nil
 }
@@ -409,110 +414,46 @@ func (s *SQLiteStore) GetFeedbackFilterOptions(ctx context.Context) (*FeedbackFi
 		Langs:            []string{},
 	}
 
-	// Get distinct core versions
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT core_version FROM feedback_logs WHERE core_version IS NOT NULL AND core_version != '' ORDER BY core_version`)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
+	distinctQuery := func(column string) ([]string, error) {
+		query := fmt.Sprintf(`SELECT DISTINCT %s FROM feedback_logs WHERE %s IS NOT NULL AND %s != '' ORDER BY %s`, column, column, column, column)
+		rows, err := s.db.QueryContext(ctx, query)
+		if err != nil {
 			return nil, err
 		}
-		options.CoreVersions = append(options.CoreVersions, v)
+		defer rows.Close()
+		var result []string
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				return nil, err
+			}
+			result = append(result, v)
+		}
+		return result, rows.Err()
 	}
-	rows.Close()
 
-	// Get distinct resource versions
-	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT resource_version FROM feedback_logs WHERE resource_version IS NOT NULL AND resource_version != '' ORDER BY resource_version`)
-	if err != nil {
+	var err error
+	if options.CoreVersions, err = distinctQuery("core_version"); err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		options.ResourceVersions = append(options.ResourceVersions, v)
-	}
-	rows.Close()
-
-	// Get distinct build IDs
-	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT build_id FROM feedback_logs WHERE build_id IS NOT NULL AND build_id != '' ORDER BY build_id`)
-	if err != nil {
+	if options.ResourceVersions, err = distinctQuery("resource_version"); err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		options.BuildIDs = append(options.BuildIDs, v)
-	}
-	rows.Close()
-
-	// Get distinct platforms
-	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT platform FROM feedback_logs WHERE platform IS NOT NULL AND platform != '' ORDER BY platform`)
-	if err != nil {
+	if options.BuildIDs, err = distinctQuery("build_id"); err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		options.Platforms = append(options.Platforms, v)
-	}
-	rows.Close()
-
-	// Get distinct arches
-	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT arch FROM feedback_logs WHERE arch IS NOT NULL AND arch != '' ORDER BY arch`)
-	if err != nil {
+	if options.Platforms, err = distinctQuery("platform"); err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		options.Arches = append(options.Arches, v)
-	}
-	rows.Close()
-
-	// Get distinct regions
-	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT region FROM feedback_logs WHERE region IS NOT NULL AND region != '' ORDER BY region`)
-	if err != nil {
+	if options.Arches, err = distinctQuery("arch"); err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		options.Regions = append(options.Regions, v)
-	}
-	rows.Close()
-
-	// Get distinct langs
-	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT lang FROM feedback_logs WHERE lang IS NOT NULL AND lang != '' ORDER BY lang`)
-	if err != nil {
+	if options.Regions, err = distinctQuery("region"); err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		options.Langs = append(options.Langs, v)
+	if options.Langs, err = distinctQuery("lang"); err != nil {
+		return nil, err
 	}
-	rows.Close()
 
 	return options, nil
 }

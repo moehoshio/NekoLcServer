@@ -1,6 +1,9 @@
 package server
 
-import "github.com/moehoshio/NekoLcServer/internal/config"
+import (
+	"github.com/moehoshio/NekoLcServer/internal/config"
+	"github.com/moehoshio/NekoLcServer/internal/store"
+)
 
 // Preferences represents optional preference information that can accompany requests.
 type Preferences struct {
@@ -128,14 +131,26 @@ type FeedbackLogsResponseBody struct {
 
 // FeedbackLogItem represents a single feedback log entry.
 type FeedbackLogItem struct {
-	ID         int64       `json:"id"`
-	UserID     int64       `json:"userId,omitempty"`
-	DeviceID   string      `json:"deviceId,omitempty"`
-	Lang       string      `json:"lang,omitempty"`
-	ClientInfo interface{} `json:"clientInfo,omitempty"`
-	Content    string      `json:"content"`
-	ReceivedAt string      `json:"receivedAt"`
-	Timestamp  int64       `json:"timestamp"`
+	ID              int64       `json:"id"`
+	UserID          int64       `json:"userId,omitempty"`
+	DeviceID        string      `json:"deviceId,omitempty"`
+	Lang            string      `json:"lang,omitempty"`
+	ClientInfo      interface{} `json:"clientInfo,omitempty"`
+	Content         string      `json:"content"`
+	ReceivedAt      string      `json:"receivedAt"`
+	Timestamp       int64       `json:"timestamp"`
+	CoreVersion     string      `json:"coreVersion,omitempty"`
+	ResourceVersion string      `json:"resourceVersion,omitempty"`
+	BuildID         string      `json:"buildId,omitempty"`
+	Platform        string      `json:"platform,omitempty"`
+	Arch            string      `json:"arch,omitempty"`
+	Region          string      `json:"region,omitempty"`
+}
+
+// FeedbackFilterOptionsResponse returns available filter options.
+type FeedbackFilterOptionsResponse struct {
+	Options store.FeedbackFilterOptions `json:"options"`
+	Meta    Meta                        `json:"meta"`
 }
 
 // Meta defines the meta object returned with each response.

@@ -159,6 +159,9 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Delete("/users/{id}", s.handleAdminDeleteUser)
 				// Statistics
 				adminRouter.Get("/stats", s.handleAdminGetStats)
+				// Feedback filtering
+				adminRouter.Get("/feedbackLogs", s.handleFeedbackLogs)
+				adminRouter.Get("/feedbackFilterOptions", s.handleFeedbackFilterOptions)
 			})
 		})
 
@@ -319,6 +322,21 @@ func (s *Server) maintenanceForClient(client *ClientInfo) (config.MaintenanceInf
 		return platform.MaintenanceInfo, true
 	}
 	return config.MaintenanceInfo{}, false
+}
+
+// localizeMaintenanceInfo returns a copy of the maintenance info with localized messages applied.
+func (s *Server) localizeMaintenanceInfo(info config.MaintenanceInfo, lang string) config.MaintenanceInfo {
+	result := info
+	// Apply localized message if available
+	if len(info.LocalizedMessages.Langs) > 0 {
+		langLower := strings.ToLower(lang)
+		if localizedMsg, ok := info.LocalizedMessages.Langs[langLower]; ok && localizedMsg != "" {
+			result.Message = localizedMsg
+		} else if info.LocalizedMessages.Default != "" {
+			result.Message = info.LocalizedMessages.Default
+		}
+	}
+	return result
 }
 
 func platformKey(client *ClientInfo) string {
@@ -588,7 +606,7 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 		.card { background: #111827; padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
 		h1 { margin: 0 0 12px 0; font-size: 22px; }
 		label { display: block; margin-top: 12px; color: #cbd5e1; }
-		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+		input[type="text"], input[type="password"] { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
 		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
 		button:hover { filter: brightness(1.05); }
 		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
@@ -597,6 +615,9 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 		.link a:hover { text-decoration: underline; }
 		.lang-switch { position: absolute; top: 16px; right: 16px; }
 		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; cursor: pointer; }
+		.remember-me { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+		.remember-me input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+		.remember-me label { margin-top: 0; cursor: pointer; }
 	</style>
 </head>
 <body>
@@ -610,9 +631,13 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 	<div class="card">
 		<h1 id="title">Sign in</h1>
 		<label id="lbl-username">Username</label>
-		<input id="username" autocomplete="username" />
+		<input id="username" type="text" autocomplete="username" />
 		<label id="lbl-password">Password</label>
 		<input id="password" type="password" autocomplete="current-password" />
+		<div class="remember-me">
+			<input type="checkbox" id="remember-me" checked />
+			<label for="remember-me" id="lbl-remember">Remember me</label>
+		</div>
 		<button onclick="login()" id="btn-login">Login</button>
 		<div class="error" id="error"></div>
 		<div class="link"><span id="no-account">Don't have an account?</span> <a href="{{.BasePath}}/app/register" id="link-register">Create one</a></div>
@@ -620,13 +645,14 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 	<script>
 		const basePath = '{{.BasePath}}';
 		const i18n = {
-			'en': { title: 'Sign in', username: 'Username', password: 'Password', login: 'Login', noAccount: "Don't have an account?", createOne: 'Create one', loginFailed: 'Login failed' },
-			'zh-hans': { title: '登录', username: '用户名', password: '密码', login: '登录', noAccount: '没有账号？', createOne: '创建账号', loginFailed: '登录失败' },
-			'zh-hant': { title: '登入', username: '使用者名稱', password: '密碼', login: '登入', noAccount: '沒有帳號？', createOne: '建立帳號', loginFailed: '登入失敗' }
+			'en': { title: 'Sign in', username: 'Username', password: 'Password', login: 'Login', noAccount: "Don't have an account?", createOne: 'Create one', loginFailed: 'Login failed', remember: 'Remember me' },
+			'zh-hans': { title: '登录', username: '用户名', password: '密码', login: '登录', noAccount: '没有账号？', createOne: '创建账号', loginFailed: '登录失败', remember: '记住我' },
+			'zh-hant': { title: '登入', username: '使用者名稱', password: '密碼', login: '登入', noAccount: '沒有帳號？', createOne: '建立帳號', loginFailed: '登入失敗', remember: '記住我' }
 		};
 		function getLang() { return localStorage.getItem('lang') || 'en'; }
 		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
 		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function getStorage() { return document.getElementById('remember-me').checked ? localStorage : sessionStorage; }
 		function applyLang() {
 			const lang = getLang();
 			document.getElementById('langSelect').value = lang;
@@ -637,11 +663,13 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 			document.getElementById('btn-login').innerText = t.login;
 			document.getElementById('no-account').innerText = t.noAccount;
 			document.getElementById('link-register').innerText = t.createOne;
+			document.getElementById('lbl-remember').innerText = t.remember;
 		}
 		applyLang();
 		async function login() {
 			const username = document.getElementById('username').value.trim();
 			const password = document.getElementById('password').value;
+			const rememberMe = document.getElementById('remember-me').checked;
 			const lang = getLang();
 			const t = i18n[lang] || i18n['en'];
 			const res = await fetch(basePath + '/app/api/login', {
@@ -655,10 +683,12 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 				return;
 			}
 			const data = await res.json();
-			localStorage.setItem('accessToken', data.accessToken);
-			localStorage.setItem('refreshToken', data.refreshToken);
-			localStorage.setItem('userRole', data.role || 'user');
-			localStorage.setItem('username', data.username || username);
+			const storage = rememberMe ? localStorage : sessionStorage;
+			storage.setItem('accessToken', data.accessToken);
+			storage.setItem('refreshToken', data.refreshToken);
+			storage.setItem('userRole', data.role || 'user');
+			storage.setItem('username', data.username || username);
+			storage.setItem('rememberMe', rememberMe ? 'true' : 'false');
 			// Redirect based on role
 			if (data.role === 'admin') {
 				window.location.href = basePath + '/app/admin';
@@ -1483,8 +1513,14 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						</div>
 					</div>
 					<div class="form-group">
-						<label for="maint-message">Message</label>
+						<label for="maint-message">Message (Default)</label>
 						<textarea id="maint-message" rows="2"></textarea>
+					</div>
+					<div class="form-group">
+						<label>Localized Messages</label>
+						<p style="color: #94a3b8; margin-bottom: 8px; font-size: 13px;">Add messages for different languages. The default message above will be used if no localized message is available.</p>
+						<div id="localized-messages-list"></div>
+						<button type="button" class="btn btn-secondary" style="margin-top: 8px;" onclick="addLocalizedMessage()">+ Add Language</button>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
@@ -1639,6 +1675,58 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<div id="section-feedback" class="section hidden">
 				<div class="card">
 					<h2>Feedback Logs</h2>
+					<div class="form-row" style="margin-bottom: 16px; flex-wrap: wrap;">
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-coreVersion">Core Version</label>
+							<select id="filter-coreVersion" onchange="applyFeedbackFilters()">
+								<option value="">All</option>
+							</select>
+						</div>
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-resourceVersion">Resource Version</label>
+							<select id="filter-resourceVersion" onchange="applyFeedbackFilters()">
+								<option value="">All</option>
+							</select>
+						</div>
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-platform">Platform</label>
+							<select id="filter-platform" onchange="applyFeedbackFilters()">
+								<option value="">All</option>
+							</select>
+						</div>
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-buildId">Build ID</label>
+							<select id="filter-buildId" onchange="applyFeedbackFilters()">
+								<option value="">All</option>
+							</select>
+						</div>
+					</div>
+					<div class="form-row" style="margin-bottom: 16px; flex-wrap: wrap;">
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-region">Region</label>
+							<select id="filter-region" onchange="applyFeedbackFilters()">
+								<option value="">All</option>
+							</select>
+						</div>
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-lang">Language</label>
+							<select id="filter-lang" onchange="applyFeedbackFilters()">
+								<option value="">All</option>
+							</select>
+						</div>
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-startTime">Start Time</label>
+							<input type="datetime-local" id="filter-startTime" onchange="applyFeedbackFilters()" />
+						</div>
+						<div class="form-group" style="flex: 1; min-width: 150px;">
+							<label for="filter-endTime">End Time</label>
+							<input type="datetime-local" id="filter-endTime" onchange="applyFeedbackFilters()" />
+						</div>
+					</div>
+					<div style="margin-bottom: 16px;">
+						<button class="btn btn-secondary" onclick="clearFeedbackFilters()">Clear Filters</button>
+						<button class="btn btn-secondary" onclick="loadFeedback()" style="margin-left: 8px;">Reload</button>
+					</div>
 					<div id="feedback-list">
 						<div class="loading">Loading feedback...</div>
 					</div>
@@ -2000,19 +2088,66 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('btn-reload-launcher').innerText = t('reload');
 		}
 		
-		function getToken() {
-			return localStorage.getItem('accessToken');
+		function getActiveStorage() {
+			// Check localStorage first (persistent), then sessionStorage (session-only)
+			if (localStorage.getItem('accessToken')) return localStorage;
+			if (sessionStorage.getItem('accessToken')) return sessionStorage;
+			return localStorage;
 		}
 		
-		function checkAuth() {
+		function getToken() {
+			const storage = getActiveStorage();
+			return storage.getItem('accessToken');
+		}
+		
+		function getRefreshToken() {
+			const storage = getActiveStorage();
+			return storage.getItem('refreshToken');
+		}
+		
+		async function tryRefreshToken() {
+			const refreshToken = getRefreshToken();
+			if (!refreshToken) return false;
+			try {
+				const res = await fetch(basePath + '/v0/api/auth/refresh', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ refreshRequest: { refreshToken: refreshToken } })
+				});
+				if (!res.ok) return false;
+				const data = await res.json();
+				if (data.refreshResponse && data.refreshResponse.accessToken) {
+					const storage = getActiveStorage();
+					storage.setItem('accessToken', data.refreshResponse.accessToken);
+					return true;
+				}
+			} catch (e) {
+				console.error('Token refresh failed:', e);
+			}
+			return false;
+		}
+		
+		async function checkAuth() {
 			if (!getToken()) {
-				window.location.href = basePath + '/app/login';
+				// Try to refresh token
+				const refreshed = await tryRefreshToken();
+				if (!refreshed) {
+					window.location.href = basePath + '/app/login';
+				}
 			}
 		}
 		
 		function logout() {
 			localStorage.removeItem('accessToken');
 			localStorage.removeItem('refreshToken');
+			localStorage.removeItem('userRole');
+			localStorage.removeItem('username');
+			localStorage.removeItem('rememberMe');
+			sessionStorage.removeItem('accessToken');
+			sessionStorage.removeItem('refreshToken');
+			sessionStorage.removeItem('userRole');
+			sessionStorage.removeItem('username');
+			sessionStorage.removeItem('rememberMe');
 			window.location.href = basePath + '/app/login';
 		}
 		
@@ -2229,7 +2364,81 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (info.exEndTime) {
 				document.getElementById('maint-end').value = info.exEndTime.slice(0, 16);
 			}
+			renderLocalizedMessages();
 			renderPlatformMaintenance();
+		}
+		
+		function renderLocalizedMessages() {
+			const container = document.getElementById('localized-messages-list');
+			if (!maintenanceData || !maintenanceData.maintenanceInfo) {
+				container.innerHTML = '';
+				return;
+			}
+			const info = maintenanceData.maintenanceInfo;
+			const localized = info.localizedMessages || { default: '', langs: {} };
+			const langs = localized.langs || {};
+			const langKeys = Object.keys(langs);
+			
+			let html = '';
+			langKeys.forEach((langCode, idx) => {
+				const safeLang = escapeHtml(langCode);
+				const safeValue = escapeHtml(langs[langCode] || '');
+				html += '<div class="form-row" id="localized-msg-' + idx + '" style="margin-bottom: 8px;">';
+				html += '<div class="form-group" style="flex: 0 0 120px;">';
+				html += '<input type="text" value="' + safeLang + '" placeholder="e.g., zh-hant" onchange="updateLocalizedMsgLang(' + idx + ', this.value)" style="width: 100%;" />';
+				html += '</div>';
+				html += '<div class="form-group" style="flex: 1;">';
+				html += '<input type="text" value="' + safeValue + '" placeholder="Localized message" onchange="updateLocalizedMsgText(\'' + safeLang + '\', this.value)" style="width: 100%;" />';
+				html += '</div>';
+				html += '<button type="button" class="btn btn-danger" style="padding: 8px 12px; flex: 0 0 auto;" onclick="removeLocalizedMessage(\'' + safeLang + '\')">×</button>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+		
+		function addLocalizedMessage() {
+			if (!maintenanceData) maintenanceData = { maintenanceActive: false, maintenanceInfo: {} };
+			if (!maintenanceData.maintenanceInfo) maintenanceData.maintenanceInfo = {};
+			if (!maintenanceData.maintenanceInfo.localizedMessages) {
+				maintenanceData.maintenanceInfo.localizedMessages = { default: '', langs: {} };
+			}
+			if (!maintenanceData.maintenanceInfo.localizedMessages.langs) {
+				maintenanceData.maintenanceInfo.localizedMessages.langs = {};
+			}
+			const existing = Object.keys(maintenanceData.maintenanceInfo.localizedMessages.langs);
+			let newLang = 'zh-hant';
+			const commonLangs = ['zh-hant', 'zh-hans', 'ja', 'ko', 'en', 'fr', 'de', 'es'];
+			for (const lang of commonLangs) {
+				if (!existing.includes(lang)) {
+					newLang = lang;
+					break;
+				}
+			}
+			maintenanceData.maintenanceInfo.localizedMessages.langs[newLang] = '';
+			renderLocalizedMessages();
+		}
+		
+		function updateLocalizedMsgLang(idx, newLang) {
+			if (!maintenanceData?.maintenanceInfo?.localizedMessages?.langs) return;
+			const langs = maintenanceData.maintenanceInfo.localizedMessages.langs;
+			const keys = Object.keys(langs);
+			if (idx >= keys.length) return;
+			const oldLang = keys[idx];
+			const value = langs[oldLang];
+			delete langs[oldLang];
+			langs[newLang.toLowerCase()] = value;
+			renderLocalizedMessages();
+		}
+		
+		function updateLocalizedMsgText(langCode, text) {
+			if (!maintenanceData?.maintenanceInfo?.localizedMessages?.langs) return;
+			maintenanceData.maintenanceInfo.localizedMessages.langs[langCode] = text;
+		}
+		
+		function removeLocalizedMessage(langCode) {
+			if (!maintenanceData?.maintenanceInfo?.localizedMessages?.langs) return;
+			delete maintenanceData.maintenanceInfo.localizedMessages.langs[langCode];
+			renderLocalizedMessages();
 		}
 		
 		function renderPlatformMaintenance() {
@@ -2306,6 +2515,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		}
 		
 		async function saveMaintenance() {
+			const localizedMessages = maintenanceData?.maintenanceInfo?.localizedMessages || { default: '', langs: {} };
 			const payload = {
 				maintenance: {
 					maintenanceActive: document.getElementById('maint-active').checked,
@@ -2315,7 +2525,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						startTime: document.getElementById('maint-start').value ? new Date(document.getElementById('maint-start').value).toISOString() : '',
 						exEndTime: document.getElementById('maint-end').value ? new Date(document.getElementById('maint-end').value).toISOString() : '',
 						posterUrl: document.getElementById('maint-poster').value,
-						link: document.getElementById('maint-link').value
+						link: document.getElementById('maint-link').value,
+						localizedMessages: localizedMessages
 					},
 					platformSpecific: maintenanceData?.platformSpecific || {}
 				}
@@ -2609,25 +2820,109 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		}
 		
 		// Feedback functions
+		let feedbackFilterOptions = null;
+		
+		async function loadFeedbackFilterOptions() {
+			const res = await apiRequest('GET', '/v0/api/admin/feedbackFilterOptions');
+			if (!res) return;
+			const data = await res.json();
+			feedbackFilterOptions = data.options;
+			
+			// Populate filter dropdowns
+			populateFilterSelect('filter-coreVersion', feedbackFilterOptions.coreVersions || []);
+			populateFilterSelect('filter-resourceVersion', feedbackFilterOptions.resourceVersions || []);
+			populateFilterSelect('filter-platform', feedbackFilterOptions.platforms || []);
+			populateFilterSelect('filter-buildId', feedbackFilterOptions.buildIds || []);
+			populateFilterSelect('filter-region', feedbackFilterOptions.regions || []);
+			populateFilterSelect('filter-lang', feedbackFilterOptions.langs || []);
+		}
+		
+		function populateFilterSelect(selectId, options) {
+			const select = document.getElementById(selectId);
+			if (!select) return;
+			const currentValue = select.value;
+			select.innerHTML = '<option value="">All</option>';
+			options.forEach(opt => {
+				const option = document.createElement('option');
+				option.value = opt;
+				option.textContent = opt;
+				if (opt === currentValue) option.selected = true;
+				select.appendChild(option);
+			});
+		}
+		
+		function buildFeedbackFilterParams() {
+			const params = new URLSearchParams();
+			params.append('limit', '50');
+			
+			const coreVersion = document.getElementById('filter-coreVersion')?.value;
+			const resourceVersion = document.getElementById('filter-resourceVersion')?.value;
+			const platform = document.getElementById('filter-platform')?.value;
+			const buildId = document.getElementById('filter-buildId')?.value;
+			const region = document.getElementById('filter-region')?.value;
+			const lang = document.getElementById('filter-lang')?.value;
+			const startTime = document.getElementById('filter-startTime')?.value;
+			const endTime = document.getElementById('filter-endTime')?.value;
+			
+			if (coreVersion) params.append('coreVersion', coreVersion);
+			if (resourceVersion) params.append('resourceVersion', resourceVersion);
+			if (platform) params.append('platform', platform);
+			if (buildId) params.append('buildId', buildId);
+			if (region) params.append('region', region);
+			if (lang) params.append('lang', lang);
+			if (startTime) params.append('startTime', new Date(startTime).toISOString());
+			if (endTime) params.append('endTime', new Date(endTime).toISOString());
+			
+			return params.toString();
+		}
+		
+		function clearFeedbackFilters() {
+			document.getElementById('filter-coreVersion').value = '';
+			document.getElementById('filter-resourceVersion').value = '';
+			document.getElementById('filter-platform').value = '';
+			document.getElementById('filter-buildId').value = '';
+			document.getElementById('filter-region').value = '';
+			document.getElementById('filter-lang').value = '';
+			document.getElementById('filter-startTime').value = '';
+			document.getElementById('filter-endTime').value = '';
+			loadFeedback();
+		}
+		
+		function applyFeedbackFilters() {
+			loadFeedback();
+		}
+		
 		async function loadFeedback() {
-			const res = await apiRequest('GET', '/v0/api/feedbackLogs?limit=50');
+			if (!feedbackFilterOptions) {
+				await loadFeedbackFilterOptions();
+			}
+			const params = buildFeedbackFilterParams();
+			const res = await apiRequest('GET', '/v0/api/admin/feedbackLogs?' + params);
 			if (!res) return;
 			const data = await res.json();
 			const container = document.getElementById('feedback-list');
 			if (!data.feedbackLogs || data.feedbackLogs.length === 0) {
-				container.innerHTML = '<p style="color:#94a3b8;">No feedback entries.</p>';
+				container.innerHTML = '<p style="color:#94a3b8;">No feedback entries matching filters.</p>';
 				return;
 			}
 			let html = '<table style="width:100%;border-collapse:collapse;">';
-			html += '<thead><tr style="border-bottom:1px solid #374151;"><th style="text-align:left;padding:8px;">Time</th><th style="text-align:left;padding:8px;">Content</th></tr></thead>';
+			html += '<thead><tr style="border-bottom:1px solid #374151;">';
+			html += '<th style="text-align:left;padding:8px;">Time</th>';
+			html += '<th style="text-align:left;padding:8px;">Platform</th>';
+			html += '<th style="text-align:left;padding:8px;">Version</th>';
+			html += '<th style="text-align:left;padding:8px;">Content</th>';
+			html += '</tr></thead>';
 			html += '<tbody>';
 			data.feedbackLogs.forEach(item => {
 				html += '<tr style="border-bottom:1px solid #1f2937;">';
-				html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;">' + (item.receivedAt || '') + '</td>';
-				html += '<td style="padding:8px;white-space:pre-wrap;">' + (item.content || '') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:13px;">' + (item.receivedAt || '') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.platform || '-') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.coreVersion || '-') + '</td>';
+				html += '<td style="padding:8px;white-space:pre-wrap;">' + escapeHtml(item.content || '') + '</td>';
 				html += '</tr>';
 			});
 			html += '</tbody></table>';
+			html += '<p style="color:#94a3b8;font-size:13px;margin-top:12px;">Showing ' + data.feedbackLogs.length + ' entries</p>';
 			container.innerHTML = html;
 		}
 		
@@ -2732,11 +3027,17 @@ var appUserDashboardTemplate = template.Must(template.New("appUserDashboard").Pa
 			document.getElementById('btn-logout').innerText = t.logout;
 			document.getElementById('link-home').innerText = t.home;
 			// Update role display
-			const role = localStorage.getItem('userRole') || 'user';
+			const role = getActiveStorage().getItem('userRole') || 'user';
 			document.getElementById('info-role').innerText = role === 'admin' ? t.admin : t.user;
 		}
+		function getActiveStorage() {
+			if (localStorage.getItem('accessToken')) return localStorage;
+			if (sessionStorage.getItem('accessToken')) return sessionStorage;
+			return localStorage;
+		}
 		function checkAuth() {
-			if (!localStorage.getItem('accessToken')) {
+			const storage = getActiveStorage();
+			if (!storage.getItem('accessToken')) {
 				window.location.href = basePath + '/app/login';
 			}
 		}
@@ -2745,12 +3046,19 @@ var appUserDashboardTemplate = template.Must(template.New("appUserDashboard").Pa
 			localStorage.removeItem('refreshToken');
 			localStorage.removeItem('userRole');
 			localStorage.removeItem('username');
+			localStorage.removeItem('rememberMe');
+			sessionStorage.removeItem('accessToken');
+			sessionStorage.removeItem('refreshToken');
+			sessionStorage.removeItem('userRole');
+			sessionStorage.removeItem('username');
+			sessionStorage.removeItem('rememberMe');
 			window.location.href = basePath + '/app/login';
 		}
 		function init() {
 			checkAuth();
 			applyLang();
-			const username = localStorage.getItem('username') || 'User';
+			const storage = getActiveStorage();
+			const username = storage.getItem('username') || 'User';
 			document.getElementById('username').innerText = username;
 			document.getElementById('info-username').innerText = username;
 		}

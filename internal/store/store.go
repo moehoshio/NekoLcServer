@@ -30,14 +30,33 @@ type RefreshToken struct {
 
 // FeedbackLog represents a stored feedback entry.
 type FeedbackLog struct {
-	ID         int64
-	UserID     sql.NullInt64
-	DeviceID   string
-	Lang       string
-	ClientInfo []byte
-	Content    string
-	ReceivedAt time.Time
-	Timestamp  int64
+	ID              int64
+	UserID          sql.NullInt64
+	DeviceID        string
+	Lang            string
+	ClientInfo      []byte
+	Content         string
+	ReceivedAt      time.Time
+	Timestamp       int64
+	CoreVersion     string
+	ResourceVersion string
+	BuildID         string
+	Platform        string
+	Arch            string
+	Region          string
+}
+
+// FeedbackFilter defines filter criteria for listing feedback logs.
+type FeedbackFilter struct {
+	CoreVersion     string
+	ResourceVersion string
+	BuildID         string
+	Platform        string
+	Arch            string
+	Region          string
+	Lang            string
+	StartTime       *time.Time
+	EndTime         *time.Time
 }
 
 // ConfigEntry represents a configuration stored in database.
@@ -84,6 +103,17 @@ type EndpointStat struct {
 	Count    int64  `json:"count"`
 }
 
+// FeedbackFilterOptions contains the available values for feedback filters.
+type FeedbackFilterOptions struct {
+	CoreVersions     []string `json:"coreVersions"`
+	ResourceVersions []string `json:"resourceVersions"`
+	BuildIDs         []string `json:"buildIds"`
+	Platforms        []string `json:"platforms"`
+	Arches           []string `json:"arches"`
+	Regions          []string `json:"regions"`
+	Langs            []string `json:"langs"`
+}
+
 // Store defines the persistence operations we need.
 type Store interface {
 	Ping(ctx context.Context) error
@@ -106,6 +136,8 @@ type Store interface {
 	// Feedback logs
 	SaveFeedback(ctx context.Context, entry FeedbackLog) error
 	ListFeedback(ctx context.Context, limit, offset int) ([]FeedbackLog, error)
+	ListFeedbackFiltered(ctx context.Context, filter FeedbackFilter, limit, offset int) ([]FeedbackLog, error)
+	GetFeedbackFilterOptions(ctx context.Context) (*FeedbackFilterOptions, error)
 
 	// Configuration storage
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)

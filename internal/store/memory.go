@@ -195,6 +195,126 @@ func (m *memoryStore) ListFeedback(ctx context.Context, limit, offset int) ([]Fe
 	return res, nil
 }
 
+func (m *memoryStore) ListFeedbackFiltered(ctx context.Context, filter FeedbackFilter, limit, offset int) ([]FeedbackLog, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Filter logs
+	filtered := []FeedbackLog{}
+	for i := len(m.logs) - 1; i >= 0; i-- {
+		entry := m.logs[i]
+		if filter.CoreVersion != "" && entry.CoreVersion != filter.CoreVersion {
+			continue
+		}
+		if filter.ResourceVersion != "" && entry.ResourceVersion != filter.ResourceVersion {
+			continue
+		}
+		if filter.BuildID != "" && entry.BuildID != filter.BuildID {
+			continue
+		}
+		if filter.Platform != "" && entry.Platform != filter.Platform {
+			continue
+		}
+		if filter.Arch != "" && entry.Arch != filter.Arch {
+			continue
+		}
+		if filter.Region != "" && entry.Region != filter.Region {
+			continue
+		}
+		if filter.Lang != "" && entry.Lang != filter.Lang {
+			continue
+		}
+		if filter.StartTime != nil && entry.ReceivedAt.Before(*filter.StartTime) {
+			continue
+		}
+		if filter.EndTime != nil && entry.ReceivedAt.After(*filter.EndTime) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+
+	// Apply pagination
+	if offset >= len(filtered) {
+		return []FeedbackLog{}, nil
+	}
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[offset:end], nil
+}
+
+func (m *memoryStore) GetFeedbackFilterOptions(ctx context.Context) (*FeedbackFilterOptions, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	options := &FeedbackFilterOptions{
+		CoreVersions:     []string{},
+		ResourceVersions: []string{},
+		BuildIDs:         []string{},
+		Platforms:        []string{},
+		Arches:           []string{},
+		Regions:          []string{},
+		Langs:            []string{},
+	}
+
+	coreVersionsMap := map[string]bool{}
+	resourceVersionsMap := map[string]bool{}
+	buildIDsMap := map[string]bool{}
+	platformsMap := map[string]bool{}
+	archesMap := map[string]bool{}
+	regionsMap := map[string]bool{}
+	langsMap := map[string]bool{}
+
+	for _, entry := range m.logs {
+		if entry.CoreVersion != "" {
+			coreVersionsMap[entry.CoreVersion] = true
+		}
+		if entry.ResourceVersion != "" {
+			resourceVersionsMap[entry.ResourceVersion] = true
+		}
+		if entry.BuildID != "" {
+			buildIDsMap[entry.BuildID] = true
+		}
+		if entry.Platform != "" {
+			platformsMap[entry.Platform] = true
+		}
+		if entry.Arch != "" {
+			archesMap[entry.Arch] = true
+		}
+		if entry.Region != "" {
+			regionsMap[entry.Region] = true
+		}
+		if entry.Lang != "" {
+			langsMap[entry.Lang] = true
+		}
+	}
+
+	for v := range coreVersionsMap {
+		options.CoreVersions = append(options.CoreVersions, v)
+	}
+	for v := range resourceVersionsMap {
+		options.ResourceVersions = append(options.ResourceVersions, v)
+	}
+	for v := range buildIDsMap {
+		options.BuildIDs = append(options.BuildIDs, v)
+	}
+	for v := range platformsMap {
+		options.Platforms = append(options.Platforms, v)
+	}
+	for v := range archesMap {
+		options.Arches = append(options.Arches, v)
+	}
+	for v := range regionsMap {
+		options.Regions = append(options.Regions, v)
+	}
+	for v := range langsMap {
+		options.Langs = append(options.Langs, v)
+	}
+
+	return options, nil
+}
+
 func (m *memoryStore) GetConfig(ctx context.Context, key string) (json.RawMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

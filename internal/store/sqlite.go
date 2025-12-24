@@ -84,9 +84,17 @@ func (s *SQLiteStore) init() error {
             content TEXT NOT NULL,
             received_at DATETIME NOT NULL,
             ts INTEGER NOT NULL,
+            core_version TEXT NULL,
+            resource_version TEXT NULL,
+            build_id TEXT NULL,
+            platform TEXT NULL,
+            arch TEXT NULL,
+            region TEXT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         )`,
 		`CREATE INDEX IF NOT EXISTS idx_feedback_received ON feedback_logs(received_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_feedback_platform ON feedback_logs(platform)`,
+		`CREATE INDEX IF NOT EXISTS idx_feedback_core_version ON feedback_logs(core_version)`,
 		`CREATE TABLE IF NOT EXISTS configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             config_key TEXT NOT NULL UNIQUE,
@@ -110,6 +118,19 @@ func (s *SQLiteStore) init() error {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return fmt.Errorf("init statement failed: %w", err)
 		}
+	}
+	// Add new columns if they don't exist (migration for existing databases)
+	migrations := []string{
+		`ALTER TABLE feedback_logs ADD COLUMN core_version TEXT NULL`,
+		`ALTER TABLE feedback_logs ADD COLUMN resource_version TEXT NULL`,
+		`ALTER TABLE feedback_logs ADD COLUMN build_id TEXT NULL`,
+		`ALTER TABLE feedback_logs ADD COLUMN platform TEXT NULL`,
+		`ALTER TABLE feedback_logs ADD COLUMN arch TEXT NULL`,
+		`ALTER TABLE feedback_logs ADD COLUMN region TEXT NULL`,
+	}
+	for _, stmt := range migrations {
+		// Ignore errors for adding columns that already exist
+		s.db.Exec(stmt)
 	}
 	return nil
 }
@@ -262,8 +283,9 @@ func (s *SQLiteStore) SaveFeedback(ctx context.Context, entry FeedbackLog) error
 	if entry.UserID.Valid {
 		userID = entry.UserID.Int64
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO feedback_logs (user_id, device_id, lang, client_info, content, received_at, ts) VALUES (?,?,?,?,?,?,?)`,
-		userID, entry.DeviceID, entry.Lang, string(entry.ClientInfo), entry.Content, entry.ReceivedAt, entry.Timestamp)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO feedback_logs (user_id, device_id, lang, client_info, content, received_at, ts, core_version, resource_version, build_id, platform, arch, region) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		userID, entry.DeviceID, entry.Lang, string(entry.ClientInfo), entry.Content, entry.ReceivedAt, entry.Timestamp,
+		entry.CoreVersion, entry.ResourceVersion, entry.BuildID, entry.Platform, entry.Arch, entry.Region)
 	return err
 }
 
@@ -276,7 +298,7 @@ func (s *SQLiteStore) ListFeedback(ctx context.Context, limit, offset int) ([]Fe
 	}
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT id, user_id, device_id, lang, client_info, content, received_at, ts FROM feedback_logs ORDER BY received_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, user_id, device_id, lang, client_info, content, received_at, ts, COALESCE(core_version,''), COALESCE(resource_version,''), COALESCE(build_id,''), COALESCE(platform,''), COALESCE(arch,''), COALESCE(region,'') FROM feedback_logs ORDER BY received_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +308,7 @@ func (s *SQLiteStore) ListFeedback(ctx context.Context, limit, offset int) ([]Fe
 		var e FeedbackLog
 		var userID sql.NullInt64
 		var clientInfo sql.NullString
-		if err := rows.Scan(&e.ID, &userID, &e.DeviceID, &e.Lang, &clientInfo, &e.Content, &e.ReceivedAt, &e.Timestamp); err != nil {
+		if err := rows.Scan(&e.ID, &userID, &e.DeviceID, &e.Lang, &clientInfo, &e.Content, &e.ReceivedAt, &e.Timestamp, &e.CoreVersion, &e.ResourceVersion, &e.BuildID, &e.Platform, &e.Arch, &e.Region); err != nil {
 			return nil, err
 		}
 		e.UserID = userID
@@ -296,6 +318,203 @@ func (s *SQLiteStore) ListFeedback(ctx context.Context, limit, offset int) ([]Fe
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func (s *SQLiteStore) ListFeedbackFiltered(ctx context.Context, filter FeedbackFilter, limit, offset int) ([]FeedbackLog, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	query := `SELECT id, user_id, device_id, lang, client_info, content, received_at, ts, COALESCE(core_version,''), COALESCE(resource_version,''), COALESCE(build_id,''), COALESCE(platform,''), COALESCE(arch,''), COALESCE(region,'') FROM feedback_logs WHERE 1=1`
+	args := []interface{}{}
+
+	if filter.CoreVersion != "" {
+		query += ` AND core_version = ?`
+		args = append(args, filter.CoreVersion)
+	}
+	if filter.ResourceVersion != "" {
+		query += ` AND resource_version = ?`
+		args = append(args, filter.ResourceVersion)
+	}
+	if filter.BuildID != "" {
+		query += ` AND build_id = ?`
+		args = append(args, filter.BuildID)
+	}
+	if filter.Platform != "" {
+		query += ` AND platform = ?`
+		args = append(args, filter.Platform)
+	}
+	if filter.Arch != "" {
+		query += ` AND arch = ?`
+		args = append(args, filter.Arch)
+	}
+	if filter.Region != "" {
+		query += ` AND region = ?`
+		args = append(args, filter.Region)
+	}
+	if filter.Lang != "" {
+		query += ` AND lang = ?`
+		args = append(args, filter.Lang)
+	}
+	if filter.StartTime != nil {
+		query += ` AND received_at >= ?`
+		args = append(args, *filter.StartTime)
+	}
+	if filter.EndTime != nil {
+		query += ` AND received_at <= ?`
+		args = append(args, *filter.EndTime)
+	}
+
+	query += ` ORDER BY received_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FeedbackLog{}
+	for rows.Next() {
+		var e FeedbackLog
+		var userID sql.NullInt64
+		var clientInfo sql.NullString
+		if err := rows.Scan(&e.ID, &userID, &e.DeviceID, &e.Lang, &clientInfo, &e.Content, &e.ReceivedAt, &e.Timestamp, &e.CoreVersion, &e.ResourceVersion, &e.BuildID, &e.Platform, &e.Arch, &e.Region); err != nil {
+			return nil, err
+		}
+		e.UserID = userID
+		if clientInfo.Valid {
+			e.ClientInfo = []byte(clientInfo.String)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) GetFeedbackFilterOptions(ctx context.Context) (*FeedbackFilterOptions, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+
+	options := &FeedbackFilterOptions{
+		CoreVersions:     []string{},
+		ResourceVersions: []string{},
+		BuildIDs:         []string{},
+		Platforms:        []string{},
+		Arches:           []string{},
+		Regions:          []string{},
+		Langs:            []string{},
+	}
+
+	// Get distinct core versions
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT core_version FROM feedback_logs WHERE core_version IS NOT NULL AND core_version != '' ORDER BY core_version`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		options.CoreVersions = append(options.CoreVersions, v)
+	}
+	rows.Close()
+
+	// Get distinct resource versions
+	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT resource_version FROM feedback_logs WHERE resource_version IS NOT NULL AND resource_version != '' ORDER BY resource_version`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		options.ResourceVersions = append(options.ResourceVersions, v)
+	}
+	rows.Close()
+
+	// Get distinct build IDs
+	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT build_id FROM feedback_logs WHERE build_id IS NOT NULL AND build_id != '' ORDER BY build_id`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		options.BuildIDs = append(options.BuildIDs, v)
+	}
+	rows.Close()
+
+	// Get distinct platforms
+	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT platform FROM feedback_logs WHERE platform IS NOT NULL AND platform != '' ORDER BY platform`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		options.Platforms = append(options.Platforms, v)
+	}
+	rows.Close()
+
+	// Get distinct arches
+	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT arch FROM feedback_logs WHERE arch IS NOT NULL AND arch != '' ORDER BY arch`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		options.Arches = append(options.Arches, v)
+	}
+	rows.Close()
+
+	// Get distinct regions
+	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT region FROM feedback_logs WHERE region IS NOT NULL AND region != '' ORDER BY region`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		options.Regions = append(options.Regions, v)
+	}
+	rows.Close()
+
+	// Get distinct langs
+	rows, err = s.db.QueryContext(ctx, `SELECT DISTINCT lang FROM feedback_logs WHERE lang IS NOT NULL AND lang != '' ORDER BY lang`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		options.Langs = append(options.Langs, v)
+	}
+	rows.Close()
+
+	return options, nil
 }
 
 func (s *SQLiteStore) GetConfig(ctx context.Context, key string) (json.RawMessage, error) {

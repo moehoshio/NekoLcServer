@@ -315,6 +315,8 @@ func (s *Server) handleMaintenance(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// Apply localized messages if available
+	info = s.localizeMaintenanceInfo(info, lang)
 	if info.Message == "" && s.localizer != nil {
 		info.Message = s.localizer.Maintenance(lang, info.Status)
 	}
@@ -876,6 +878,24 @@ func (s *Server) handleFeedbackLog(w http.ResponseWriter, r *http.Request) {
 			ReceivedAt: time.Now().UTC(),
 			Timestamp:  req.Timestamp,
 		}
+		// Extract filterable fields from client info
+		if req.ClientInfo != nil {
+			if req.ClientInfo.App != nil {
+				entry.CoreVersion = req.ClientInfo.App.CoreVersion
+				entry.ResourceVersion = req.ClientInfo.App.ResourceVersion
+				entry.BuildID = req.ClientInfo.App.BuildID
+			}
+			if req.ClientInfo.System != nil {
+				entry.Platform = req.ClientInfo.System.OS
+				entry.Arch = req.ClientInfo.System.Arch
+			}
+			// Try to extract region from extra field if present
+			if req.ClientInfo.Extra != nil {
+				if region, ok := req.ClientInfo.Extra["region"].(string); ok {
+					entry.Region = region
+				}
+			}
+		}
 		if err := s.store.SaveFeedback(context.Background(), entry); err != nil {
 			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
 			return
@@ -906,7 +926,42 @@ func (s *Server) handleFeedbackLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, offset := parseLimitOffset(r)
-	entries, err := s.store.ListFeedback(r.Context(), limit, offset)
+
+	// Parse filter parameters
+	query := r.URL.Query()
+	filter := store.FeedbackFilter{
+		CoreVersion:     query.Get("coreVersion"),
+		ResourceVersion: query.Get("resourceVersion"),
+		BuildID:         query.Get("buildId"),
+		Platform:        query.Get("platform"),
+		Arch:            query.Get("arch"),
+		Region:          query.Get("region"),
+		Lang:            query.Get("lang"),
+	}
+
+	// Parse time filters
+	if startStr := query.Get("startTime"); startStr != "" {
+		if t, err := time.Parse(time.RFC3339, startStr); err == nil {
+			filter.StartTime = &t
+		}
+	}
+	if endStr := query.Get("endTime"); endStr != "" {
+		if t, err := time.Parse(time.RFC3339, endStr); err == nil {
+			filter.EndTime = &t
+		}
+	}
+
+	// Use filtered query if any filters are set
+	var entries []store.FeedbackLog
+	hasFilters := filter.CoreVersion != "" || filter.ResourceVersion != "" || filter.BuildID != "" ||
+		filter.Platform != "" || filter.Arch != "" || filter.Region != "" || filter.Lang != "" ||
+		filter.StartTime != nil || filter.EndTime != nil
+
+	if hasFilters {
+		entries, err = s.store.ListFeedbackFiltered(r.Context(), filter, limit, offset)
+	} else {
+		entries, err = s.store.ListFeedback(r.Context(), limit, offset)
+	}
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
 		return
@@ -914,20 +969,47 @@ func (s *Server) handleFeedbackLogs(w http.ResponseWriter, r *http.Request) {
 	items := make([]FeedbackLogItem, 0, len(entries))
 	for _, e := range entries {
 		items = append(items, FeedbackLogItem{
-			ID:         e.ID,
-			UserID:     nullUserID(e.UserID),
-			DeviceID:   e.DeviceID,
-			Lang:       e.Lang,
-			ClientInfo: jsonRaw(e.ClientInfo),
-			Content:    e.Content,
-			ReceivedAt: e.ReceivedAt.Format(time.RFC3339),
-			Timestamp:  e.Timestamp,
+			ID:              e.ID,
+			UserID:          nullUserID(e.UserID),
+			DeviceID:        e.DeviceID,
+			Lang:            e.Lang,
+			ClientInfo:      jsonRaw(e.ClientInfo),
+			Content:         e.Content,
+			ReceivedAt:      e.ReceivedAt.Format(time.RFC3339),
+			Timestamp:       e.Timestamp,
+			CoreVersion:     e.CoreVersion,
+			ResourceVersion: e.ResourceVersion,
+			BuildID:         e.BuildID,
+			Platform:        e.Platform,
+			Arch:            e.Arch,
+			Region:          e.Region,
 		})
 	}
 	resp := FeedbackLogsResponseBody{
 		FeedbackLogs: items,
 		Count:        len(items),
 		Meta:         s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+// handleFeedbackFilterOptions returns available filter options for feedback logs.
+func (s *Server) handleFeedbackFilterOptions(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "feedback storage not configured")
+		return
+	}
+	options, err := s.store.GetFeedbackFilterOptions(r.Context())
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	resp := FeedbackFilterOptionsResponse{
+		Options: *options,
+		Meta:    s.meta(),
 	}
 	s.writeJSON(w, http.StatusOK, resp)
 }

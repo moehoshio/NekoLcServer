@@ -113,14 +113,22 @@ type PlatformMaintenance struct {
 	MaintenanceInfo   MaintenanceInfo `json:"maintenanceInfo"`
 }
 
+// LocalizedText holds localized versions of a text field.
+type LocalizedText struct {
+	Default string            `json:"default"`
+	Langs   map[string]string `json:"langs,omitempty"`
+}
+
 // MaintenanceInfo follows the public contract for maintenance API.
 type MaintenanceInfo struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-	Start   string `json:"startTime"`
-	End     string `json:"exEndTime"`
-	Poster  string `json:"posterUrl"`
-	Link    string `json:"link"`
+	Status            string        `json:"status"`
+	Message           string        `json:"message"`
+	Start             string        `json:"startTime"`
+	End               string        `json:"exEndTime"`
+	Poster            string        `json:"posterUrl"`
+	Link              string        `json:"link"`
+	LocalizedMessages LocalizedText `json:"localizedMessages,omitempty"`
+	LocalizedTitle    LocalizedText `json:"localizedTitle,omitempty"`
 }
 
 // MySQLConfig holds MySQL connection details.

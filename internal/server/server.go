@@ -1690,10 +1690,34 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 					<div id="upload-results" style="margin-top: 16px;"></div>
 				</div>
+				<div class="card">
+					<h2>Updates Configuration</h2>
+					<div class="form-row" style="margin-bottom:12px;flex-wrap:wrap;">
+						<div class="form-group" style="flex:2;min-width:180px;">
+							<label id="lbl-updates-search">Search</label>
+							<input type="text" id="updates-search" placeholder="Search platform or architecture..." oninput="renderUpdates()" />
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px;">
+							<label id="lbl-updates-sort">Sort by</label>
+							<select id="updates-sort" onchange="renderUpdates()">
+								<option value="platform-asc">Platform (A→Z)</option>
+								<option value="platform-desc">Platform (Z→A)</option>
+							</select>
+						</div>
+					</div>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Current update packages for each platform and architecture.</p>
+					<div id="updates-content">
+						<div class="loading">Loading updates configuration...</div>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveUpdates()">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadUpdates()">Reload</button>
+					</div>
+				</div>
 			</div>
 
 			<!-- Directory browser modal -->
-			<div id="dir-browser" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:flex;align-items:center;justify-content:center;">
+			<div id="dir-browser" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:none;align-items:center;justify-content:center;">
 				<div style="background:#111827;border:1px solid #1f2937;border-radius:12px;width:min(640px,92vw);max-height:80vh;display:flex;flex-direction:column;padding:20px;">
 					<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
 						<h3 style="margin:0;">📁 Select Directory</h3>
@@ -2696,12 +2720,21 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		
 		function renderUpdates() {
 			const container = document.getElementById('updates-content');
+			if (!container) return;
 			if (!updatesData || !updatesData.platforms) {
 				container.innerHTML = '<p style="color:#94a3b8;">No platforms configured.</p>';
 				return;
 			}
+			const term = (document.getElementById('updates-search')?.value || '').trim().toLowerCase();
+			const sort = document.getElementById('updates-sort')?.value || 'platform-asc';
+			let platforms = Object.entries(updatesData.platforms);
+			platforms.sort((a, b) => sort === 'platform-desc' ? b[0].localeCompare(a[0]) : a[0].localeCompare(b[0]));
 			let html = '';
-			for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
+			for (const [platform, pdata] of platforms) {
+				const archNames = pdata.architectures ? Object.keys(pdata.architectures) : [];
+				if (term && !platform.toLowerCase().includes(term) && !archNames.some(a => a.toLowerCase().includes(term))) {
+					continue;
+				}
 				html += '<div class="platform-section">';
 				html += '<h3>' + escapeHtml(platform.charAt(0).toUpperCase() + platform.slice(1)) + '</h3>';
 				if (pdata.architectures) {
@@ -2719,7 +2752,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				}
 				html += '</div>';
 			}
-			container.innerHTML = html || '<p style="color:#94a3b8;">No platforms configured.</p>';
+			container.innerHTML = html || '<p style="color:#94a3b8;">No platforms match your search.</p>';
 		}
 		
 		async function saveUpdates() {
@@ -2858,12 +2891,12 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 
 		// Directory browser for visual scan-path selection
 		function openDirBrowser() {
-			document.getElementById('dir-browser').classList.remove('hidden');
+			document.getElementById('dir-browser').style.display = 'flex';
 			browseDir('');
 		}
 
 		function closeDirBrowser() {
-			document.getElementById('dir-browser').classList.add('hidden');
+			document.getElementById('dir-browser').style.display = 'none';
 		}
 
 		async function browseDir(path) {

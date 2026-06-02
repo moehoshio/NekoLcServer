@@ -156,6 +156,46 @@ func TestSQLiteStore(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreAPIStats(t *testing.T) {
+	tmpDir := t.TempDir()
+	store, err := NewSQLiteStore(SQLiteConfig{Path: filepath.Join(tmpDir, "stats.db")})
+	if err != nil {
+		t.Fatalf("create sqlite store: %v", err)
+	}
+	ctx := context.Background()
+
+	now := time.Now().UTC()
+	events := []APIEvent{
+		{Endpoint: "/v0/api/news", Method: "POST", StatusCode: 200, Platform: "windows", CreatedAt: now},
+		{Endpoint: "/v0/api/news", Method: "POST", StatusCode: 200, Platform: "windows", CreatedAt: now},
+		{Endpoint: "/v0/api/checkUpdates", Method: "POST", StatusCode: 200, Platform: "linux", CreatedAt: now},
+	}
+	for _, e := range events {
+		if err := store.SaveAPIEvent(ctx, e); err != nil {
+			t.Fatalf("save api event: %v", err)
+		}
+	}
+
+	stats, err := store.GetAPIStats(ctx, 7)
+	if err != nil {
+		t.Fatalf("get api stats: %v", err)
+	}
+	if stats.TotalRequests != 3 {
+		t.Fatalf("expected 3 total requests, got %d", stats.TotalRequests)
+	}
+	// created_at must be stored in a SQLite-parseable format so DATE() based
+	// queries (today's requests, daily stats) work correctly.
+	if stats.TodayRequests != 3 {
+		t.Fatalf("expected 3 today requests, got %d", stats.TodayRequests)
+	}
+	if len(stats.DailyStats) != 1 || stats.DailyStats[0].Count != 3 {
+		t.Fatalf("expected 1 daily stat with count 3, got %+v", stats.DailyStats)
+	}
+	if stats.PlatformCounts["windows"] != 2 || stats.PlatformCounts["linux"] != 1 {
+		t.Fatalf("unexpected platform counts: %+v", stats.PlatformCounts)
+	}
+}
+
 func TestSQLiteStoreDefaultPath(t *testing.T) {
 	// Change to temp directory to avoid creating db in current dir
 	origDir, err := os.Getwd()

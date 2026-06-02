@@ -503,8 +503,16 @@ func (s *SQLiteStore) ListConfigs(ctx context.Context) ([]ConfigEntry, error) {
 func (s *SQLiteStore) SaveAPIEvent(ctx context.Context, event APIEvent) error {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
+	// Store created_at in a SQLite-parseable datetime format. The modernc.org/sqlite
+	// driver otherwise persists time.Time using its Go String() representation
+	// (e.g. "2006-01-02 15:04:05.999 +0000 UTC"), which SQLite's DATE() function
+	// cannot parse, breaking the daily/today statistics queries.
+	createdAt := event.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO api_events (endpoint, method, status_code, device_id, platform, arch, created_at) VALUES (?,?,?,?,?,?,?)`,
-		event.Endpoint, event.Method, event.StatusCode, event.DeviceID, event.Platform, event.Arch, event.CreatedAt)
+		event.Endpoint, event.Method, event.StatusCode, event.DeviceID, event.Platform, event.Arch, createdAt.UTC().Format("2006-01-02 15:04:05.999"))
 	return err
 }
 
@@ -590,12 +598,15 @@ func (s *SQLiteStore) GetAPIStats(ctx context.Context, days int) (*APIStats, err
 	}
 	defer rows3.Close()
 	for rows3.Next() {
-		var day string
+		var day sql.NullString
 		var count int64
 		if err := rows3.Scan(&day, &count); err != nil {
 			return nil, err
 		}
-		stats.DailyStats = append(stats.DailyStats, DailyStat{Date: day, Count: count})
+		if !day.Valid {
+			continue
+		}
+		stats.DailyStats = append(stats.DailyStats, DailyStat{Date: day.String, Count: count})
 	}
 	if err := rows3.Err(); err != nil {
 		return nil, err

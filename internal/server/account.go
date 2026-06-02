@@ -304,6 +304,59 @@ func (s *Server) issueAndSendToken(ctx context.Context, user *store.User, purpos
 	return m.Send(user.Email, subject, body)
 }
 
+// ChangeEmailRequest updates the authenticated user's email address.
+type ChangeEmailRequest struct {
+	Email           string `json:"email"`
+	CurrentPassword string `json:"currentPassword"`
+}
+
+func (s *Server) handleAppChangeEmail(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil || !s.authService.Enabled() || s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
+		return
+	}
+	user, err := s.requireUser(r)
+	if err != nil {
+		s.writeError(w, http.StatusUnauthorized, s.appConfig.Language.Default, "Unauthorized", "invalid credentials")
+		return
+	}
+	var req ChangeEmailRequest
+	if err := s.decode(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)) != nil {
+		s.writeError(w, http.StatusUnauthorized, s.appConfig.Language.Default, "Unauthorized", "current password is incorrect")
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" || !validEmail(email) {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "a valid email is required")
+		return
+	}
+	// Reject if the email belongs to another account.
+	if existing, err := s.store.GetUserByEmail(r.Context(), email); err == nil && existing.ID != user.ID {
+		s.writeError(w, http.StatusConflict, s.appConfig.Language.Default, "Conflict", "email already in use")
+		return
+	} else if err != nil && err != store.ErrNotFound {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	if err := s.store.UpdateUserEmail(r.Context(), user.ID, email, false); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	// Send a verification email when the policy requires verification.
+	if accountCfg := s.currentAccountConfig(); accountCfg != nil && accountCfg.VerifyEmail {
+		user.Email = email
+		user.EmailVerified = false
+		if serr := s.issueAndSendToken(r.Context(), user, store.AccountTokenPurposeVerify); serr != nil && serr != mailer.ErrDisabled {
+			fmt.Printf("change-email: failed to send verification email: %v\n", serr)
+		}
+	}
+	s.writeJSON(w, http.StatusOK, AdminMessageResponse{Message: "email updated", Meta: s.meta()})
+}
+
 // HomeContentResponse surfaces the admin-authored home content (rendered to safe
 // HTML), the current maintenance notice and the latest news items for the user
 // homepage/dashboard.

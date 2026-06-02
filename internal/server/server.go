@@ -247,6 +247,7 @@ func (s *Server) buildRouter() chi.Router {
 			appApiRouter.Get("/me", s.handleAppMe)
 			appApiRouter.Get("/home-content", s.handleAppHomeContent)
 			appApiRouter.Post("/change-password", s.handleAppChangePassword)
+			appApiRouter.Post("/change-email", s.handleAppChangeEmail)
 			appApiRouter.Post("/forgot-password", s.handleAppForgotPassword)
 			appApiRouter.Post("/reset-password", s.handleAppResetPassword)
 			appApiRouter.Post("/send-verification", s.handleAppSendVerification)
@@ -3931,133 +3932,320 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 var appUserDashboardTemplate = template.Must(template.New("appUserDashboard").Parse(`<!doctype html>
 <html lang="en">
 <head>
-	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>NekoLc Dashboard</title>
-	<style>
-		* { box-sizing: border-box; }
-		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
-		.header { background: #111827; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; }
-		.header h1 { margin: 0; font-size: 18px; }
-		.user { display: flex; align-items: center; gap: 12px; }
-		.user span { color: #94a3b8; }
-		.user button { padding: 8px 16px; border: none; border-radius: 6px; background: #374151; color: #e2e8f0; cursor: pointer; }
-		.user button:hover { background: #4b5563; }
-		.container { max-width: 1000px; margin: 0 auto; padding: 24px; }
-		.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
-		h2 { margin: 0 0 16px 0; color: #f8fafc; }
-		.welcome { font-size: 28px; margin-bottom: 8px; }
-		.subtitle { color: #94a3b8; margin-bottom: 24px; }
-		.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-		.info-item { background: #1f2937; padding: 16px; border-radius: 8px; }
-		.info-label { color: #94a3b8; font-size: 13px; margin-bottom: 4px; }
-		.info-value { font-size: 18px; font-weight: 600; }
-		.lang-switch { display: flex; align-items: center; gap: 8px; }
-		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0; cursor: pointer; }
-		.actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
-		.actions a { padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; }
-		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
-		.btn-secondary { background: #374151; color: #e2e8f0; }
-	</style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NekoLc Dashboard</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
+.header { background: #111827; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; }
+.header h1 { margin: 0; font-size: 18px; }
+.user { display: flex; align-items: center; gap: 12px; }
+.user span { color: #94a3b8; }
+.user button { padding: 8px 16px; border: none; border-radius: 6px; background: #374151; color: #e2e8f0; cursor: pointer; }
+.user button:hover { background: #4b5563; }
+.container { max-width: 1000px; margin: 0 auto; padding: 24px; }
+.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
+h2 { margin: 0 0 16px 0; color: #f8fafc; font-size: 18px; }
+.welcome { font-size: 28px; margin-bottom: 8px; }
+.subtitle { color: #94a3b8; margin-bottom: 24px; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.info-item { background: #1f2937; padding: 16px; border-radius: 8px; }
+.info-label { color: #94a3b8; font-size: 13px; margin-bottom: 4px; }
+.info-value { font-size: 18px; font-weight: 600; word-break: break-all; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge-ok { background: rgba(52,211,153,0.15); color: #34d399; }
+.badge-warn { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.lang-switch { display: flex; align-items: center; gap: 8px; }
+.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0; cursor: pointer; }
+.actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+.actions a, .actions button { padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; border: none; cursor: pointer; font-size: 14px; }
+.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
+.btn-secondary { background: #374151; color: #e2e8f0; }
+.maintenance { border-left: 4px solid #fbbf24; }
+.news-list { display: flex; flex-direction: column; gap: 12px; }
+.news-entry { background: #1f2937; padding: 14px 16px; border-radius: 8px; }
+.news-entry h3 { margin: 0 0 6px 0; font-size: 15px; }
+.news-entry .meta { color: #94a3b8; font-size: 12px; margin-bottom: 6px; }
+.news-entry a { color: #22d3ee; text-decoration: none; }
+.markdown-body { line-height: 1.6; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { color: #f8fafc; }
+.markdown-body a { color: #22d3ee; }
+.markdown-body pre { background: #0b1220; padding: 12px; border-radius: 8px; overflow-x: auto; }
+.markdown-body code { background: #0b1220; padding: 2px 6px; border-radius: 4px; }
+.markdown-body blockquote { border-left: 3px solid #374151; margin: 8px 0; padding-left: 12px; color: #94a3b8; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 50; }
+.modal-overlay.show { display: flex; }
+.modal { background: #111827; padding: 24px; border-radius: 12px; width: 360px; max-width: 92vw; }
+.modal h2 { margin-top: 0; }
+.modal label { display: block; margin-top: 12px; color: #cbd5e1; }
+.modal input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+.modal .error { color: #f87171; margin-top: 10px; min-height: 18px; }
+.modal .success { color: #34d399; margin-top: 10px; min-height: 18px; }
+.modal .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+.hidden { display: none; }
+</style>
 </head>
 <body>
-	<div class="header">
-		<h1>🐱 NekoLc</h1>
-		<div class="user">
-			<div class="lang-switch">
-				<select id="langSelect" onchange="changeLang()">
-					<option value="en">English</option>
-					<option value="zh-hans">简体中文</option>
-					<option value="zh-hant">繁體中文</option>
-				</select>
-			</div>
-			<span id="username">User</span>
-			<button onclick="logout()" id="btn-logout">Logout</button>
-		</div>
-	</div>
-	<div class="container">
-		<div class="card">
-			<div class="welcome" id="welcome">Welcome!</div>
-			<div class="subtitle" id="subtitle">Here's your account overview</div>
-			<div class="info-grid">
-				<div class="info-item">
-					<div class="info-label" id="lbl-username">Username</div>
-					<div class="info-value" id="info-username">-</div>
-				</div>
-				<div class="info-item">
-					<div class="info-label" id="lbl-role">Role</div>
-					<div class="info-value" id="info-role">-</div>
-				</div>
-				<div class="info-item">
-					<div class="info-label" id="lbl-status">Status</div>
-					<div class="info-value" id="info-status" style="color: #34d399;">Active</div>
-				</div>
-			</div>
-			<div class="actions">
-				<a href="{{.BasePath}}/app" class="btn-secondary" id="link-home">Home</a>
-			</div>
-		</div>
-	</div>
-	<script>
-		const basePath = '{{.BasePath}}';
-		const i18n = {
-			'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin' },
-			'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员' },
-			'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員' }
-		};
-		function getLang() { return localStorage.getItem('lang') || 'en'; }
-		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
-		function changeLang() { setLang(document.getElementById('langSelect').value); }
-		function applyLang() {
-			const lang = getLang();
-			document.getElementById('langSelect').value = lang;
-			const t = i18n[lang] || i18n['en'];
-			document.getElementById('welcome').innerText = t.welcome;
-			document.getElementById('subtitle').innerText = t.subtitle;
-			document.getElementById('lbl-username').innerText = t.username;
-			document.getElementById('lbl-role').innerText = t.role;
-			document.getElementById('lbl-status').innerText = t.status;
-			document.getElementById('info-status').innerText = t.active;
-			document.getElementById('btn-logout').innerText = t.logout;
-			document.getElementById('link-home').innerText = t.home;
-			// Update role display
-			const role = getActiveStorage().getItem('userRole') || 'user';
-			document.getElementById('info-role').innerText = role === 'admin' ? t.admin : t.user;
-		}
-		function getActiveStorage() {
-			if (localStorage.getItem('accessToken')) return localStorage;
-			if (sessionStorage.getItem('accessToken')) return sessionStorage;
-			return localStorage;
-		}
-		function checkAuth() {
-			const storage = getActiveStorage();
-			if (!storage.getItem('accessToken')) {
-				window.location.href = basePath + '/app/login';
-			}
-		}
-		function logout() {
-			localStorage.removeItem('accessToken');
-			localStorage.removeItem('refreshToken');
-			localStorage.removeItem('userRole');
-			localStorage.removeItem('username');
-			localStorage.removeItem('rememberMe');
-			sessionStorage.removeItem('accessToken');
-			sessionStorage.removeItem('refreshToken');
-			sessionStorage.removeItem('userRole');
-			sessionStorage.removeItem('username');
-			sessionStorage.removeItem('rememberMe');
-			window.location.href = basePath + '/app/login';
-		}
-		function init() {
-			checkAuth();
-			applyLang();
-			const storage = getActiveStorage();
-			const username = storage.getItem('username') || 'User';
-			document.getElementById('username').innerText = username;
-			document.getElementById('info-username').innerText = username;
-		}
-		init();
-	</script>
+<div class="header">
+<h1>🐱 NekoLc</h1>
+<div class="user">
+<div class="lang-switch">
+<select id="langSelect" onchange="changeLang()">
+<option value="en">English</option>
+<option value="zh-hans">简体中文</option>
+<option value="zh-hant">繁體中文</option>
+</select>
+</div>
+<span id="username">User</span>
+<button onclick="logout()" id="btn-logout">Logout</button>
+</div>
+</div>
+<div class="container">
+<div class="card maintenance hidden" id="maintenance-card">
+<h2 id="maintenance-title">🔧 Maintenance</h2>
+<div id="maintenance-message"></div>
+</div>
+<div class="card">
+<div class="welcome" id="welcome">Welcome!</div>
+<div class="subtitle" id="subtitle">Here's your account overview</div>
+<div class="info-grid">
+<div class="info-item">
+<div class="info-label" id="lbl-username">Username</div>
+<div class="info-value" id="info-username">-</div>
+</div>
+<div class="info-item">
+<div class="info-label" id="lbl-email">Email</div>
+<div class="info-value" id="info-email">-</div>
+</div>
+<div class="info-item">
+<div class="info-label" id="lbl-role">Role</div>
+<div class="info-value" id="info-role">-</div>
+</div>
+<div class="info-item">
+<div class="info-label" id="lbl-status">Status</div>
+<div class="info-value"><span class="badge badge-ok" id="info-status">Active</span></div>
+</div>
+</div>
+<div class="actions">
+<button class="btn-primary" onclick="openModal('pw')" id="btn-change-password">Change Password</button>
+<button class="btn-secondary" onclick="openModal('email')" id="btn-change-email">Change Email</button>
+<button class="btn-secondary hidden" onclick="sendVerification()" id="btn-verify-email">Verify Email</button>
+<a href="{{.BasePath}}/app" class="btn-secondary" id="link-home">Home</a>
+</div>
+<div id="account-message" style="margin-top:12px;min-height:18px;"></div>
+</div>
+<div class="card hidden" id="home-content-card">
+<h2 id="home-content-title">📌 Announcements</h2>
+<div class="markdown-body" id="home-content-body"></div>
+</div>
+<div class="card hidden" id="news-card">
+<h2 id="news-title">📰 News</h2>
+<div class="news-list" id="news-list"></div>
+</div>
+</div>
+
+<div class="modal-overlay" id="modal-pw">
+<div class="modal">
+<h2 id="pw-title">Change Password</h2>
+<label id="pw-lbl-current">Current Password</label>
+<input type="password" id="pw-current" autocomplete="current-password" />
+<label id="pw-lbl-new">New Password</label>
+<input type="password" id="pw-new" autocomplete="new-password" />
+<div class="error" id="pw-error"></div>
+<div class="success" id="pw-success"></div>
+<div class="modal-actions">
+<button class="btn-primary" onclick="submitChangePassword()" id="pw-submit">Save</button>
+<button class="btn-secondary" onclick="closeModal('pw')" id="pw-cancel">Cancel</button>
+</div>
+</div>
+</div>
+
+<div class="modal-overlay" id="modal-email">
+<div class="modal">
+<h2 id="em-title">Change Email</h2>
+<label id="em-lbl-email">New Email</label>
+<input type="email" id="em-email" autocomplete="email" />
+<label id="em-lbl-password">Current Password</label>
+<input type="password" id="em-password" autocomplete="current-password" />
+<div class="error" id="em-error"></div>
+<div class="success" id="em-success"></div>
+<div class="modal-actions">
+<button class="btn-primary" onclick="submitChangeEmail()" id="em-submit">Save</button>
+<button class="btn-secondary" onclick="closeModal('email')" id="em-cancel">Cancel</button>
+</div>
+</div>
+</div>
+
+<script>
+const basePath = '{{.BasePath}}';
+const i18n = {
+'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed' },
+'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败' },
+'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗' }
+};
+let currentUser = null;
+function getLang() { return localStorage.getItem('lang') || 'en'; }
+function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+function changeLang() { setLang(document.getElementById('langSelect').value); }
+function t() { return i18n[getLang()] || i18n['en']; }
+function escapeHtml(str) {
+if (!str) return '';
+return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+function applyLang() {
+const lang = getLang();
+document.getElementById('langSelect').value = lang;
+const tt = t();
+document.getElementById('welcome').innerText = tt.welcome;
+document.getElementById('subtitle').innerText = tt.subtitle;
+document.getElementById('lbl-username').innerText = tt.username;
+document.getElementById('lbl-email').innerText = tt.email;
+document.getElementById('lbl-role').innerText = tt.role;
+document.getElementById('lbl-status').innerText = tt.status;
+document.getElementById('btn-logout').innerText = tt.logout;
+document.getElementById('link-home').innerText = tt.home;
+document.getElementById('btn-change-password').innerText = tt.changePassword;
+document.getElementById('btn-change-email').innerText = tt.changeEmail;
+document.getElementById('btn-verify-email').innerText = tt.verifyEmail;
+document.getElementById('news-title').innerText = '📰 ' + tt.news;
+document.getElementById('home-content-title').innerText = '📌 ' + tt.announcements;
+document.getElementById('maintenance-title').innerText = '🔧 ' + tt.maintenance;
+document.getElementById('pw-title').innerText = tt.changePassword;
+document.getElementById('pw-lbl-current').innerText = tt.current;
+document.getElementById('pw-lbl-new').innerText = tt.newPassword;
+document.getElementById('pw-submit').innerText = tt.save;
+document.getElementById('pw-cancel').innerText = tt.cancel;
+document.getElementById('em-title').innerText = tt.changeEmail;
+document.getElementById('em-lbl-email').innerText = tt.newEmail;
+document.getElementById('em-lbl-password').innerText = tt.current;
+document.getElementById('em-submit').innerText = tt.save;
+document.getElementById('em-cancel').innerText = tt.cancel;
+renderAccount();
+}
+function getActiveStorage() {
+if (localStorage.getItem('accessToken')) return localStorage;
+if (sessionStorage.getItem('accessToken')) return sessionStorage;
+return localStorage;
+}
+function getToken() { return getActiveStorage().getItem('accessToken'); }
+function checkAuth() {
+if (!getToken()) { window.location.href = basePath + '/app/login'; }
+}
+function logout() {
+['accessToken','refreshToken','userRole','username','rememberMe'].forEach(k => { localStorage.removeItem(k); sessionStorage.removeItem(k); });
+window.location.href = basePath + '/app/login';
+}
+async function apiGet(path) {
+return fetch(basePath + path, { headers: { 'Authorization': 'Bearer ' + getToken() } });
+}
+async function apiPost(path, body) {
+return fetch(basePath + path, { method: 'POST', headers: { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+function renderAccount() {
+const tt = t();
+if (!currentUser) return;
+document.getElementById('username').innerText = currentUser.username || tt.user;
+document.getElementById('info-username').innerText = currentUser.username || '-';
+document.getElementById('info-email').innerText = currentUser.email || tt.noEmail;
+document.getElementById('info-role').innerText = (currentUser.role === 'admin') ? tt.admin : tt.user;
+const statusEl = document.getElementById('info-status');
+if (currentUser.email) {
+if (currentUser.emailVerified) { statusEl.className = 'badge badge-ok'; statusEl.innerText = tt.verified; document.getElementById('btn-verify-email').classList.add('hidden'); }
+else { statusEl.className = 'badge badge-warn'; statusEl.innerText = tt.unverified; document.getElementById('btn-verify-email').classList.remove('hidden'); }
+} else {
+statusEl.className = 'badge badge-ok'; statusEl.innerText = tt.active; document.getElementById('btn-verify-email').classList.add('hidden');
+}
+}
+async function loadAccount() {
+const res = await apiGet('/app/api/me');
+if (res.status === 401 || res.status === 403) { logout(); return; }
+if (!res.ok) return;
+currentUser = await res.json();
+renderAccount();
+}
+async function loadHome() {
+const res = await apiGet('/app/api/home-content');
+if (!res.ok) return;
+const data = await res.json();
+if (data.contentHtml && data.contentHtml.trim()) {
+document.getElementById('home-content-body').innerHTML = data.contentHtml;
+document.getElementById('home-content-card').classList.remove('hidden');
+}
+if (data.maintenance && data.maintenance.active) {
+document.getElementById('maintenance-message').innerText = data.maintenance.message || data.maintenance.status || '';
+document.getElementById('maintenance-card').classList.remove('hidden');
+}
+const news = data.news || [];
+if (news.length) {
+const list = document.getElementById('news-list');
+list.innerHTML = '';
+for (const item of news) {
+const div = document.createElement('div');
+div.className = 'news-entry';
+let html = '<h3>' + escapeHtml(item.title || '') + '</h3>';
+if (item.publishTime) html += '<div class="meta">' + escapeHtml(item.publishTime) + '</div>';
+if (item.summary) html += '<div>' + escapeHtml(item.summary) + '</div>';
+if (item.link) html += '<div><a href="' + encodeURI(item.link) + '" target="_blank" rel="noopener noreferrer">&#8594;</a></div>';
+div.innerHTML = html;
+list.appendChild(div);
+}
+document.getElementById('news-card').classList.remove('hidden');
+}
+}
+function openModal(name) { document.getElementById('modal-' + name).classList.add('show'); }
+function closeModal(name) { document.getElementById('modal-' + name).classList.remove('show'); }
+async function submitChangePassword() {
+const tt = t();
+document.getElementById('pw-error').innerText = '';
+document.getElementById('pw-success').innerText = '';
+const res = await apiPost('/app/api/change-password', {
+currentPassword: document.getElementById('pw-current').value,
+newPassword: document.getElementById('pw-new').value
+});
+if (!res.ok) {
+const data = await res.json().catch(()=>({}));
+document.getElementById('pw-error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || tt.failed;
+return;
+}
+document.getElementById('pw-success').innerText = tt.pwChanged;
+setTimeout(() => closeModal('pw'), 1200);
+}
+async function submitChangeEmail() {
+const tt = t();
+document.getElementById('em-error').innerText = '';
+document.getElementById('em-success').innerText = '';
+const res = await apiPost('/app/api/change-email', {
+email: document.getElementById('em-email').value.trim(),
+currentPassword: document.getElementById('em-password').value
+});
+if (!res.ok) {
+const data = await res.json().catch(()=>({}));
+document.getElementById('em-error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || tt.failed;
+return;
+}
+document.getElementById('em-success').innerText = tt.emailChanged;
+await loadAccount();
+setTimeout(() => closeModal('email'), 1200);
+}
+async function sendVerification() {
+const tt = t();
+const res = await apiPost('/app/api/send-verification', {});
+const msg = document.getElementById('account-message');
+msg.style.color = res.ok ? '#34d399' : '#f87171';
+msg.innerText = res.ok ? tt.verifySent : tt.failed;
+}
+function init() {
+checkAuth();
+applyLang();
+const storage = getActiveStorage();
+currentUser = { username: storage.getItem('username') || 'User', role: storage.getItem('userRole') || 'user', email: '', emailVerified: false };
+renderAccount();
+loadAccount();
+loadHome();
+}
+init();
+</script>
 </body>
 </html>`))
 

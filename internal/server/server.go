@@ -1638,7 +1638,16 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						</div>
 						<div class="form-group">
 							<label for="scan-baseurl">Base URL</label>
-							<input type="text" id="scan-baseurl" placeholder="https://example.com/updates/" />
+							<div style="display:flex;gap:8px;">
+								<input type="text" id="scan-baseurl" placeholder="https://example.com/updates/" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="saveBaseUrlPreset()" title="Save current Base URL">💾 Save</button>
+							</div>
+							<div style="display:flex;gap:8px;margin-top:8px;">
+								<select id="baseurl-presets" onchange="applyBaseUrlPreset()" style="flex:1;">
+									<option value="">— Saved Base URLs —</option>
+								</select>
+								<button type="button" class="btn btn-secondary" onclick="deleteBaseUrlPreset()" title="Delete selected Base URL">🗑️</button>
+							</div>
 						</div>
 					</div>
 					<div class="form-row">
@@ -2870,6 +2879,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			html += '<div style="color:#94a3b8;font-size:12px;margin-top:8px;">sha256: ' + escapeHtml(data.checksum) + '</div>';
 			html += '</div>';
 			container.innerHTML = html;
+			// Default: add the uploaded file's URL root to the saved Base URLs.
+			if (data.url) { addBaseUrlPreset(baseUrlRootOf(data.url)); }
 			showMessage('File uploaded successfully');
 		}
 
@@ -2887,6 +2898,79 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (!el) return;
 			document.getElementById('scan-baseurl').value = el.value;
 			showMessage('Base URL set from uploaded file');
+		}
+
+		// Saved Base URL presets (CRUD, persisted in localStorage)
+		var BASEURL_PRESETS_KEY = 'nekolc_baseurl_presets';
+
+		function getBaseUrlPresets() {
+			try {
+				const raw = localStorage.getItem(BASEURL_PRESETS_KEY);
+				const arr = raw ? JSON.parse(raw) : [];
+				return Array.isArray(arr) ? arr.filter(v => typeof v === 'string' && v.trim() !== '') : [];
+			} catch (e) {
+				return [];
+			}
+		}
+
+		function saveBaseUrlPresets(list) {
+			localStorage.setItem(BASEURL_PRESETS_KEY, JSON.stringify(list));
+		}
+
+		function renderBaseUrlPresets() {
+			const sel = document.getElementById('baseurl-presets');
+			if (!sel) return;
+			const presets = getBaseUrlPresets();
+			let html = '<option value="">— Saved Base URLs —</option>';
+			presets.forEach(function(u) {
+				html += '<option value="' + escapeHtml(u) + '">' + escapeHtml(u) + '</option>';
+			});
+			sel.innerHTML = html;
+		}
+
+		function addBaseUrlPreset(url) {
+			url = (url || '').trim();
+			if (!url) return false;
+			const presets = getBaseUrlPresets();
+			if (presets.indexOf(url) !== -1) return false;
+			presets.push(url);
+			saveBaseUrlPresets(presets);
+			renderBaseUrlPresets();
+			return true;
+		}
+
+		function applyBaseUrlPreset() {
+			const sel = document.getElementById('baseurl-presets');
+			if (!sel || !sel.value) return;
+			document.getElementById('scan-baseurl').value = sel.value;
+		}
+
+		function saveBaseUrlPreset() {
+			const url = document.getElementById('scan-baseurl').value.trim();
+			if (!url) { showMessage('Enter a Base URL to save', true); return; }
+			if (addBaseUrlPreset(url)) {
+				showMessage('Base URL saved');
+			} else {
+				showMessage('Base URL already saved', true);
+			}
+		}
+
+		function deleteBaseUrlPreset() {
+			const sel = document.getElementById('baseurl-presets');
+			if (!sel || !sel.value) { showMessage('Select a saved Base URL to delete', true); return; }
+			const target = sel.value;
+			const presets = getBaseUrlPresets().filter(u => u !== target);
+			saveBaseUrlPresets(presets);
+			renderBaseUrlPresets();
+			showMessage('Base URL removed');
+		}
+
+		// Derive the URL "root" (directory portion) of a full file URL.
+		function baseUrlRootOf(fullUrl) {
+			const u = (fullUrl || '').trim();
+			if (!u) return '';
+			const idx = u.lastIndexOf('/');
+			return idx >= 0 ? u.substring(0, idx + 1) : u;
 		}
 
 		// Directory browser for visual scan-path selection
@@ -3299,6 +3383,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		// Initialize
 		checkAuth();
 		applyLang();
+		renderBaseUrlPresets();
 		loadStats();
 	</script>
 </body>

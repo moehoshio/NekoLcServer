@@ -1433,6 +1433,12 @@ func (s *Server) handleAdminUploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			s.writeError(w, http.StatusRequestEntityTooLarge, s.appConfig.Language.Default, "PayloadTooLarge",
+				fmt.Sprintf("file exceeds the maximum upload size of %d MiB", maxUploadBytes>>20))
+			return
+		}
 		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid upload: "+err.Error())
 		return
 	}

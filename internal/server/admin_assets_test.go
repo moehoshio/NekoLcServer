@@ -114,6 +114,28 @@ func TestServeFileRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestAdminUploadRejectsTraversalSubdir(t *testing.T) {
+	srv, token := adminServer(t)
+	// A subdirectory escaping the assets directory must be rejected and must not
+	// create any file outside the assets directory.
+	rec := uploadRequest(t, srv, token, "evil.txt", "../../escape", []byte("x"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for traversal subdir got %d: %s", rec.Code, rec.Body.String())
+	}
+	parent := filepath.Dir(filepath.Dir(srv.updateAssetsDir))
+	if _, err := os.Stat(filepath.Join(parent, "escape", "evil.txt")); err == nil {
+		t.Fatalf("traversal upload escaped the assets directory")
+	}
+}
+
+func TestAdminBrowseRejectsTraversal(t *testing.T) {
+	srv, token := adminServer(t)
+	rec := doAuthRequest(t, srv, http.MethodGet, "/v0/api/admin/browseDir?path=../..", nil, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for traversal path got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminBrowseDir(t *testing.T) {
 	srv, token := adminServer(t)
 	// Seed a subdirectory and a file.

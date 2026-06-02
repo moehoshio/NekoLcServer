@@ -653,7 +653,7 @@ func loginAsAdmin(t *testing.T, srv *Server) string {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	_, err = memStore.CreateUser(context.Background(), "testadmin", string(hash), "admin")
+	_, err = memStore.CreateUser(context.Background(), "testadmin", string(hash), "", "admin")
 	if err != nil {
 		t.Fatalf("create admin user: %v", err)
 	}

@@ -14,6 +14,7 @@ type memoryStore struct {
 	nextUser int64
 
 	refresh   map[string]refreshRecord
+	tokens    map[string]accountTokenRecord
 	logs      []FeedbackLog
 	configs   map[string]json.RawMessage
 	apiEvents []APIEvent
@@ -25,12 +26,20 @@ type refreshRecord struct {
 	revoked   bool
 }
 
+type accountTokenRecord struct {
+	userID    int64
+	purpose   string
+	expiresAt time.Time
+	used      bool
+}
+
 // NewMemory creates an in-memory store for tests.
 func NewMemory() Store {
 	return &memoryStore{
 		users:     map[string]*User{},
 		nextUser:  1,
 		refresh:   map[string]refreshRecord{},
+		tokens:    map[string]accountTokenRecord{},
 		logs:      []FeedbackLog{},
 		configs:   map[string]json.RawMessage{},
 		apiEvents: []APIEvent{},
@@ -39,15 +48,23 @@ func NewMemory() Store {
 
 func (m *memoryStore) Ping(ctx context.Context) error { return nil }
 
-func (m *memoryStore) CreateUser(ctx context.Context, username, passwordHash, role string) (int64, error) {
+func (m *memoryStore) CreateUser(ctx context.Context, username, passwordHash, email, role string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.users[username]; ok {
 		return 0, errors.New("duplicate username")
 	}
+	email = normalizeEmail(email)
+	if email != "" {
+		for _, u := range m.users {
+			if normalizeEmail(u.Email) == email {
+				return 0, errors.New("duplicate email")
+			}
+		}
+	}
 	id := m.nextUser
 	m.nextUser++
-	m.users[username] = &User{ID: id, Username: username, Password: passwordHash, Role: ensureRole(role), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	m.users[username] = &User{ID: id, Username: username, Password: passwordHash, Email: email, Role: ensureRole(role), CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	return id, nil
 }
 
@@ -59,6 +76,21 @@ func (m *memoryStore) GetUserByUsername(ctx context.Context, username string) (*
 		return nil, ErrNotFound
 	}
 	return u, nil
+}
+
+func (m *memoryStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil, ErrNotFound
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, u := range m.users {
+		if normalizeEmail(u.Email) == email {
+			return u, nil
+		}
+	}
+	return nil, ErrNotFound
 }
 
 func (m *memoryStore) GetUserByID(ctx context.Context, id int64) (*User, error) {
@@ -97,15 +129,74 @@ func (m *memoryStore) ListUsers(ctx context.Context, limit, offset int) ([]User,
 	return users[offset:end], nil
 }
 
-func (m *memoryStore) UpdateUser(ctx context.Context, id int64, passwordHash, role string) error {
+func (m *memoryStore) UpdateUser(ctx context.Context, id int64, passwordHash, email, role string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	email = normalizeEmail(email)
+	if email != "" {
+		for _, u := range m.users {
+			if u.ID != id && normalizeEmail(u.Email) == email {
+				return errors.New("duplicate email")
+			}
+		}
+	}
 	for _, u := range m.users {
 		if u.ID == id {
 			if passwordHash != "" {
 				u.Password = passwordHash
 			}
+			if email != "" {
+				u.Email = email
+			}
 			u.Role = ensureRole(role)
+			u.UpdatedAt = time.Now()
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (m *memoryStore) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, u := range m.users {
+		if u.ID == id {
+			u.Password = passwordHash
+			u.UpdatedAt = time.Now()
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (m *memoryStore) UpdateUserEmail(ctx context.Context, id int64, email string, verified bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	email = normalizeEmail(email)
+	if email != "" {
+		for _, u := range m.users {
+			if u.ID != id && normalizeEmail(u.Email) == email {
+				return errors.New("duplicate email")
+			}
+		}
+	}
+	for _, u := range m.users {
+		if u.ID == id {
+			u.Email = email
+			u.EmailVerified = verified
+			u.UpdatedAt = time.Now()
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func (m *memoryStore) SetEmailVerified(ctx context.Context, id int64, verified bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, u := range m.users {
+		if u.ID == id {
+			u.EmailVerified = verified
 			u.UpdatedAt = time.Now()
 			return nil
 		}
@@ -169,12 +260,46 @@ func (m *memoryStore) RefreshTokenValid(ctx context.Context, tokenHash string, n
 	return true, nil
 }
 
+func (m *memoryStore) SaveAccountToken(ctx context.Context, userID int64, tokenHash, purpose string, expiresAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tokens[tokenHash] = accountTokenRecord{userID: userID, purpose: purpose, expiresAt: expiresAt}
+	return nil
+}
+
+func (m *memoryStore) ConsumeAccountToken(ctx context.Context, tokenHash, purpose string, now time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.tokens[tokenHash]
+	if !ok || rec.purpose != purpose {
+		return 0, ErrNotFound
+	}
+	if rec.used || now.After(rec.expiresAt) {
+		return 0, ErrNotFound
+	}
+	rec.used = true
+	m.tokens[tokenHash] = rec
+	return rec.userID, nil
+}
+
 func (m *memoryStore) SaveFeedback(ctx context.Context, entry FeedbackLog) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	entry.ID = int64(len(m.logs) + 1)
 	m.logs = append(m.logs, entry)
 	return nil
+}
+
+func (m *memoryStore) DeleteFeedback(ctx context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.logs {
+		if m.logs[i].ID == id {
+			m.logs = append(m.logs[:i], m.logs[i+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
 }
 
 func (m *memoryStore) ListFeedback(ctx context.Context, limit, offset int) ([]FeedbackLog, error) {

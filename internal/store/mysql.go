@@ -64,9 +64,12 @@ func (s *MySQLStore) init() error {
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
             username VARCHAR(255) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
+            email VARCHAR(255) NULL,
+            email_verified TINYINT(1) NOT NULL DEFAULT 0,
             role VARCHAR(16) NOT NULL DEFAULT 'user',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY email_unique (email)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 		`CREATE TABLE IF NOT EXISTS refresh_tokens (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -117,6 +120,18 @@ func (s *MySQLStore) init() error {
             INDEX idx_api_events_created (created_at DESC),
             INDEX idx_api_events_endpoint (endpoint)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS account_tokens (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            token_hash VARCHAR(255) NOT NULL,
+            purpose VARCHAR(32) NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY account_token_hash_unique (token_hash),
+            INDEX idx_account_tokens_user (user_id),
+            CONSTRAINT fk_account_token_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -131,6 +146,8 @@ func (s *MySQLStore) init() error {
 		`ALTER TABLE feedback_logs ADD COLUMN platform VARCHAR(64) NULL`,
 		`ALTER TABLE feedback_logs ADD COLUMN arch VARCHAR(64) NULL`,
 		`ALTER TABLE feedback_logs ADD COLUMN region VARCHAR(64) NULL`,
+		`ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL`,
+		`ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range migrations {
 		// Ignore "Duplicate column name" errors which occur when column already exists
@@ -140,13 +157,18 @@ func (s *MySQLStore) init() error {
 			return fmt.Errorf("migration failed: %w", err)
 		}
 	}
+	// Unique email index for existing databases (ignore if it already exists).
+	if _, err := s.db.Exec(`ALTER TABLE users ADD UNIQUE KEY email_unique (email)`); err != nil &&
+		!strings.Contains(err.Error(), "Duplicate key name") && !strings.Contains(err.Error(), "Duplicate entry") {
+		return fmt.Errorf("create users email index failed: %w", err)
+	}
 	return nil
 }
 
-func (s *MySQLStore) CreateUser(ctx context.Context, username, passwordHash, role string) (int64, error) {
+func (s *MySQLStore) CreateUser(ctx context.Context, username, passwordHash, email, role string) (int64, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO users (username, password_hash, role) VALUES (?,?,?)`, username, passwordHash, ensureRole(role))
+	res, err := s.db.ExecContext(ctx, `INSERT INTO users (username, password_hash, email, role) VALUES (?,?,?,?)`, username, passwordHash, nullableEmail(email), ensureRole(role))
 	if err != nil {
 		return 0, err
 	}
@@ -156,29 +178,26 @@ func (s *MySQLStore) CreateUser(ctx context.Context, username, passwordHash, rol
 func (s *MySQLStore) GetUserByUsername(ctx context.Context, username string) (*User, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE username=?`, username)
-	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, err
+	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users WHERE username=?`, username)
+	return scanUserRow(row)
+}
+
+func (s *MySQLStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil, ErrNotFound
 	}
-	return &u, nil
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users WHERE email=?`, email)
+	return scanUserRow(row)
 }
 
 func (s *MySQLStore) GetUserByID(ctx context.Context, id int64) (*User, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE id=?`, id)
-	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	return &u, nil
+	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users WHERE id=?`, id)
+	return scanUserRow(row)
 }
 
 func (s *MySQLStore) ListUsers(ctx context.Context, limit, offset int) ([]User, error) {
@@ -190,30 +209,59 @@ func (s *MySQLStore) ListUsers(ctx context.Context, limit, offset int) ([]User, 
 	}
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users ORDER BY id ASC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users ORDER BY id ASC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []User{}
 	for rows.Next() {
-		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		u, err := scanUserRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, u)
+		out = append(out, *u)
 	}
 	return out, rows.Err()
 }
 
-func (s *MySQLStore) UpdateUser(ctx context.Context, id int64, passwordHash, role string) error {
+func (s *MySQLStore) UpdateUser(ctx context.Context, id int64, passwordHash, email, role string) error {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 	if passwordHash != "" {
-		_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ?, role = ? WHERE id = ?`, passwordHash, ensureRole(role), id)
+		if _, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ?, role = ? WHERE id = ?`, passwordHash, ensureRole(role), id); err != nil {
+			return err
+		}
+	} else {
+		if _, err := s.db.ExecContext(ctx, `UPDATE users SET role = ? WHERE id = ?`, ensureRole(role), id); err != nil {
+			return err
+		}
+	}
+	if normalizeEmail(email) != "" {
+		_, err := s.db.ExecContext(ctx, `UPDATE users SET email = ? WHERE id = ?`, nullableEmail(email), id)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET role = ? WHERE id = ?`, ensureRole(role), id)
+	return nil
+}
+
+func (s *MySQLStore) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, id)
+	return err
+}
+
+func (s *MySQLStore) UpdateUserEmail(ctx context.Context, id int64, email string, verified bool) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET email = ?, email_verified = ? WHERE id = ?`, nullableEmail(email), boolToInt(verified), id)
+	return err
+}
+
+func (s *MySQLStore) SetEmailVerified(ctx context.Context, id int64, verified bool) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET email_verified = ? WHERE id = ?`, boolToInt(verified), id)
 	return err
 }
 
@@ -282,6 +330,43 @@ func (s *MySQLStore) RefreshTokenValid(ctx context.Context, tokenHash string, no
 		return false, nil
 	}
 	return true, nil
+}
+
+func (s *MySQLStore) SaveAccountToken(ctx context.Context, userID int64, tokenHash, purpose string, expiresAt time.Time) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO account_tokens (user_id, token_hash, purpose, expires_at) VALUES (?,?,?,?)`, userID, tokenHash, purpose, expiresAt)
+	return err
+}
+
+func (s *MySQLStore) ConsumeAccountToken(ctx context.Context, tokenHash, purpose string, now time.Time) (int64, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	row := tx.QueryRowContext(ctx, `SELECT id, user_id, expires_at, used_at FROM account_tokens WHERE token_hash = ? AND purpose = ? FOR UPDATE`, tokenHash, purpose)
+	var id, userID int64
+	var expires time.Time
+	var usedAt sql.NullTime
+	if err := row.Scan(&id, &userID, &expires, &usedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	if usedAt.Valid || now.After(expires) {
+		return 0, ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE account_tokens SET used_at = ? WHERE id = ?`, now, id); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return userID, nil
 }
 
 func (s *MySQLStore) SaveFeedback(ctx context.Context, entry FeedbackLog) error {
@@ -598,6 +683,19 @@ func (s *MySQLStore) GetAPIStats(ctx context.Context, days int) (*APIStats, erro
 	}
 
 	return stats, nil
+}
+
+func (s *MySQLStore) DeleteFeedback(ctx context.Context, id int64) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	res, err := s.db.ExecContext(ctx, `DELETE FROM feedback_logs WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *MySQLStore) CountFeedback(ctx context.Context) (int64, error) {

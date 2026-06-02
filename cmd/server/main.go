@@ -417,7 +417,7 @@ func seedAdminUser(st store.Store) error {
 	if err != nil {
 		return err
 	}
-	if _, err := st.CreateUser(ctx, "admin", string(hash), "admin"); err != nil {
+	if _, err := st.CreateUser(ctx, "admin", string(hash), "", "admin"); err != nil {
 		return err
 	}
 	log.Printf("============================================================")

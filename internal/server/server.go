@@ -26,6 +26,7 @@ import (
 	"github.com/moehoshio/NekoLcServer/internal/auth"
 	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/localization"
+	"github.com/moehoshio/NekoLcServer/internal/mailer"
 	"github.com/moehoshio/NekoLcServer/internal/store"
 )
 
@@ -46,6 +47,10 @@ type Server struct {
 	localizer             *localization.Localizer
 	authService           *auth.Service
 	store                 store.Store
+	mailer                *mailer.Mailer
+	accountConfig         *config.AccountConfig
+	smtpConfig            *config.SMTPConfig
+	homeContent           string
 	feedbackLogPath       string
 	debug                 bool
 	basePath              string
@@ -105,9 +110,44 @@ func New(
 		dirCache:              map[string]dirCacheEntry{},
 		loginLimiter:          newRateLimiter(loginRateLimitMax, loginRateLimitWindow),
 	}
+	srv.initAccountAndSMTP()
 	srv.router = srv.buildRouter()
 	srv.startUpdateReloader()
 	return srv, nil
+}
+
+// initAccountAndSMTP loads the account, SMTP and home-content settings. These are
+// DB-backed (so they are editable from the admin UI without a restart) and fall
+// back to values provided in the app configuration file.
+func (s *Server) initAccountAndSMTP() {
+	account := s.appConfig.Account
+	smtp := s.appConfig.SMTP
+	home := ""
+	if s.store != nil {
+		ctx := context.Background()
+		if data, err := s.store.GetConfig(ctx, store.ConfigKeyAccount); err == nil {
+			var c config.AccountConfig
+			if json.Unmarshal(data, &c) == nil {
+				account = c
+			}
+		}
+		if data, err := s.store.GetConfig(ctx, store.ConfigKeySMTP); err == nil {
+			var c config.SMTPConfig
+			if json.Unmarshal(data, &c) == nil {
+				smtp = c
+			}
+		}
+		if data, err := s.store.GetConfig(ctx, store.ConfigKeyHomeContent); err == nil {
+			var c string
+			if json.Unmarshal(data, &c) == nil {
+				home = c
+			}
+		}
+	}
+	s.accountConfig = &account
+	s.smtpConfig = &smtp
+	s.homeContent = home
+	s.mailer = mailer.New(smtp)
 }
 
 // Router returns the configured HTTP handler.
@@ -155,6 +195,8 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Put("/news", s.handleAdminUpdateNews)
 				adminRouter.Post("/scanPath", s.handleAdminScanPath)
 				adminRouter.Post("/generateUpdates", s.handleAdminGenerateUpdates)
+				adminRouter.Post("/uploadFile", s.handleAdminUploadFile)
+				adminRouter.Get("/browseDir", s.handleAdminBrowseDir)
 				// User management
 				adminRouter.Get("/users", s.handleAdminListUsers)
 				adminRouter.Post("/users", s.handleAdminCreateUser)
@@ -162,8 +204,17 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Delete("/users/{id}", s.handleAdminDeleteUser)
 				// Statistics
 				adminRouter.Get("/stats", s.handleAdminGetStats)
+				// Account, SMTP and home content settings
+				adminRouter.Get("/smtp", s.handleAdminGetSMTP)
+				adminRouter.Put("/smtp", s.handleAdminUpdateSMTP)
+				adminRouter.Post("/smtp/test", s.handleAdminTestEmail)
+				adminRouter.Get("/account", s.handleAdminGetAccount)
+				adminRouter.Put("/account", s.handleAdminUpdateAccount)
+				adminRouter.Get("/homeContent", s.handleAdminGetHomeContent)
+				adminRouter.Put("/homeContent", s.handleAdminUpdateHomeContent)
 				// Feedback filtering
 				adminRouter.Get("/feedbackLogs", s.handleFeedbackLogs)
+				adminRouter.Delete("/feedbackLogs/{id}", s.handleAdminDeleteFeedback)
 				adminRouter.Get("/feedbackFilterOptions", s.handleFeedbackFilterOptions)
 			})
 		})
@@ -176,17 +227,32 @@ func (s *Server) buildRouter() chi.Router {
 		router.Get("/app", s.handleAppHome)
 		router.Get("/app/", s.handleAppHome)
 		router.Get("/app/login", s.handleAppLogin)
+
+		// Static download endpoint for uploaded update assets.
+		router.Get("/files/*", s.handleServeFile)
 		router.Get("/app/register", s.handleAppRegister)
 		router.Post("/app/register", s.handleAppRegisterSubmit)
 		router.Get("/app/feedback", s.handleAppFeedback)
 		router.Get("/app/admin", s.handleAppAdmin)
 		router.Get("/app/dashboard", s.handleAppUserDashboard)
+		router.Get("/app/forgot-password", s.handleAppForgotPasswordPage)
+		router.Get("/app/reset-password", s.handleAppResetPasswordPage)
+		router.Get("/app/verify-email", s.handleAppVerifyEmailPage)
 
 		// App-specific API endpoints (for NekoLcServer UI, separate from NekoLcApi)
 		router.Route("/app/api", func(appApiRouter chi.Router) {
 			appApiRouter.Post("/login", s.handleAppAPILogin)
 			appApiRouter.Post("/logout", s.handleAppAPILogout)
 			appApiRouter.Post("/register", s.handleAppRegisterSubmit)
+			appApiRouter.Get("/me", s.handleAppMe)
+			appApiRouter.Get("/home-content", s.handleAppHomeContent)
+			appApiRouter.Post("/change-password", s.handleAppChangePassword)
+			appApiRouter.Post("/change-email", s.handleAppChangeEmail)
+			appApiRouter.Post("/forgot-password", s.handleAppForgotPassword)
+			appApiRouter.Post("/reset-password", s.handleAppResetPassword)
+			appApiRouter.Post("/send-verification", s.handleAppSendVerification)
+			appApiRouter.Post("/verify-email", s.handleAppVerifyEmail)
+			appApiRouter.Get("/verify-email", s.handleAppVerifyEmail)
 		})
 	}
 
@@ -425,6 +491,70 @@ func (s *Server) setNewsItems(items []config.NewsItem) {
 	s.configMu.Lock()
 	s.newsItems = items
 	s.configMu.Unlock()
+}
+
+// currentAccountConfig returns the active account policy configuration. The
+// returned pointer must be treated as read-only.
+func (s *Server) currentAccountConfig() *config.AccountConfig {
+	s.configMu.RLock()
+	cfg := s.accountConfig
+	s.configMu.RUnlock()
+	return cfg
+}
+
+func (s *Server) setAccountConfig(cfg *config.AccountConfig) {
+	s.configMu.Lock()
+	s.accountConfig = cfg
+	s.configMu.Unlock()
+}
+
+// currentSMTPConfig returns the active SMTP configuration. The returned pointer
+// must be treated as read-only.
+func (s *Server) currentSMTPConfig() *config.SMTPConfig {
+	s.configMu.RLock()
+	cfg := s.smtpConfig
+	s.configMu.RUnlock()
+	return cfg
+}
+
+func (s *Server) setSMTPConfig(cfg *config.SMTPConfig) {
+	s.configMu.Lock()
+	s.smtpConfig = cfg
+	s.mailer = mailer.New(*cfg)
+	s.configMu.Unlock()
+}
+
+// currentMailer returns the active mailer snapshot.
+func (s *Server) currentMailer() *mailer.Mailer {
+	s.configMu.RLock()
+	m := s.mailer
+	s.configMu.RUnlock()
+	return m
+}
+
+func (s *Server) currentHomeContent() string {
+	s.configMu.RLock()
+	c := s.homeContent
+	s.configMu.RUnlock()
+	return c
+}
+
+func (s *Server) setHomeContent(content string) {
+	s.configMu.Lock()
+	s.homeContent = content
+	s.configMu.Unlock()
+}
+
+// saveConfigValue marshals and persists a configuration value to the store.
+func (s *Server) saveConfigValue(key string, value interface{}) error {
+	if s.store == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return s.store.SetConfig(context.Background(), key, data)
 }
 
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (*authClaims, error) {
@@ -690,14 +820,15 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 		</div>
 		<button onclick="login()" id="btn-login">Login</button>
 		<div class="error" id="error"></div>
+		<div class="link"><a href="{{.BasePath}}/app/forgot-password" id="link-forgot">Forgot password?</a></div>
 		<div class="link"><span id="no-account">Don't have an account?</span> <a href="{{.BasePath}}/app/register" id="link-register">Create one</a></div>
 	</div>
 	<script>
 		const basePath = '{{.BasePath}}';
 		const i18n = {
-			'en': { title: 'Sign in', username: 'Username', password: 'Password', login: 'Login', noAccount: "Don't have an account?", createOne: 'Create one', loginFailed: 'Login failed', remember: 'Remember me' },
-			'zh-hans': { title: '登录', username: '用户名', password: '密码', login: '登录', noAccount: '没有账号？', createOne: '创建账号', loginFailed: '登录失败', remember: '记住我' },
-			'zh-hant': { title: '登入', username: '使用者名稱', password: '密碼', login: '登入', noAccount: '沒有帳號？', createOne: '建立帳號', loginFailed: '登入失敗', remember: '記住我' }
+			'en': { title: 'Sign in', username: 'Username', password: 'Password', login: 'Login', noAccount: "Don't have an account?", createOne: 'Create one', loginFailed: 'Login failed', remember: 'Remember me', forgot: 'Forgot password?' },
+			'zh-hans': { title: '登录', username: '用户名', password: '密码', login: '登录', noAccount: '没有账号？', createOne: '创建账号', loginFailed: '登录失败', remember: '记住我', forgot: '忘记密码？' },
+			'zh-hant': { title: '登入', username: '使用者名稱', password: '密碼', login: '登入', noAccount: '沒有帳號？', createOne: '建立帳號', loginFailed: '登入失敗', remember: '記住我', forgot: '忘記密碼？' }
 		};
 		function getLang() { return localStorage.getItem('lang') || 'en'; }
 		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
@@ -714,6 +845,7 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 			document.getElementById('no-account').innerText = t.noAccount;
 			document.getElementById('link-register').innerText = t.createOne;
 			document.getElementById('lbl-remember').innerText = t.remember;
+			document.getElementById('link-forgot').innerText = t.forgot;
 		}
 		applyLang();
 		async function login() {
@@ -785,6 +917,8 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 		<h1 id="title">Create Account</h1>
 		<label id="lbl-username">Username</label>
 		<input id="username" autocomplete="username" />
+		<label id="lbl-email">Email</label>
+		<input id="email" type="email" autocomplete="email" />
 		<label id="lbl-password">Password</label>
 		<input id="password" type="password" autocomplete="new-password" />
 		<label id="lbl-confirm">Confirm Password</label>
@@ -797,9 +931,9 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 	<script>
 		const basePath = '{{.BasePath}}';
 		const i18n = {
-			'en': { title: 'Create Account', username: 'Username', password: 'Password', confirm: 'Confirm Password', register: 'Register', haveAccount: 'Already have an account?', signIn: 'Sign in', passwordMismatch: 'Passwords do not match', regFailed: 'Registration failed', created: 'Account created! Redirecting to login...' },
-			'zh-hans': { title: '创建账号', username: '用户名', password: '密码', confirm: '确认密码', register: '注册', haveAccount: '已有账号？', signIn: '登录', passwordMismatch: '两次密码不一致', regFailed: '注册失败', created: '账号创建成功！正在跳转到登录页面...' },
-			'zh-hant': { title: '建立帳號', username: '使用者名稱', password: '密碼', confirm: '確認密碼', register: '註冊', haveAccount: '已有帳號？', signIn: '登入', passwordMismatch: '兩次密碼不一致', regFailed: '註冊失敗', created: '帳號建立成功！正在跳轉到登入頁面...' }
+			'en': { title: 'Create Account', username: 'Username', email: 'Email', password: 'Password', confirm: 'Confirm Password', register: 'Register', haveAccount: 'Already have an account?', signIn: 'Sign in', passwordMismatch: 'Passwords do not match', regFailed: 'Registration failed', created: 'Account created! Redirecting to login...' },
+			'zh-hans': { title: '创建账号', username: '用户名', email: '邮箱', password: '密码', confirm: '确认密码', register: '注册', haveAccount: '已有账号？', signIn: '登录', passwordMismatch: '两次密码不一致', regFailed: '注册失败', created: '账号创建成功！正在跳转到登录页面...' },
+			'zh-hant': { title: '建立帳號', username: '使用者名稱', email: '電子郵件', password: '密碼', confirm: '確認密碼', register: '註冊', haveAccount: '已有帳號？', signIn: '登入', passwordMismatch: '兩次密碼不一致', regFailed: '註冊失敗', created: '帳號建立成功！正在跳轉到登入頁面...' }
 		};
 		function getLang() { return localStorage.getItem('lang') || 'en'; }
 		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
@@ -810,6 +944,7 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 			const t = i18n[lang] || i18n['en'];
 			document.getElementById('title').innerText = t.title;
 			document.getElementById('lbl-username').innerText = t.username;
+			document.getElementById('lbl-email').innerText = t.email;
 			document.getElementById('lbl-password').innerText = t.password;
 			document.getElementById('lbl-confirm').innerText = t.confirm;
 			document.getElementById('btn-register').innerText = t.register;
@@ -819,6 +954,7 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 		applyLang();
 		async function register() {
 			const username = document.getElementById('username').value.trim();
+			const email = document.getElementById('email').value.trim();
 			const password = document.getElementById('password').value;
 			const confirmPassword = document.getElementById('confirmPassword').value;
 			const lang = getLang();
@@ -832,7 +968,7 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 			const res = await fetch(basePath + '/app/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ registerRequest: { username, password } })
+				body: JSON.stringify({ registerRequest: { username, password, email } })
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(()=>({}));
@@ -939,6 +1075,16 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "password must be at least 6 characters")
 		return
 	}
+	email := strings.ToLower(strings.TrimSpace(payload.RegisterRequest.Email))
+	accountCfg := s.currentAccountConfig()
+	if email != "" && !validEmail(email) {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "invalid email address")
+		return
+	}
+	if accountCfg != nil && accountCfg.RequireEmail && email == "" {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "email is required")
+		return
+	}
 	// Check if username already exists
 	_, err := s.store.GetUserByUsername(r.Context(), username)
 	if err == nil {
@@ -949,6 +1095,16 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
 		return
 	}
+	// Reject duplicate email addresses when one is provided.
+	if email != "" {
+		if _, err := s.store.GetUserByEmail(r.Context(), email); err == nil {
+			s.writeError(w, http.StatusConflict, lang, "Conflict", "email already in use")
+			return
+		} else if err != store.ErrNotFound {
+			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+			return
+		}
+	}
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -956,10 +1112,18 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Create user with "user" role (not admin)
-	userID, err := s.store.CreateUser(r.Context(), username, string(hash), "user")
+	userID, err := s.store.CreateUser(r.Context(), username, string(hash), email, "user")
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
 		return
+	}
+	// Optionally send a verification email when the policy requires it.
+	if email != "" && accountCfg != nil && accountCfg.VerifyEmail {
+		if user, gerr := s.store.GetUserByID(r.Context(), userID); gerr == nil {
+			if serr := s.issueAndSendToken(r.Context(), user, store.AccountTokenPurposeVerify); serr != nil && serr != mailer.ErrDisabled {
+				fmt.Printf("register: failed to send verification email: %v\n", serr)
+			}
+		}
 	}
 	resp := RegisterResponseBody{Meta: s.meta()}
 	resp.RegisterResponse.UserID = userID
@@ -1384,6 +1548,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 		.tabs button { padding: 8px 16px; background: transparent; border: 1px solid #374151; border-radius: 6px; color: #cbd5e1; cursor: pointer; }
 		.tabs button.active { background: #374151; color: #f8fafc; }
+		.fb-content { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-width: 520px; }
+		.fb-content.collapsed { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-height: 4.5em; }
+		.fb-toggle { background: none; border: none; color: #38bdf8; cursor: pointer; padding: 0; margin-top: 4px; font-size: 12px; }
+		.client-info-pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-width: 520px; background:#0b1220; padding:8px; border-radius:6px; font-size:12px; margin:0; }
 	</style>
 </head>
 <body>
@@ -1410,6 +1578,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<button onclick="showSection('news')" id="nav-news">📰 News</button>
 			<button onclick="showSection('users')" id="nav-users">👥 Users</button>
 			<button onclick="showSection('feedback')" id="nav-feedback">💬 Feedback</button>
+			<button onclick="showSection('email')" id="nav-email">✉️ Email &amp; Home</button>
+			<button onclick="showSection('settings')" id="nav-settings">⚙️ Settings</button>
 		</div>
 		<div class="main">
 			<div id="message" class="message hidden"></div>
@@ -1444,6 +1614,9 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							<option value="14">Last 14 days</option>
 							<option value="30">Last 30 days</option>
 						</select>
+						<label style="display:flex;align-items:center;gap:8px;color:#94a3b8;font-size:14px;">
+							<input type="checkbox" id="stats-autorefresh" onchange="toggleStatsAutoRefresh()" /> <span id="lbl-autorefresh">Auto-refresh (live)</span>
+						</label>
 					</div>
 				</div>
 				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
@@ -1618,11 +1791,23 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					<div class="form-row">
 						<div class="form-group">
 							<label for="scan-path">Directory Path</label>
-							<input type="text" id="scan-path" placeholder="./updates/windows-x64" />
+							<div style="display:flex;gap:8px;">
+								<input type="text" id="scan-path" placeholder="./updates/windows-x64" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="openDirBrowser()">📁 Browse</button>
+							</div>
 						</div>
 						<div class="form-group">
 							<label for="scan-baseurl">Base URL</label>
-							<input type="text" id="scan-baseurl" placeholder="https://example.com/updates/" />
+							<div style="display:flex;gap:8px;">
+								<input type="text" id="scan-baseurl" placeholder="https://example.com/updates/" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="saveBaseUrlPreset()" title="Save current Base URL" aria-label="Save current Base URL">💾 Save</button>
+							</div>
+							<div style="display:flex;gap:8px;margin-top:8px;">
+								<select id="baseurl-presets" onchange="applyBaseUrlPreset()" style="flex:1;">
+									<option value="">— Saved Base URLs —</option>
+								</select>
+								<button type="button" class="btn btn-secondary" onclick="deleteBaseUrlPreset()" title="Delete selected Base URL" aria-label="Delete selected Base URL">🗑️</button>
+							</div>
 						</div>
 					</div>
 					<div class="form-row">
@@ -1657,7 +1842,38 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					<div id="scan-results" style="margin-top: 16px;"></div>
 				</div>
 				<div class="card">
+					<h2>Upload Update File</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Upload a file to be hosted by this server. The download URL is generated automatically from the current site URL.</p>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="upload-file">File</label>
+							<input type="file" id="upload-file" />
+						</div>
+						<div class="form-group">
+							<label for="upload-subdir">Sub-directory (optional)</label>
+							<input type="text" id="upload-subdir" placeholder="windows-x64" />
+						</div>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="uploadFile()">Upload</button>
+					</div>
+					<div id="upload-results" style="margin-top: 16px;"></div>
+				</div>
+				<div class="card">
 					<h2>Updates Configuration</h2>
+					<div class="form-row" style="margin-bottom:12px;flex-wrap:wrap;">
+						<div class="form-group" style="flex:2;min-width:180px;">
+							<label id="lbl-updates-search">Search</label>
+							<input type="text" id="updates-search" placeholder="Search platform or architecture..." oninput="renderUpdates()" />
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px;">
+							<label id="lbl-updates-sort">Sort by</label>
+							<select id="updates-sort" onchange="renderUpdates()">
+								<option value="platform-asc">Platform (A→Z)</option>
+								<option value="platform-desc">Platform (Z→A)</option>
+							</select>
+						</div>
+					</div>
 					<p style="color: #94a3b8; margin-bottom: 16px;">Current update packages for each platform and architecture.</p>
 					<div id="updates-content">
 						<div class="loading">Loading updates configuration...</div>
@@ -1668,11 +1884,43 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 				</div>
 			</div>
+
+			<!-- Directory browser modal -->
+			<div id="dir-browser" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:none;align-items:center;justify-content:center;">
+				<div style="background:#111827;border:1px solid #1f2937;border-radius:12px;width:min(640px,92vw);max-height:80vh;display:flex;flex-direction:column;padding:20px;">
+					<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+						<h3 style="margin:0;">📁 Select Directory</h3>
+						<button class="btn btn-secondary" onclick="closeDirBrowser()">Close</button>
+					</div>
+					<div id="dir-browser-current" style="color:#94a3b8;font-size:13px;margin-bottom:8px;font-family:monospace;">/</div>
+					<div id="dir-browser-list" style="flex:1;overflow-y:auto;background:#0f172a;border-radius:8px;padding:8px;min-height:200px;"></div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="chooseCurrentDir()">Use This Directory</button>
+					</div>
+				</div>
+			</div>
 			
 			<!-- News Section -->
 			<div id="section-news" class="section hidden">
 				<div class="card">
 					<h2>News Items</h2>
+					<div class="form-row" style="margin-bottom:12px;flex-wrap:wrap;">
+						<div class="form-group" style="flex:2;min-width:180px;">
+							<label id="lbl-news-search">Search</label>
+							<input type="text" id="news-search" placeholder="Search title, summary, category..." oninput="renderNews()" />
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px;">
+							<label id="lbl-news-sort">Sort by</label>
+							<select id="news-sort" onchange="renderNews()">
+								<option value="priority-desc">Priority (high→low)</option>
+								<option value="priority-asc">Priority (low→high)</option>
+								<option value="title-asc">Title (A→Z)</option>
+								<option value="title-desc">Title (Z→A)</option>
+								<option value="publish-desc">Publish time (newest)</option>
+								<option value="publish-asc">Publish time (oldest)</option>
+							</select>
+						</div>
+					</div>
 					<div id="news-list"></div>
 					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addNewsItem()">+ Add News Item</button>
 					<div class="actions">
@@ -1788,9 +2036,172 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						<button class="btn btn-secondary" onclick="clearFeedbackFilters()">Clear Filters</button>
 						<button class="btn btn-secondary" onclick="loadFeedback()" style="margin-left: 8px;">Reload</button>
 					</div>
+					<div class="form-row" style="margin-bottom:16px;flex-wrap:wrap;">
+						<div class="form-group" style="flex:2;min-width:180px;">
+							<label id="lbl-feedback-search">Search</label>
+							<input type="text" id="feedback-search" placeholder="Search content, device, platform..." oninput="renderFeedback()" />
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px;">
+							<label id="lbl-feedback-sort">Sort by</label>
+							<select id="feedback-sort" onchange="renderFeedback()">
+								<option value="time-desc">Time (newest)</option>
+								<option value="time-asc">Time (oldest)</option>
+								<option value="platform-asc">Platform (A→Z)</option>
+								<option value="coreVersion-asc">Core version (A→Z)</option>
+							</select>
+						</div>
+					</div>
 					<div id="feedback-list">
 						<div class="loading">Loading feedback...</div>
 					</div>
+				</div>
+			</div>
+
+			<!-- Settings Section -->
+			<!-- Email & Home Section -->
+			<div id="section-email" class="section hidden">
+				<div class="card">
+					<h2 id="email-smtp-title">✉️ SMTP Settings</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-smtp-desc">Configure the outbound email server used for password recovery and email verification.</p>
+					<div class="form-group">
+						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="smtp-enabled" /> <span id="lbl-smtp-enabled">Enable email sending</span></label>
+					</div>
+					<div class="form-row">
+						<div class="form-group" style="flex:2;">
+							<label for="smtp-host" id="lbl-smtp-host">Host</label>
+							<input type="text" id="smtp-host" placeholder="smtp.example.com" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-port" id="lbl-smtp-port">Port</label>
+							<input type="number" id="smtp-port" placeholder="587" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-tls" id="lbl-smtp-tls">TLS Mode</label>
+							<select id="smtp-tls">
+								<option value="starttls">STARTTLS</option>
+								<option value="tls">Implicit TLS</option>
+								<option value="none">None</option>
+							</select>
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="smtp-username" id="lbl-smtp-username">Username</label>
+							<input type="text" id="smtp-username" autocomplete="off" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-password" id="lbl-smtp-password">Password</label>
+							<input type="password" id="smtp-password" autocomplete="new-password" />
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="smtp-from" id="lbl-smtp-from">From Address</label>
+							<input type="text" id="smtp-from" placeholder="noreply@example.com" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-fromname" id="lbl-smtp-fromname">From Name</label>
+							<input type="text" id="smtp-fromname" placeholder="NekoLc" />
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="smtp-baseurl" id="lbl-smtp-baseurl">Base URL</label>
+						<input type="text" id="smtp-baseurl" placeholder="https://example.com" />
+						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="smtp-baseurl-help">Public base URL used to build links in emails.</p>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveSMTP()" id="btn-save-smtp">Save SMTP</button>
+						<button class="btn btn-secondary" onclick="loadEmailSettings()" id="btn-reload-smtp">Reload</button>
+					</div>
+					<h3 style="margin-top: 24px; margin-bottom: 12px; font-size: 16px;" id="email-test-title">Send Test Email</h3>
+					<div class="form-row">
+						<div class="form-group" style="flex:1;">
+							<label for="smtp-test-to" id="lbl-smtp-test-to">Recipient</label>
+							<div style="display:flex;gap:8px;">
+								<input type="email" id="smtp-test-to" placeholder="you@example.com" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="sendTestEmail()" id="btn-test-email">Send</button>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="card">
+					<h2 id="email-account-title">👤 Account Policy</h2>
+					<div class="form-group">
+						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="account-require-email" /> <span id="lbl-account-require-email">Require email at registration</span></label>
+					</div>
+					<div class="form-group">
+						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="account-verify-email" /> <span id="lbl-account-verify-email">Send verification email on registration</span></label>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveAccount()" id="btn-save-account">Save Account Policy</button>
+					</div>
+				</div>
+				<div class="card">
+					<h2 id="email-home-title">🏠 Home Page Content (Markdown)</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-home-desc">This Markdown content is rendered safely and shown on the user dashboard.</p>
+					<div class="form-group">
+						<textarea id="home-content" rows="12" style="width:100%;font-family:'Cascadia Code',Consolas,monospace;padding:10px;border-radius:8px;border:1px solid #1f2937;background:#0b1220;color:#e2e8f0;box-sizing:border-box;"></textarea>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveHomeContent()" id="btn-save-home">Save Content</button>
+						<button class="btn btn-secondary" onclick="loadHomeContent()" id="btn-reload-home">Reload</button>
+					</div>
+				</div>
+			</div>
+
+			<div id="section-settings" class="section hidden">
+				<div class="card">
+					<h2 id="settings-title">⚙️ Global Settings</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="settings-desc">Configure global, commonly-used options for this dashboard. These preferences are stored in your browser.</p>
+					<div class="form-group">
+						<label for="settings-default-baseurl" id="lbl-settings-default-baseurl">Default Base URL</label>
+						<input type="text" id="settings-default-baseurl" placeholder="https://example.com/updates/" />
+						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="settings-default-baseurl-help">Used to pre-fill the Base URL field on the Updates page.</p>
+					</div>
+					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;" id="settings-update-defaults-title">Default Update Options</h3>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="settings-default-platform" id="lbl-settings-default-platform">Platform</label>
+							<select id="settings-default-platform">
+								<option value="windows">Windows</option>
+								<option value="linux">Linux</option>
+								<option value="macos">macOS</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="settings-default-arch" id="lbl-settings-default-arch">Architecture</label>
+							<select id="settings-default-arch">
+								<option value="x64">x64</option>
+								<option value="arm64">ARM64</option>
+								<option value="x86">x86</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="settings-default-type" id="lbl-settings-default-type">Type</label>
+							<select id="settings-default-type">
+								<option value="core">Core</option>
+								<option value="resource">Resource</option>
+							</select>
+						</div>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveSettings()" id="btn-save-settings">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadSettings()" id="btn-reload-settings">Reload</button>
+					</div>
+				</div>
+				<div class="card">
+					<h2 id="settings-presets-title">Saved Base URLs</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="settings-presets-desc">Manage the list of Base URLs available across the dashboard.</p>
+					<div class="form-row">
+						<div class="form-group" style="flex:1;">
+							<label for="settings-new-baseurl" id="lbl-settings-new-baseurl">Add Base URL</label>
+							<div style="display:flex;gap:8px;">
+								<input type="text" id="settings-new-baseurl" placeholder="https://example.com/updates/" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="addSettingsPreset()" id="btn-add-settings-preset">Add</button>
+							</div>
+						</div>
+					</div>
+					<div id="settings-presets-list" style="margin-top: 8px;"></div>
 				</div>
 			</div>
 		</div>
@@ -1804,6 +2215,9 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		let newsData = null;
 		let usersData = null;
 		let statsData = null;
+		let feedbackData = [];
+		let statsAutoRefreshTimer = null;
+		let dirBrowserPath = '';
 		
 		// i18n translations
 		const i18n = {
@@ -1817,7 +2231,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 News',
 				navUsers: '👥 Users',
 				navFeedback: '💬 Feedback',
-				statsTitle: '📊 Statistics Overview',
+				navEmail: '✉️ Email & Home',
+				navSettings: '⚙️ Settings',
 				statsDesc: 'View server usage statistics and analytics.',
 				totalRequests: 'Total Requests',
 				todayRequests: "Today's Requests",
@@ -1902,9 +2317,23 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				deleteFailed: 'Failed to delete',
 				password: 'Password',
 				save: 'Save',
-				cancel: 'Cancel'
+				cancel: 'Cancel',
+				settingsTitle: '⚙️ Global Settings',
+				settingsDesc: 'Configure global, commonly-used options for this dashboard. These preferences are stored in your browser.',
+				defaultBaseUrl: 'Default Base URL',
+				defaultBaseUrlHelp: 'Used to pre-fill the Base URL field on the Updates page.',
+				updateDefaultsTitle: 'Default Update Options',
+				type: 'Type',
+				savedBaseUrlsTitle: 'Saved Base URLs',
+				savedBaseUrlsDesc: 'Manage the list of Base URLs available across the dashboard.',
+				addBaseUrl: 'Add Base URL',
+				add: 'Add',
+				noSavedBaseUrls: 'No saved Base URLs yet.',
+				settingsSaved: 'Settings saved',
+				enterBaseUrl: 'Enter a Base URL to add',
+				baseUrlAdded: 'Base URL added',
+				baseUrlRemoved: 'Base URL removed'
 			},
-			'zh-hans': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 统计',
@@ -1914,7 +2343,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新闻',
 				navUsers: '👥 用户',
 				navFeedback: '💬 反馈',
-				statsTitle: '📊 统计概览',
+				navEmail: '✉️ 邮件与首页',
+				navSettings: '⚙️ 设置',
 				statsDesc: '查看服务器使用统计和分析。',
 				totalRequests: '总请求数',
 				todayRequests: '今日请求',
@@ -1999,9 +2429,23 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				deleteFailed: '删除失败',
 				password: '密码',
 				save: '保存',
-				cancel: '取消'
+				cancel: '取消',
+				settingsTitle: '⚙️ 全局设置',
+				settingsDesc: '配置此面板的全局常用选项。这些偏好设置存储在您的浏览器中。',
+				defaultBaseUrl: '默认基础 URL',
+				defaultBaseUrlHelp: '用于预填充更新页面中的基础 URL 字段。',
+				updateDefaultsTitle: '默认更新选项',
+				type: '类型',
+				savedBaseUrlsTitle: '已保存的基础 URL',
+				savedBaseUrlsDesc: '管理整个面板中可用的基础 URL 列表。',
+				addBaseUrl: '添加基础 URL',
+				add: '添加',
+				noSavedBaseUrls: '尚无已保存的基础 URL。',
+				settingsSaved: '设置已保存',
+				enterBaseUrl: '请输入要添加的基础 URL',
+				baseUrlAdded: '已添加基础 URL',
+				baseUrlRemoved: '已移除基础 URL'
 			},
-			'zh-hant': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 統計',
@@ -2011,7 +2455,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新聞',
 				navUsers: '👥 使用者',
 				navFeedback: '💬 意見回饋',
-				statsTitle: '📊 統計概覽',
+				navEmail: '✉️ 郵件與首頁',
+				navSettings: '⚙️ 設定',
 				statsDesc: '檢視伺服器使用統計和分析。',
 				totalRequests: '總請求數',
 				todayRequests: '今日請求',
@@ -2096,7 +2541,22 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				deleteFailed: '刪除失敗',
 				password: '密碼',
 				save: '儲存',
-				cancel: '取消'
+				cancel: '取消',
+				settingsTitle: '⚙️ 全域設定',
+				settingsDesc: '設定此面板的全域常用選項。這些偏好設定儲存在您的瀏覽器中。',
+				defaultBaseUrl: '預設基礎 URL',
+				defaultBaseUrlHelp: '用於預先填入更新頁面中的基礎 URL 欄位。',
+				updateDefaultsTitle: '預設更新選項',
+				type: '類型',
+				savedBaseUrlsTitle: '已儲存的基礎 URL',
+				savedBaseUrlsDesc: '管理整個面板中可用的基礎 URL 清單。',
+				addBaseUrl: '新增基礎 URL',
+				add: '新增',
+				noSavedBaseUrls: '尚無已儲存的基礎 URL。',
+				settingsSaved: '設定已儲存',
+				enterBaseUrl: '請輸入要新增的基礎 URL',
+				baseUrlAdded: '已新增基礎 URL',
+				baseUrlRemoved: '已移除基礎 URL'
 			}
 		};
 		
@@ -2119,6 +2579,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('nav-news').innerText = t('navNews');
 			document.getElementById('nav-users').innerText = t('navUsers');
 			document.getElementById('nav-feedback').innerText = t('navFeedback');
+			document.getElementById('nav-email').innerText = t('navEmail');
+			document.getElementById('nav-settings').innerText = t('navSettings');
 			// Statistics section
 			document.getElementById('stats-title').innerText = t('statsTitle');
 			document.getElementById('stats-desc').innerText = t('statsDesc');
@@ -2147,6 +2609,22 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('lbl-register-ui-url').innerText = t('registerUiUrl');
 			document.getElementById('btn-save-launcher').innerText = t('saveChanges');
 			document.getElementById('btn-reload-launcher').innerText = t('reload');
+			// Settings section
+			document.getElementById('settings-title').innerText = t('settingsTitle');
+			document.getElementById('settings-desc').innerText = t('settingsDesc');
+			document.getElementById('lbl-settings-default-baseurl').innerText = t('defaultBaseUrl');
+			document.getElementById('settings-default-baseurl-help').innerText = t('defaultBaseUrlHelp');
+			document.getElementById('settings-update-defaults-title').innerText = t('updateDefaultsTitle');
+			document.getElementById('lbl-settings-default-platform').innerText = t('platform');
+			document.getElementById('lbl-settings-default-arch').innerText = t('architecture');
+			document.getElementById('lbl-settings-default-type').innerText = t('type');
+			document.getElementById('btn-save-settings').innerText = t('saveChanges');
+			document.getElementById('btn-reload-settings').innerText = t('reload');
+			document.getElementById('settings-presets-title').innerText = t('savedBaseUrlsTitle');
+			document.getElementById('settings-presets-desc').innerText = t('savedBaseUrlsDesc');
+			document.getElementById('lbl-settings-new-baseurl').innerText = t('addBaseUrl');
+			document.getElementById('btn-add-settings-preset').innerText = t('add');
+			renderSettingsPresets();
 		}
 		
 		function getActiveStorage() {
@@ -2229,9 +2707,12 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (name === 'launcher' && !launcherData) loadLauncher();
 			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
 			if (name === 'updates' && !updatesData) loadUpdates();
+			if (name === 'updates') applyScanDefaults();
 			if (name === 'news' && !newsData) loadNews();
 			if (name === 'users' && !usersData) loadUsers();
 			if (name === 'feedback') loadFeedback();
+			if (name === 'email') loadEmailSettings();
+			if (name === 'settings') loadSettings();
 		}
 		
 		async function apiRequest(method, path, body = null) {
@@ -2256,6 +2737,83 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 		}
 		
+		// Email & Home (SMTP / account policy / markdown home content) functions
+		async function loadEmailSettings() {
+			await loadSMTP();
+			await loadAccountPolicy();
+			await loadHomeContent();
+		}
+		async function loadSMTP() {
+			const res = await apiRequest('GET', '/v0/api/admin/smtp');
+			if (!res || !res.ok) return;
+			const data = await res.json();
+			const c = data.smtp || {};
+			document.getElementById('smtp-enabled').checked = !!c.enabled;
+			document.getElementById('smtp-host').value = c.host || '';
+			document.getElementById('smtp-port').value = c.port || '';
+			document.getElementById('smtp-tls').value = c.tlsMode || 'starttls';
+			document.getElementById('smtp-username').value = c.username || '';
+			document.getElementById('smtp-password').value = c.password || '';
+			document.getElementById('smtp-from').value = c.from || '';
+			document.getElementById('smtp-fromname').value = c.fromName || '';
+			document.getElementById('smtp-baseurl').value = c.baseUrl || '';
+		}
+		async function saveSMTP() {
+			const smtp = {
+				enabled: document.getElementById('smtp-enabled').checked,
+				host: document.getElementById('smtp-host').value.trim(),
+				port: parseInt(document.getElementById('smtp-port').value, 10) || 0,
+				tlsMode: document.getElementById('smtp-tls').value,
+				username: document.getElementById('smtp-username').value.trim(),
+				password: document.getElementById('smtp-password').value,
+				from: document.getElementById('smtp-from').value.trim(),
+				fromName: document.getElementById('smtp-fromname').value.trim(),
+				baseUrl: document.getElementById('smtp-baseurl').value.trim()
+			};
+			const res = await apiRequest('PUT', '/v0/api/admin/smtp', { smtp });
+			if (res && res.ok) { showMessage('SMTP settings saved'); loadSMTP(); }
+			else showMessage('Failed to save SMTP settings', true);
+		}
+		async function sendTestEmail() {
+			const to = document.getElementById('smtp-test-to').value.trim();
+			if (!to) { showMessage('Enter a recipient email', true); return; }
+			const res = await apiRequest('POST', '/v0/api/admin/smtp/test', { to });
+			if (res && res.ok) showMessage('Test email sent');
+			else {
+				const data = res ? await res.json().catch(()=>({})) : {};
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Failed to send test email', true);
+			}
+		}
+		async function loadAccountPolicy() {
+			const res = await apiRequest('GET', '/v0/api/admin/account');
+			if (!res || !res.ok) return;
+			const data = await res.json();
+			const c = data.account || {};
+			document.getElementById('account-require-email').checked = !!c.requireEmail;
+			document.getElementById('account-verify-email').checked = !!c.verifyEmail;
+		}
+		async function saveAccount() {
+			const account = {
+				requireEmail: document.getElementById('account-require-email').checked,
+				verifyEmail: document.getElementById('account-verify-email').checked
+			};
+			const res = await apiRequest('PUT', '/v0/api/admin/account', { account });
+			if (res && res.ok) showMessage('Account policy saved');
+			else showMessage('Failed to save account policy', true);
+		}
+		async function loadHomeContent() {
+			const res = await apiRequest('GET', '/v0/api/admin/homeContent');
+			if (!res || !res.ok) return;
+			const data = await res.json();
+			document.getElementById('home-content').value = data.content || '';
+		}
+		async function saveHomeContent() {
+			const content = document.getElementById('home-content').value;
+			const res = await apiRequest('PUT', '/v0/api/admin/homeContent', { content });
+			if (res && res.ok) showMessage('Home content saved');
+			else showMessage('Failed to save home content', true);
+		}
+
 		// Statistics functions
 		async function loadStats() {
 			const days = document.getElementById('stats-days')?.value || 7;
@@ -2278,6 +2836,18 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			
 			// Render platforms
 			renderPlatformsList(statsData.platformCounts || {});
+		}
+
+		function toggleStatsAutoRefresh() {
+			const enabled = document.getElementById('stats-autorefresh')?.checked;
+			if (statsAutoRefreshTimer) {
+				clearInterval(statsAutoRefreshTimer);
+				statsAutoRefreshTimer = null;
+			}
+			if (enabled) {
+				statsAutoRefreshTimer = setInterval(loadStats, 5000);
+				loadStats();
+			}
 		}
 		
 		function renderDailyChart(dailyStats) {
@@ -2611,12 +3181,21 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		
 		function renderUpdates() {
 			const container = document.getElementById('updates-content');
+			if (!container) return;
 			if (!updatesData || !updatesData.platforms) {
 				container.innerHTML = '<p style="color:#94a3b8;">No platforms configured.</p>';
 				return;
 			}
+			const term = (document.getElementById('updates-search')?.value || '').trim().toLowerCase();
+			const sort = document.getElementById('updates-sort')?.value || 'platform-asc';
+			let platforms = Object.entries(updatesData.platforms);
+			platforms.sort((a, b) => sort === 'platform-desc' ? b[0].localeCompare(a[0]) : a[0].localeCompare(b[0]));
 			let html = '';
-			for (const [platform, pdata] of Object.entries(updatesData.platforms)) {
+			for (const [platform, pdata] of platforms) {
+				const archNames = pdata.architectures ? Object.keys(pdata.architectures) : [];
+				if (term && !platform.toLowerCase().includes(term) && !archNames.some(a => a.toLowerCase().includes(term))) {
+					continue;
+				}
 				html += '<div class="platform-section">';
 				html += '<h3>' + escapeHtml(platform.charAt(0).toUpperCase() + platform.slice(1)) + '</h3>';
 				if (pdata.architectures) {
@@ -2634,7 +3213,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				}
 				html += '</div>';
 			}
-			container.innerHTML = html || '<p style="color:#94a3b8;">No platforms configured.</p>';
+			container.innerHTML = html || '<p style="color:#94a3b8;">No platforms match your search.</p>';
 		}
 		
 		async function saveUpdates() {
@@ -2719,6 +3298,274 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			updatesData = null;
 			loadUpdates();
 		}
+
+		async function uploadFile() {
+			const input = document.getElementById('upload-file');
+			if (!input || !input.files || input.files.length === 0) {
+				showMessage('Please choose a file to upload', true);
+				return;
+			}
+			const subdir = document.getElementById('upload-subdir').value.trim();
+			const form = new FormData();
+			form.append('file', input.files[0]);
+			if (subdir) form.append('subdir', subdir);
+			const res = await fetch(basePath + '/v0/api/admin/uploadFile', {
+				method: 'POST',
+				headers: { 'Authorization': 'Bearer ' + getToken() },
+				body: form
+			});
+			if (res.status === 401 || res.status === 403) { logout(); return; }
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Upload failed', true);
+				return;
+			}
+			const container = document.getElementById('upload-results');
+			let html = '<div style="background:#0f172a;padding:12px;border-radius:8px;">';
+			html += '<div style="color:#22d3ee;margin-bottom:8px;">Uploaded ' + escapeHtml(data.fileName) + ' (' + data.size + ' bytes)</div>';
+			html += '<div style="display:flex;gap:8px;align-items:center;">';
+			html += '<input type="text" readonly value="' + escapeHtml(data.url) + '" style="flex:1;font-family:monospace;font-size:12px;" id="upload-url" />';
+			html += '<button class="btn btn-secondary" onclick="copyUploadUrl()">Copy</button>';
+			html += '<button class="btn btn-secondary" onclick="useUploadUrl()">Use as Base URL</button>';
+			html += '</div>';
+			html += '<div style="color:#94a3b8;font-size:12px;margin-top:8px;">sha256: ' + escapeHtml(data.checksum) + '</div>';
+			html += '</div>';
+			container.innerHTML = html;
+			// Default: add the uploaded file's URL root to the saved Base URLs.
+			let savedRoot = false;
+			if (data.url) { savedRoot = addBaseUrlPreset(baseUrlRootOf(data.url)); }
+			showMessage(savedRoot ? 'File uploaded; URL root added to saved Base URLs' : 'File uploaded successfully');
+		}
+
+		function copyUploadUrl() {
+			const el = document.getElementById('upload-url');
+			if (!el) return;
+			el.select();
+			if (navigator.clipboard) { navigator.clipboard.writeText(el.value); }
+			else { document.execCommand('copy'); }
+			showMessage('URL copied to clipboard');
+		}
+
+		function useUploadUrl() {
+			const el = document.getElementById('upload-url');
+			if (!el) return;
+			document.getElementById('scan-baseurl').value = el.value;
+			showMessage('Base URL set from uploaded file');
+		}
+
+		// Saved Base URL presets (CRUD, persisted in localStorage)
+		var BASEURL_PRESETS_KEY = 'nekolc_baseurl_presets';
+
+		function getBaseUrlPresets() {
+			try {
+				const raw = localStorage.getItem(BASEURL_PRESETS_KEY);
+				const arr = raw ? JSON.parse(raw) : [];
+				return Array.isArray(arr) ? arr.filter(v => typeof v === 'string' && v.trim() !== '') : [];
+			} catch (e) {
+				return [];
+			}
+		}
+
+		function saveBaseUrlPresets(list) {
+			localStorage.setItem(BASEURL_PRESETS_KEY, JSON.stringify(list));
+		}
+
+		function renderBaseUrlPresets() {
+			const sel = document.getElementById('baseurl-presets');
+			if (!sel) return;
+			const presets = getBaseUrlPresets();
+			let html = '<option value="">— Saved Base URLs —</option>';
+			presets.forEach(function(u) {
+				html += '<option value="' + escapeHtml(u) + '">' + escapeHtml(u) + '</option>';
+			});
+			sel.innerHTML = html;
+		}
+
+		function addBaseUrlPreset(url) {
+			url = (url || '').trim();
+			if (!url) return false;
+			const presets = getBaseUrlPresets();
+			if (presets.indexOf(url) !== -1) return false;
+			presets.push(url);
+			saveBaseUrlPresets(presets);
+			renderBaseUrlPresets();
+			return true;
+		}
+
+		function applyBaseUrlPreset() {
+			const sel = document.getElementById('baseurl-presets');
+			if (!sel || !sel.value) return;
+			document.getElementById('scan-baseurl').value = sel.value;
+		}
+
+		function saveBaseUrlPreset() {
+			const url = document.getElementById('scan-baseurl').value.trim();
+			if (!url) { showMessage('Enter a Base URL to save', true); return; }
+			if (addBaseUrlPreset(url)) {
+				showMessage('Base URL saved');
+			} else {
+				showMessage('Base URL already saved', true);
+			}
+		}
+
+		function deleteBaseUrlPreset() {
+			const sel = document.getElementById('baseurl-presets');
+			if (!sel || !sel.value) { showMessage('Select a saved Base URL to delete', true); return; }
+			const target = sel.value;
+			const presets = getBaseUrlPresets().filter(u => u !== target);
+			saveBaseUrlPresets(presets);
+			renderBaseUrlPresets();
+			showMessage('Base URL removed');
+		}
+
+		// Derive the URL "root" (directory portion) of a full file URL.
+		function baseUrlRootOf(fullUrl) {
+			const u = (fullUrl || '').trim();
+			if (!u) return '';
+			const idx = u.lastIndexOf('/');
+			return idx >= 0 ? u.substring(0, idx + 1) : u;
+		}
+
+		// Global settings (persisted in localStorage)
+		var SETTINGS_DEFAULT_BASEURL_KEY = 'nekolc_default_baseurl';
+		var SETTINGS_DEFAULT_PLATFORM_KEY = 'nekolc_default_platform';
+		var SETTINGS_DEFAULT_ARCH_KEY = 'nekolc_default_arch';
+		var SETTINGS_DEFAULT_TYPE_KEY = 'nekolc_default_type';
+
+		function loadSettings() {
+			const baseUrl = localStorage.getItem(SETTINGS_DEFAULT_BASEURL_KEY) || '';
+			const platform = localStorage.getItem(SETTINGS_DEFAULT_PLATFORM_KEY) || 'windows';
+			const arch = localStorage.getItem(SETTINGS_DEFAULT_ARCH_KEY) || 'x64';
+			const type = localStorage.getItem(SETTINGS_DEFAULT_TYPE_KEY) || 'core';
+			document.getElementById('settings-default-baseurl').value = baseUrl;
+			document.getElementById('settings-default-platform').value = platform;
+			document.getElementById('settings-default-arch').value = arch;
+			document.getElementById('settings-default-type').value = type;
+			renderSettingsPresets();
+		}
+
+		function saveSettings() {
+			const baseUrl = document.getElementById('settings-default-baseurl').value.trim();
+			localStorage.setItem(SETTINGS_DEFAULT_BASEURL_KEY, baseUrl);
+			localStorage.setItem(SETTINGS_DEFAULT_PLATFORM_KEY, document.getElementById('settings-default-platform').value);
+			localStorage.setItem(SETTINGS_DEFAULT_ARCH_KEY, document.getElementById('settings-default-arch').value);
+			localStorage.setItem(SETTINGS_DEFAULT_TYPE_KEY, document.getElementById('settings-default-type').value);
+			showMessage(t('settingsSaved'));
+		}
+
+		// Apply the saved default Base URL / update options to the Updates scan form.
+		// Only fields that are still empty/unchanged are pre-filled so user input is preserved.
+		function applyScanDefaults() {
+			const baseUrlEl = document.getElementById('scan-baseurl');
+			const defaultBaseUrl = localStorage.getItem(SETTINGS_DEFAULT_BASEURL_KEY) || '';
+			if (baseUrlEl && !baseUrlEl.value.trim() && defaultBaseUrl) {
+				baseUrlEl.value = defaultBaseUrl;
+			}
+			const platform = localStorage.getItem(SETTINGS_DEFAULT_PLATFORM_KEY);
+			const arch = localStorage.getItem(SETTINGS_DEFAULT_ARCH_KEY);
+			const type = localStorage.getItem(SETTINGS_DEFAULT_TYPE_KEY);
+			const platformEl = document.getElementById('scan-platform');
+			const archEl = document.getElementById('scan-arch');
+			const typeEl = document.getElementById('scan-type');
+			if (platform && platformEl) platformEl.value = platform;
+			if (arch && archEl) archEl.value = arch;
+			if (type && typeEl) typeEl.value = type;
+		}
+
+		// Saved Base URLs management on the Settings page (reuses the shared preset store).
+		function renderSettingsPresets() {
+			const container = document.getElementById('settings-presets-list');
+			if (!container) return;
+			const presets = getBaseUrlPresets();
+			if (presets.length === 0) {
+				container.innerHTML = '<div style="color:#94a3b8;">' + escapeHtml(t('noSavedBaseUrls')) + '</div>';
+				return;
+			}
+			let html = '';
+			presets.forEach(function(u) {
+				html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">';
+				html += '<input type="text" readonly value="' + escapeHtml(u) + '" style="flex:1;font-family:monospace;font-size:12px;" />';
+				html += '<button class="btn btn-secondary" onclick="removeSettingsPreset(\'' + encodeURIComponent(u) + '\')">' + escapeHtml(t('remove')) + '</button>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+
+		function addSettingsPreset() {
+			const input = document.getElementById('settings-new-baseurl');
+			const url = (input.value || '').trim();
+			if (!url) { showMessage(t('enterBaseUrl'), true); return; }
+			if (addBaseUrlPreset(url)) {
+				input.value = '';
+				renderSettingsPresets();
+				showMessage(t('baseUrlAdded'));
+			} else {
+				showMessage('Base URL already saved', true);
+			}
+		}
+
+		function removeSettingsPreset(encodedUrl) {
+			const target = decodeURIComponent(encodedUrl);
+			const presets = getBaseUrlPresets().filter(u => u !== target);
+			saveBaseUrlPresets(presets);
+			renderBaseUrlPresets();
+			renderSettingsPresets();
+			showMessage(t('baseUrlRemoved'));
+		}
+
+		// Directory browser for visual scan-path selection
+		function openDirBrowser() {
+			document.getElementById('dir-browser').style.display = 'flex';
+			browseDir('');
+		}
+
+		function closeDirBrowser() {
+			document.getElementById('dir-browser').style.display = 'none';
+		}
+
+		async function browseDir(path) {
+			const res = await apiRequest('GET', '/v0/api/admin/browseDir?path=' + encodeURIComponent(path || ''));
+			if (!res) return;
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Browse failed', true);
+				return;
+			}
+			dirBrowserPath = data.path || '';
+			document.getElementById('dir-browser-current').innerText = '/' + dirBrowserPath;
+			const list = document.getElementById('dir-browser-list');
+			list.innerHTML = '';
+			const addRow = (label, navPath, clickable) => {
+				const row = document.createElement('div');
+				row.textContent = label;
+				if (clickable) {
+					row.className = 'dir-row';
+					row.style.cssText = 'padding:8px;cursor:pointer;color:#e2e8f0;';
+					row.addEventListener('click', () => browseDir(navPath));
+				} else {
+					row.style.cssText = 'padding:8px;color:#64748b;';
+				}
+				list.appendChild(row);
+			};
+			if (data.path) {
+				addRow('📁 ..', data.parent || '', true);
+			}
+			(data.entries || []).forEach(e => {
+				addRow((e.isDir ? '📁 ' : '📄 ') + e.name, e.path, !!e.isDir);
+			});
+			if (!list.children.length) {
+				const empty = document.createElement('div');
+				empty.style.cssText = 'color:#94a3b8;padding:8px;';
+				empty.textContent = 'Empty directory';
+				list.appendChild(empty);
+			}
+		}
+
+		function chooseCurrentDir() {
+			document.getElementById('scan-path').value = dirBrowserPath || '.';
+			closeDirBrowser();
+			showMessage('Directory selected: ' + (dirBrowserPath || '.'));
+		}
 		
 		// News functions
 		async function loadNews() {
@@ -2735,8 +3582,34 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				container.innerHTML = '<p style="color:#94a3b8;">No news items.</p>';
 				return;
 			}
+			// Pair each item with its original index so edits map to the real array.
+			let view = newsData.items.map((item, idx) => ({ item, idx }));
+			const term = (document.getElementById('news-search')?.value || '').trim().toLowerCase();
+			if (term) {
+				view = view.filter(({ item }) =>
+					(item.title || '').toLowerCase().includes(term) ||
+					(item.summary || '').toLowerCase().includes(term) ||
+					(item.category || '').toLowerCase().includes(term) ||
+					(item.id || '').toLowerCase().includes(term));
+			}
+			const sort = document.getElementById('news-sort')?.value || 'priority-desc';
+			view.sort((a, b) => {
+				switch (sort) {
+					case 'priority-asc': return (a.item.priority || 0) - (b.item.priority || 0);
+					case 'title-asc': return (a.item.title || '').localeCompare(b.item.title || '');
+					case 'title-desc': return (b.item.title || '').localeCompare(a.item.title || '');
+					case 'publish-asc': return String(a.item.publishTime || '').localeCompare(String(b.item.publishTime || ''));
+					case 'publish-desc': return String(b.item.publishTime || '').localeCompare(String(a.item.publishTime || ''));
+					case 'priority-desc':
+					default: return (b.item.priority || 0) - (a.item.priority || 0);
+				}
+			});
+			if (view.length === 0) {
+				container.innerHTML = '<p style="color:#94a3b8;">No news items match your search.</p>';
+				return;
+			}
 			let html = '';
-			newsData.items.forEach((item, idx) => {
+			view.forEach(({ item, idx }) => {
 				html += '<div class="news-item" id="news-item-' + idx + '">';
 				html += '<div class="header-row"><h3>' + escapeHtml(item.title || 'Untitled') + '</h3>';
 				html += '<button class="btn btn-danger" onclick="removeNewsItem(' + idx + ')">Remove</button></div>';
@@ -2967,35 +3840,90 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			const res = await apiRequest('GET', '/v0/api/admin/feedbackLogs?' + params);
 			if (!res) return;
 			const data = await res.json();
+			feedbackData = data.feedbackLogs || [];
+			renderFeedback();
+		}
+
+		function renderFeedback() {
 			const container = document.getElementById('feedback-list');
-			if (!data.feedbackLogs || data.feedbackLogs.length === 0) {
+			let view = (feedbackData || []).slice();
+			const term = (document.getElementById('feedback-search')?.value || '').trim().toLowerCase();
+			if (term) {
+				view = view.filter(item =>
+					(item.content || '').toLowerCase().includes(term) ||
+					(item.deviceId || '').toLowerCase().includes(term) ||
+					(item.platform || '').toLowerCase().includes(term) ||
+					(item.coreVersion || '').toLowerCase().includes(term));
+			}
+			const sort = document.getElementById('feedback-sort')?.value || 'time-desc';
+			view.sort((a, b) => {
+				switch (sort) {
+					case 'time-asc': return String(a.receivedAt || '').localeCompare(String(b.receivedAt || ''));
+					case 'platform-asc': return (a.platform || '').localeCompare(b.platform || '');
+					case 'coreVersion-asc': return (a.coreVersion || '').localeCompare(b.coreVersion || '');
+					case 'time-desc':
+					default: return String(b.receivedAt || '').localeCompare(String(a.receivedAt || ''));
+				}
+			});
+			if (view.length === 0) {
 				container.innerHTML = '<p style="color:#94a3b8;">No feedback entries matching filters.</p>';
 				return;
 			}
-			let html = '<table style="width:100%;border-collapse:collapse;">';
+			let html = '<table style="width:100%;border-collapse:collapse;table-layout:fixed;">';
 			html += '<thead><tr style="border-bottom:1px solid #374151;">';
-			html += '<th style="text-align:left;padding:8px;">Time</th>';
-			html += '<th style="text-align:left;padding:8px;">Platform</th>';
-			html += '<th style="text-align:left;padding:8px;">Version</th>';
+			html += '<th style="text-align:left;padding:8px;width:160px;">Time</th>';
+			html += '<th style="text-align:left;padding:8px;width:110px;">Platform</th>';
+			html += '<th style="text-align:left;padding:8px;width:90px;">Version</th>';
 			html += '<th style="text-align:left;padding:8px;">Content</th>';
+			html += '<th style="text-align:left;padding:8px;width:80px;">Actions</th>';
 			html += '</tr></thead>';
 			html += '<tbody>';
-			data.feedbackLogs.forEach(item => {
-				html += '<tr style="border-bottom:1px solid #1f2937;">';
-				html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:13px;">' + escapeHtml(item.receivedAt || '') + '</td>';
-				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.platform || '-') + '</td>';
-				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.coreVersion || '-') + '</td>';
-				html += '<td style="padding:8px;white-space:pre-wrap;">' + escapeHtml(item.content || '') + '</td>';
+			view.forEach(item => {
+				const long = (item.content || '').length > 160 || (item.content || '').split('\n').length > 3;
+				html += '<tr style="border-bottom:1px solid #1f2937;vertical-align:top;">';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.receivedAt || '') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;word-break:break-word;">' + escapeHtml(item.platform || '-') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;word-break:break-word;">' + escapeHtml(item.coreVersion || '-') + '</td>';
+				html += '<td style="padding:8px;">';
+				html += '<div class="fb-content' + (long ? ' collapsed' : '') + '" id="fb-content-' + item.id + '">' + escapeHtml(item.content || '') + '</div>';
+				if (long) {
+					html += '<button class="fb-toggle" onclick="toggleFeedback(' + item.id + ')" id="fb-toggle-' + item.id + '">Show more</button>';
+				}
+				html += '</td>';
+				html += '<td style="padding:8px;"><button class="btn btn-danger" style="padding:6px 12px;font-size:12px;" onclick="deleteFeedback(' + item.id + ')">Delete</button></td>';
 				html += '</tr>';
 			});
 			html += '</tbody></table>';
-			html += '<p style="color:#94a3b8;font-size:13px;margin-top:12px;">Showing ' + data.feedbackLogs.length + ' entries</p>';
+			html += '<p style="color:#94a3b8;font-size:13px;margin-top:12px;">Showing ' + view.length + ' entries</p>';
 			container.innerHTML = html;
+		}
+
+		function toggleFeedback(id) {
+			const el = document.getElementById('fb-content-' + id);
+			const btn = document.getElementById('fb-toggle-' + id);
+			if (!el) return;
+			const collapsed = el.classList.toggle('collapsed');
+			if (btn) btn.innerText = collapsed ? 'Show more' : 'Show less';
+		}
+
+		async function deleteFeedback(id) {
+			if (!confirm('Delete this feedback entry?')) return;
+			const res = await apiRequest('DELETE', '/v0/api/admin/feedbackLogs/' + id);
+			if (!res) return;
+			if (res.status === 204) {
+				feedbackData = (feedbackData || []).filter(f => f.id !== id);
+				renderFeedback();
+				showMessage('Feedback entry deleted');
+			} else {
+				const data = await res.json().catch(() => ({}));
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Failed to delete feedback', true);
+			}
 		}
 		
 		// Initialize
 		checkAuth();
 		applyLang();
+		renderBaseUrlPresets();
 		loadStats();
 	</script>
 </body>
@@ -3004,133 +3932,320 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 var appUserDashboardTemplate = template.Must(template.New("appUserDashboard").Parse(`<!doctype html>
 <html lang="en">
 <head>
-	<meta charset="utf-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>NekoLc Dashboard</title>
-	<style>
-		* { box-sizing: border-box; }
-		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
-		.header { background: #111827; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; }
-		.header h1 { margin: 0; font-size: 18px; }
-		.user { display: flex; align-items: center; gap: 12px; }
-		.user span { color: #94a3b8; }
-		.user button { padding: 8px 16px; border: none; border-radius: 6px; background: #374151; color: #e2e8f0; cursor: pointer; }
-		.user button:hover { background: #4b5563; }
-		.container { max-width: 1000px; margin: 0 auto; padding: 24px; }
-		.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
-		h2 { margin: 0 0 16px 0; color: #f8fafc; }
-		.welcome { font-size: 28px; margin-bottom: 8px; }
-		.subtitle { color: #94a3b8; margin-bottom: 24px; }
-		.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-		.info-item { background: #1f2937; padding: 16px; border-radius: 8px; }
-		.info-label { color: #94a3b8; font-size: 13px; margin-bottom: 4px; }
-		.info-value { font-size: 18px; font-weight: 600; }
-		.lang-switch { display: flex; align-items: center; gap: 8px; }
-		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0; cursor: pointer; }
-		.actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
-		.actions a { padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; }
-		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
-		.btn-secondary { background: #374151; color: #e2e8f0; }
-	</style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NekoLc Dashboard</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
+.header { background: #111827; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; }
+.header h1 { margin: 0; font-size: 18px; }
+.user { display: flex; align-items: center; gap: 12px; }
+.user span { color: #94a3b8; }
+.user button { padding: 8px 16px; border: none; border-radius: 6px; background: #374151; color: #e2e8f0; cursor: pointer; }
+.user button:hover { background: #4b5563; }
+.container { max-width: 1000px; margin: 0 auto; padding: 24px; }
+.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
+h2 { margin: 0 0 16px 0; color: #f8fafc; font-size: 18px; }
+.welcome { font-size: 28px; margin-bottom: 8px; }
+.subtitle { color: #94a3b8; margin-bottom: 24px; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.info-item { background: #1f2937; padding: 16px; border-radius: 8px; }
+.info-label { color: #94a3b8; font-size: 13px; margin-bottom: 4px; }
+.info-value { font-size: 18px; font-weight: 600; word-break: break-all; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge-ok { background: rgba(52,211,153,0.15); color: #34d399; }
+.badge-warn { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.lang-switch { display: flex; align-items: center; gap: 8px; }
+.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0; cursor: pointer; }
+.actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+.actions a, .actions button { padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; border: none; cursor: pointer; font-size: 14px; }
+.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
+.btn-secondary { background: #374151; color: #e2e8f0; }
+.maintenance { border-left: 4px solid #fbbf24; }
+.news-list { display: flex; flex-direction: column; gap: 12px; }
+.news-entry { background: #1f2937; padding: 14px 16px; border-radius: 8px; }
+.news-entry h3 { margin: 0 0 6px 0; font-size: 15px; }
+.news-entry .meta { color: #94a3b8; font-size: 12px; margin-bottom: 6px; }
+.news-entry a { color: #22d3ee; text-decoration: none; }
+.markdown-body { line-height: 1.6; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { color: #f8fafc; }
+.markdown-body a { color: #22d3ee; }
+.markdown-body pre { background: #0b1220; padding: 12px; border-radius: 8px; overflow-x: auto; }
+.markdown-body code { background: #0b1220; padding: 2px 6px; border-radius: 4px; }
+.markdown-body blockquote { border-left: 3px solid #374151; margin: 8px 0; padding-left: 12px; color: #94a3b8; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 50; }
+.modal-overlay.show { display: flex; }
+.modal { background: #111827; padding: 24px; border-radius: 12px; width: 360px; max-width: 92vw; }
+.modal h2 { margin-top: 0; }
+.modal label { display: block; margin-top: 12px; color: #cbd5e1; }
+.modal input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+.modal .error { color: #f87171; margin-top: 10px; min-height: 18px; }
+.modal .success { color: #34d399; margin-top: 10px; min-height: 18px; }
+.modal .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+.hidden { display: none; }
+</style>
 </head>
 <body>
-	<div class="header">
-		<h1>🐱 NekoLc</h1>
-		<div class="user">
-			<div class="lang-switch">
-				<select id="langSelect" onchange="changeLang()">
-					<option value="en">English</option>
-					<option value="zh-hans">简体中文</option>
-					<option value="zh-hant">繁體中文</option>
-				</select>
-			</div>
-			<span id="username">User</span>
-			<button onclick="logout()" id="btn-logout">Logout</button>
-		</div>
-	</div>
-	<div class="container">
-		<div class="card">
-			<div class="welcome" id="welcome">Welcome!</div>
-			<div class="subtitle" id="subtitle">Here's your account overview</div>
-			<div class="info-grid">
-				<div class="info-item">
-					<div class="info-label" id="lbl-username">Username</div>
-					<div class="info-value" id="info-username">-</div>
-				</div>
-				<div class="info-item">
-					<div class="info-label" id="lbl-role">Role</div>
-					<div class="info-value" id="info-role">-</div>
-				</div>
-				<div class="info-item">
-					<div class="info-label" id="lbl-status">Status</div>
-					<div class="info-value" id="info-status" style="color: #34d399;">Active</div>
-				</div>
-			</div>
-			<div class="actions">
-				<a href="{{.BasePath}}/app" class="btn-secondary" id="link-home">Home</a>
-			</div>
-		</div>
-	</div>
-	<script>
-		const basePath = '{{.BasePath}}';
-		const i18n = {
-			'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin' },
-			'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员' },
-			'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員' }
-		};
-		function getLang() { return localStorage.getItem('lang') || 'en'; }
-		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
-		function changeLang() { setLang(document.getElementById('langSelect').value); }
-		function applyLang() {
-			const lang = getLang();
-			document.getElementById('langSelect').value = lang;
-			const t = i18n[lang] || i18n['en'];
-			document.getElementById('welcome').innerText = t.welcome;
-			document.getElementById('subtitle').innerText = t.subtitle;
-			document.getElementById('lbl-username').innerText = t.username;
-			document.getElementById('lbl-role').innerText = t.role;
-			document.getElementById('lbl-status').innerText = t.status;
-			document.getElementById('info-status').innerText = t.active;
-			document.getElementById('btn-logout').innerText = t.logout;
-			document.getElementById('link-home').innerText = t.home;
-			// Update role display
-			const role = getActiveStorage().getItem('userRole') || 'user';
-			document.getElementById('info-role').innerText = role === 'admin' ? t.admin : t.user;
-		}
-		function getActiveStorage() {
-			if (localStorage.getItem('accessToken')) return localStorage;
-			if (sessionStorage.getItem('accessToken')) return sessionStorage;
-			return localStorage;
-		}
-		function checkAuth() {
-			const storage = getActiveStorage();
-			if (!storage.getItem('accessToken')) {
-				window.location.href = basePath + '/app/login';
-			}
-		}
-		function logout() {
-			localStorage.removeItem('accessToken');
-			localStorage.removeItem('refreshToken');
-			localStorage.removeItem('userRole');
-			localStorage.removeItem('username');
-			localStorage.removeItem('rememberMe');
-			sessionStorage.removeItem('accessToken');
-			sessionStorage.removeItem('refreshToken');
-			sessionStorage.removeItem('userRole');
-			sessionStorage.removeItem('username');
-			sessionStorage.removeItem('rememberMe');
-			window.location.href = basePath + '/app/login';
-		}
-		function init() {
-			checkAuth();
-			applyLang();
-			const storage = getActiveStorage();
-			const username = storage.getItem('username') || 'User';
-			document.getElementById('username').innerText = username;
-			document.getElementById('info-username').innerText = username;
-		}
-		init();
-	</script>
+<div class="header">
+<h1>🐱 NekoLc</h1>
+<div class="user">
+<div class="lang-switch">
+<select id="langSelect" onchange="changeLang()">
+<option value="en">English</option>
+<option value="zh-hans">简体中文</option>
+<option value="zh-hant">繁體中文</option>
+</select>
+</div>
+<span id="username">User</span>
+<button onclick="logout()" id="btn-logout">Logout</button>
+</div>
+</div>
+<div class="container">
+<div class="card maintenance hidden" id="maintenance-card">
+<h2 id="maintenance-title">🔧 Maintenance</h2>
+<div id="maintenance-message"></div>
+</div>
+<div class="card">
+<div class="welcome" id="welcome">Welcome!</div>
+<div class="subtitle" id="subtitle">Here's your account overview</div>
+<div class="info-grid">
+<div class="info-item">
+<div class="info-label" id="lbl-username">Username</div>
+<div class="info-value" id="info-username">-</div>
+</div>
+<div class="info-item">
+<div class="info-label" id="lbl-email">Email</div>
+<div class="info-value" id="info-email">-</div>
+</div>
+<div class="info-item">
+<div class="info-label" id="lbl-role">Role</div>
+<div class="info-value" id="info-role">-</div>
+</div>
+<div class="info-item">
+<div class="info-label" id="lbl-status">Status</div>
+<div class="info-value"><span class="badge badge-ok" id="info-status">Active</span></div>
+</div>
+</div>
+<div class="actions">
+<button class="btn-primary" onclick="openModal('pw')" id="btn-change-password">Change Password</button>
+<button class="btn-secondary" onclick="openModal('email')" id="btn-change-email">Change Email</button>
+<button class="btn-secondary hidden" onclick="sendVerification()" id="btn-verify-email">Verify Email</button>
+<a href="{{.BasePath}}/app" class="btn-secondary" id="link-home">Home</a>
+</div>
+<div id="account-message" style="margin-top:12px;min-height:18px;"></div>
+</div>
+<div class="card hidden" id="home-content-card">
+<h2 id="home-content-title">📌 Announcements</h2>
+<div class="markdown-body" id="home-content-body"></div>
+</div>
+<div class="card hidden" id="news-card">
+<h2 id="news-title">📰 News</h2>
+<div class="news-list" id="news-list"></div>
+</div>
+</div>
+
+<div class="modal-overlay" id="modal-pw">
+<div class="modal">
+<h2 id="pw-title">Change Password</h2>
+<label id="pw-lbl-current">Current Password</label>
+<input type="password" id="pw-current" autocomplete="current-password" />
+<label id="pw-lbl-new">New Password</label>
+<input type="password" id="pw-new" autocomplete="new-password" />
+<div class="error" id="pw-error"></div>
+<div class="success" id="pw-success"></div>
+<div class="modal-actions">
+<button class="btn-primary" onclick="submitChangePassword()" id="pw-submit">Save</button>
+<button class="btn-secondary" onclick="closeModal('pw')" id="pw-cancel">Cancel</button>
+</div>
+</div>
+</div>
+
+<div class="modal-overlay" id="modal-email">
+<div class="modal">
+<h2 id="em-title">Change Email</h2>
+<label id="em-lbl-email">New Email</label>
+<input type="email" id="em-email" autocomplete="email" />
+<label id="em-lbl-password">Current Password</label>
+<input type="password" id="em-password" autocomplete="current-password" />
+<div class="error" id="em-error"></div>
+<div class="success" id="em-success"></div>
+<div class="modal-actions">
+<button class="btn-primary" onclick="submitChangeEmail()" id="em-submit">Save</button>
+<button class="btn-secondary" onclick="closeModal('email')" id="em-cancel">Cancel</button>
+</div>
+</div>
+</div>
+
+<script>
+const basePath = '{{.BasePath}}';
+const i18n = {
+'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed' },
+'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败' },
+'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗' }
+};
+let currentUser = null;
+function getLang() { return localStorage.getItem('lang') || 'en'; }
+function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+function changeLang() { setLang(document.getElementById('langSelect').value); }
+function t() { return i18n[getLang()] || i18n['en']; }
+function escapeHtml(str) {
+if (!str) return '';
+return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+function applyLang() {
+const lang = getLang();
+document.getElementById('langSelect').value = lang;
+const tt = t();
+document.getElementById('welcome').innerText = tt.welcome;
+document.getElementById('subtitle').innerText = tt.subtitle;
+document.getElementById('lbl-username').innerText = tt.username;
+document.getElementById('lbl-email').innerText = tt.email;
+document.getElementById('lbl-role').innerText = tt.role;
+document.getElementById('lbl-status').innerText = tt.status;
+document.getElementById('btn-logout').innerText = tt.logout;
+document.getElementById('link-home').innerText = tt.home;
+document.getElementById('btn-change-password').innerText = tt.changePassword;
+document.getElementById('btn-change-email').innerText = tt.changeEmail;
+document.getElementById('btn-verify-email').innerText = tt.verifyEmail;
+document.getElementById('news-title').innerText = '📰 ' + tt.news;
+document.getElementById('home-content-title').innerText = '📌 ' + tt.announcements;
+document.getElementById('maintenance-title').innerText = '🔧 ' + tt.maintenance;
+document.getElementById('pw-title').innerText = tt.changePassword;
+document.getElementById('pw-lbl-current').innerText = tt.current;
+document.getElementById('pw-lbl-new').innerText = tt.newPassword;
+document.getElementById('pw-submit').innerText = tt.save;
+document.getElementById('pw-cancel').innerText = tt.cancel;
+document.getElementById('em-title').innerText = tt.changeEmail;
+document.getElementById('em-lbl-email').innerText = tt.newEmail;
+document.getElementById('em-lbl-password').innerText = tt.current;
+document.getElementById('em-submit').innerText = tt.save;
+document.getElementById('em-cancel').innerText = tt.cancel;
+renderAccount();
+}
+function getActiveStorage() {
+if (localStorage.getItem('accessToken')) return localStorage;
+if (sessionStorage.getItem('accessToken')) return sessionStorage;
+return localStorage;
+}
+function getToken() { return getActiveStorage().getItem('accessToken'); }
+function checkAuth() {
+if (!getToken()) { window.location.href = basePath + '/app/login'; }
+}
+function logout() {
+['accessToken','refreshToken','userRole','username','rememberMe'].forEach(k => { localStorage.removeItem(k); sessionStorage.removeItem(k); });
+window.location.href = basePath + '/app/login';
+}
+async function apiGet(path) {
+return fetch(basePath + path, { headers: { 'Authorization': 'Bearer ' + getToken() } });
+}
+async function apiPost(path, body) {
+return fetch(basePath + path, { method: 'POST', headers: { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+function renderAccount() {
+const tt = t();
+if (!currentUser) return;
+document.getElementById('username').innerText = currentUser.username || tt.user;
+document.getElementById('info-username').innerText = currentUser.username || '-';
+document.getElementById('info-email').innerText = currentUser.email || tt.noEmail;
+document.getElementById('info-role').innerText = (currentUser.role === 'admin') ? tt.admin : tt.user;
+const statusEl = document.getElementById('info-status');
+if (currentUser.email) {
+if (currentUser.emailVerified) { statusEl.className = 'badge badge-ok'; statusEl.innerText = tt.verified; document.getElementById('btn-verify-email').classList.add('hidden'); }
+else { statusEl.className = 'badge badge-warn'; statusEl.innerText = tt.unverified; document.getElementById('btn-verify-email').classList.remove('hidden'); }
+} else {
+statusEl.className = 'badge badge-ok'; statusEl.innerText = tt.active; document.getElementById('btn-verify-email').classList.add('hidden');
+}
+}
+async function loadAccount() {
+const res = await apiGet('/app/api/me');
+if (res.status === 401 || res.status === 403) { logout(); return; }
+if (!res.ok) return;
+currentUser = await res.json();
+renderAccount();
+}
+async function loadHome() {
+const res = await apiGet('/app/api/home-content');
+if (!res.ok) return;
+const data = await res.json();
+if (data.contentHtml && data.contentHtml.trim()) {
+document.getElementById('home-content-body').innerHTML = data.contentHtml;
+document.getElementById('home-content-card').classList.remove('hidden');
+}
+if (data.maintenance && data.maintenance.active) {
+document.getElementById('maintenance-message').innerText = data.maintenance.message || data.maintenance.status || '';
+document.getElementById('maintenance-card').classList.remove('hidden');
+}
+const news = data.news || [];
+if (news.length) {
+const list = document.getElementById('news-list');
+list.innerHTML = '';
+for (const item of news) {
+const div = document.createElement('div');
+div.className = 'news-entry';
+let html = '<h3>' + escapeHtml(item.title || '') + '</h3>';
+if (item.publishTime) html += '<div class="meta">' + escapeHtml(item.publishTime) + '</div>';
+if (item.summary) html += '<div>' + escapeHtml(item.summary) + '</div>';
+if (item.link) html += '<div><a href="' + encodeURI(item.link) + '" target="_blank" rel="noopener noreferrer">&#8594;</a></div>';
+div.innerHTML = html;
+list.appendChild(div);
+}
+document.getElementById('news-card').classList.remove('hidden');
+}
+}
+function openModal(name) { document.getElementById('modal-' + name).classList.add('show'); }
+function closeModal(name) { document.getElementById('modal-' + name).classList.remove('show'); }
+async function submitChangePassword() {
+const tt = t();
+document.getElementById('pw-error').innerText = '';
+document.getElementById('pw-success').innerText = '';
+const res = await apiPost('/app/api/change-password', {
+currentPassword: document.getElementById('pw-current').value,
+newPassword: document.getElementById('pw-new').value
+});
+if (!res.ok) {
+const data = await res.json().catch(()=>({}));
+document.getElementById('pw-error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || tt.failed;
+return;
+}
+document.getElementById('pw-success').innerText = tt.pwChanged;
+setTimeout(() => closeModal('pw'), 1200);
+}
+async function submitChangeEmail() {
+const tt = t();
+document.getElementById('em-error').innerText = '';
+document.getElementById('em-success').innerText = '';
+const res = await apiPost('/app/api/change-email', {
+email: document.getElementById('em-email').value.trim(),
+currentPassword: document.getElementById('em-password').value
+});
+if (!res.ok) {
+const data = await res.json().catch(()=>({}));
+document.getElementById('em-error').innerText = (data.errors && data.errors[0] && data.errors[0].errorMessage) || tt.failed;
+return;
+}
+document.getElementById('em-success').innerText = tt.emailChanged;
+await loadAccount();
+setTimeout(() => closeModal('email'), 1200);
+}
+async function sendVerification() {
+const tt = t();
+const res = await apiPost('/app/api/send-verification', {});
+const msg = document.getElementById('account-message');
+msg.style.color = res.ok ? '#34d399' : '#f87171';
+msg.innerText = res.ok ? tt.verifySent : tt.failed;
+}
+function init() {
+checkAuth();
+applyLang();
+const storage = getActiveStorage();
+currentUser = { username: storage.getItem('username') || 'User', role: storage.getItem('userRole') || 'user', email: '', emailVerified: false };
+renderAccount();
+loadAccount();
+loadHome();
+}
+init();
+</script>
 </body>
 </html>`))
 

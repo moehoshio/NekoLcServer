@@ -1405,6 +1405,14 @@ func (s *Server) handleServeFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Defence-in-depth barrier: ensure the resolved path is confined to the
+	// assets directory before any filesystem access (also recognised by static
+	// analysis as a path-traversal sanitizer).
+	absBase, err := filepath.Abs(s.updateAssetsDir)
+	if err != nil || (resolved != absBase && !strings.HasPrefix(resolved, absBase+string(os.PathSeparator))) {
+		http.NotFound(w, r)
+		return
+	}
 	info, err := os.Stat(resolved)
 	if err != nil || info.IsDir() {
 		http.NotFound(w, r)
@@ -1454,6 +1462,14 @@ func (s *Server) handleAdminUploadFile(w http.ResponseWriter, r *http.Request) {
 	resolved, err := resolveSafePath(s.updateAssetsDir, rel)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	// Defence-in-depth barrier: confine the resolved path to the assets directory
+	// before any filesystem access (also recognised by static analysis as a
+	// path-traversal sanitizer).
+	absBase, err := filepath.Abs(s.updateAssetsDir)
+	if err != nil || (resolved != absBase && !strings.HasPrefix(resolved, absBase+string(os.PathSeparator))) {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid file path")
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
@@ -1517,6 +1533,13 @@ func (s *Server) handleAdminBrowseDir(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
 			return
 		}
+	}
+	// Defence-in-depth barrier: confine the resolved path to the assets directory
+	// before any filesystem access (also recognised by static analysis as a
+	// path-traversal sanitizer).
+	if resolved != absBase && !strings.HasPrefix(resolved, absBase+string(os.PathSeparator)) {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid path")
+		return
 	}
 	info, err := os.Stat(resolved)
 	if err != nil || !info.IsDir() {

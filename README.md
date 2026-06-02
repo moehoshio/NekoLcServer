@@ -92,6 +92,7 @@ Access the visual admin dashboard at `http://localhost:8080/app/admin`. Features
 - **Updates**: Configure update packages for each platform and architecture. Upload files (hosted by the server with an auto-generated download URL), browse and scan server directories visually, search and sort items
 - **News**: Create and manage multiple news items with search and sorting
 - **Feedback**: View user feedback logs with search, sorting, deletion, and collapsible long entries
+- **Email & Home**: Configure SMTP (used for password recovery and email verification), account policy (`requireEmail`, `verifyEmail`), and the Markdown home-page content shown on the user dashboard. Includes a "send test email" action.
 
 Uploaded update assets are served as static files at `/files/<relative-path>` (resolved within the configured update assets directory; path traversal is rejected).
 
@@ -123,6 +124,35 @@ The following admin API endpoints are available for configuration management (re
 - `POST /v0/api/admin/uploadFile` - Upload a file (multipart `file`, optional `subdir`); stored under the update assets directory and served by this server. The response includes an absolute download `url` generated from the current request URL (scheme/host/base path)
 - `GET /v0/api/admin/browseDir` - Browse sub-directories/files under the update assets directory (for the visual directory picker; optional `path` query)
 - `DELETE /v0/api/admin/feedbackLogs/{id}` - Delete a single feedback log entry
+- `GET /v0/api/admin/account` - Get account policy (`requireEmail`, `verifyEmail`)
+- `PUT /v0/api/admin/account` - Update account policy
+- `GET /v0/api/admin/smtp` - Get SMTP settings (password redacted)
+- `PUT /v0/api/admin/smtp` - Update SMTP settings (a blank/`********` password preserves the stored one)
+- `POST /v0/api/admin/smtp/test` - Send a test email to a recipient
+- `GET /v0/api/admin/homeContent` - Get the Markdown home-page content
+- `PUT /v0/api/admin/homeContent` - Update the Markdown home-page content
+
+## Account Operations
+
+When authentication is enabled, the NekoLc web UI exposes account self-service endpoints under `/app/api`:
+
+- `GET /app/api/me` - Authenticated account info (username, email, verification status, role)
+- `GET /app/api/home-content` - Public home content (rendered Markdown HTML), current maintenance notice and recent news
+- `POST /app/api/change-password` - Change password (requires current password)
+- `POST /app/api/change-email` - Change email (requires current password; re-sends verification when `verifyEmail` is on)
+- `POST /app/api/forgot-password` - Request a password reset email (always responds 200 to avoid leaking account existence)
+- `POST /app/api/reset-password` - Reset a password with a single-use, time-limited token
+- `POST /app/api/send-verification` - Send an email-verification link to the authenticated user
+- `GET|POST /app/api/verify-email` - Verify an email address using a single-use token
+
+Registration (`POST /app/register`) accepts an optional `email` in `registerRequest`. When `account.requireEmail` is enabled, an email is mandatory; when `account.verifyEmail` is enabled, a verification email is sent on registration. Email addresses are unique per account when provided.
+
+### Email (SMTP) configuration
+
+SMTP settings can be set in `config.json` (the `smtp` section) and overridden at runtime from the admin dashboard (stored in the database, hot-reloaded). When SMTP is disabled or unconfigured, the server runs normally and email-dependent flows degrade gracefully (tokens are still issued but no email is delivered). `tlsMode` accepts `starttls` (default), `tls` (implicit TLS) or `none`. `baseUrl` is the public base URL used to build links in emails.
+
+The home-page content is authored in Markdown and rendered server-side with a dependency-free, XSS-safe renderer (all HTML is escaped; only a safe Markdown subset and a URL-scheme allowlist are honored).
+
 
 ## Authentication (JWT)
 

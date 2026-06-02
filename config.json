@@ -34,5 +34,20 @@
   },
   "debug": {
     "enabled": false
+  },
+  "account": {
+    "requireEmail": false,
+    "verifyEmail": false
+  },
+  "smtp": {
+    "enabled": false,
+    "host": "",
+    "port": 587,
+    "username": "",
+    "password": "",
+    "from": "",
+    "fromName": "NekoLc",
+    "tlsMode": "starttls",
+    "baseUrl": ""
   }
 }

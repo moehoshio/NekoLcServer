@@ -1640,13 +1640,13 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							<label for="scan-baseurl">Base URL</label>
 							<div style="display:flex;gap:8px;">
 								<input type="text" id="scan-baseurl" placeholder="https://example.com/updates/" style="flex:1;" />
-								<button type="button" class="btn btn-secondary" onclick="saveBaseUrlPreset()" title="Save current Base URL">💾 Save</button>
+								<button type="button" class="btn btn-secondary" onclick="saveBaseUrlPreset()" title="Save current Base URL" aria-label="Save current Base URL">💾 Save</button>
 							</div>
 							<div style="display:flex;gap:8px;margin-top:8px;">
 								<select id="baseurl-presets" onchange="applyBaseUrlPreset()" style="flex:1;">
 									<option value="">— Saved Base URLs —</option>
 								</select>
-								<button type="button" class="btn btn-secondary" onclick="deleteBaseUrlPreset()" title="Delete selected Base URL">🗑️</button>
+								<button type="button" class="btn btn-secondary" onclick="deleteBaseUrlPreset()" title="Delete selected Base URL" aria-label="Delete selected Base URL">🗑️</button>
 							</div>
 						</div>
 					</div>
@@ -2880,8 +2880,9 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			html += '</div>';
 			container.innerHTML = html;
 			// Default: add the uploaded file's URL root to the saved Base URLs.
-			if (data.url) { addBaseUrlPreset(baseUrlRootOf(data.url)); }
-			showMessage('File uploaded successfully');
+			let savedRoot = false;
+			if (data.url) { savedRoot = addBaseUrlPreset(baseUrlRootOf(data.url)); }
+			showMessage(savedRoot ? 'File uploaded; URL root added to saved Base URLs' : 'File uploaded successfully');
 		}
 
 		function copyUploadUrl() {

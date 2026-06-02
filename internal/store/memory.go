@@ -177,6 +177,18 @@ func (m *memoryStore) SaveFeedback(ctx context.Context, entry FeedbackLog) error
 	return nil
 }
 
+func (m *memoryStore) DeleteFeedback(ctx context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.logs {
+		if m.logs[i].ID == id {
+			m.logs = append(m.logs[:i], m.logs[i+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
 func (m *memoryStore) ListFeedback(ctx context.Context, limit, offset int) ([]FeedbackLog, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

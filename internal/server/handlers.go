@@ -3,14 +3,17 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1338,6 +1341,259 @@ func (s *Server) handleAdminGenerateUpdates(w http.ResponseWriter, r *http.Reque
 		Meta:  s.meta(),
 	}
 	s.writeJSON(w, http.StatusOK, resp)
+}
+
+// maxUploadBytes caps the size of a single uploaded update asset (512 MiB).
+const maxUploadBytes = 512 << 20
+
+// requestBaseURL derives the externally visible base URL (scheme://host + basePath)
+// from the incoming request, honouring reverse-proxy headers when present. It is used
+// to build absolute download URLs for files served by this server.
+func (s *Server) requestBaseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); proto != "" {
+		// X-Forwarded-Proto may contain a comma-separated list; use the first value.
+		if idx := strings.IndexByte(proto, ','); idx >= 0 {
+			proto = proto[:idx]
+		}
+		scheme = strings.TrimSpace(proto)
+	}
+	host := r.Host
+	if fh := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fh != "" {
+		if idx := strings.IndexByte(fh, ','); idx >= 0 {
+			fh = fh[:idx]
+		}
+		host = strings.TrimSpace(fh)
+	}
+	return scheme + "://" + host + s.basePath
+}
+
+// escapePathSegments URL-escapes each segment of a forward-slash separated path.
+func escapePathSegments(p string) string {
+	segments := strings.Split(p, "/")
+	for i, seg := range segments {
+		segments[i] = url.PathEscape(seg)
+	}
+	return strings.Join(segments, "/")
+}
+
+// fileDownloadURL builds the absolute URL under which a file stored at the given
+// absolute filesystem path (within the update assets directory) is served.
+func (s *Server) fileDownloadURL(r *http.Request, resolved string) (string, string, error) {
+	absBase, err := filepath.Abs(s.updateAssetsDir)
+	if err != nil {
+		return "", "", err
+	}
+	rel, err := filepath.Rel(absBase, resolved)
+	if err != nil {
+		return "", "", err
+	}
+	relSlash := filepath.ToSlash(rel)
+	return s.requestBaseURL(r) + "/files/" + escapePathSegments(relSlash), relSlash, nil
+}
+
+// handleServeFile serves uploaded update assets from the update assets directory.
+func (s *Server) handleServeFile(w http.ResponseWriter, r *http.Request) {
+	if s.updateAssetsDir == "" {
+		http.NotFound(w, r)
+		return
+	}
+	rel := chi.URLParam(r, "*")
+	if rel == "" {
+		http.NotFound(w, r)
+		return
+	}
+	resolved, err := resolveSafePath(s.updateAssetsDir, rel)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || info.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, resolved)
+}
+
+// handleAdminUploadFile accepts a multipart file upload, stores it under the update
+// assets directory, and returns an absolute download URL derived from the request URL.
+func (s *Server) handleAdminUploadFile(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.updateAssetsDir == "" {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", "update assets directory is not configured")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid upload: "+err.Error())
+		return
+	}
+	defer func() {
+		if r.MultipartForm != nil {
+			r.MultipartForm.RemoveAll()
+		}
+	}()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "file is required")
+		return
+	}
+	defer file.Close()
+
+	name := filepath.Base(filepath.FromSlash(header.Filename))
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid file name")
+		return
+	}
+	rel := name
+	if subdir := strings.TrimSpace(r.FormValue("subdir")); subdir != "" {
+		rel = filepath.Join(subdir, name)
+	}
+	resolved, err := resolveSafePath(s.updateAssetsDir, rel)
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	out, err := os.Create(resolved)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	hasher := sha256.New()
+	size, err := io.Copy(io.MultiWriter(out, hasher), file)
+	closeErr := out.Close()
+	if err != nil {
+		os.Remove(resolved)
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "failed to store file: "+err.Error())
+		return
+	}
+	if closeErr != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", closeErr.Error())
+		return
+	}
+	downloadURL, relSlash, err := s.fileDownloadURL(r, resolved)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	resp := AdminUploadResponse{
+		URL:           downloadURL,
+		FileName:      name,
+		RelativePath:  relSlash,
+		Size:          size,
+		Checksum:      hex.EncodeToString(hasher.Sum(nil)),
+		HashAlgorithm: "sha256",
+		Meta:          s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAdminBrowseDir lists the contents of a directory under the update assets
+// directory so the admin UI can offer a visual directory picker for scanning.
+func (s *Server) handleAdminBrowseDir(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.updateAssetsDir == "" {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", "update assets directory is not configured")
+		return
+	}
+	absBase, err := filepath.Abs(s.updateAssetsDir)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	rel := strings.TrimSpace(r.URL.Query().Get("path"))
+	resolved := absBase
+	if rel != "" {
+		resolved, err = resolveSafePath(s.updateAssetsDir, rel)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+			return
+		}
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.IsDir() {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "path is not a directory")
+		return
+	}
+	dirents, err := os.ReadDir(resolved)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	entries := make([]AdminBrowseEntry, 0, len(dirents))
+	for _, d := range dirents {
+		childRel, err := filepath.Rel(absBase, filepath.Join(resolved, d.Name()))
+		if err != nil {
+			continue
+		}
+		entry := AdminBrowseEntry{
+			Name:  d.Name(),
+			Path:  filepath.ToSlash(childRel),
+			IsDir: d.IsDir(),
+		}
+		if !d.IsDir() {
+			if fi, err := d.Info(); err == nil {
+				entry.Size = fi.Size()
+			}
+		}
+		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir != entries[j].IsDir {
+			return entries[i].IsDir
+		}
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
+	parent := ""
+	if resolved != absBase {
+		if p, err := filepath.Rel(absBase, filepath.Dir(resolved)); err == nil && p != "." {
+			parent = filepath.ToSlash(p)
+		}
+	}
+	resp := AdminBrowseResponse{
+		Path:    filepath.ToSlash(strings.TrimPrefix(rel, "/")),
+		Parent:  parent,
+		Entries: entries,
+		Meta:    s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAdminDeleteFeedback deletes a single feedback log entry by id.
+func (s *Server) handleAdminDeleteFeedback(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	if s.store == nil {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "feedback storage not configured")
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid feedback id")
+		return
+	}
+	if err := s.store.DeleteFeedback(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.writeError(w, http.StatusNotFound, s.appConfig.Language.Default, "NotFound", "feedback not found")
+			return
+		}
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // AdminUserListResponse is the response for listing users.

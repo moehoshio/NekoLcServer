@@ -138,6 +138,7 @@ type Store interface {
 	ListFeedback(ctx context.Context, limit, offset int) ([]FeedbackLog, error)
 	ListFeedbackFiltered(ctx context.Context, filter FeedbackFilter, limit, offset int) ([]FeedbackLog, error)
 	GetFeedbackFilterOptions(ctx context.Context) (*FeedbackFilterOptions, error)
+	DeleteFeedback(ctx context.Context, id int64) error
 
 	// Configuration storage
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)

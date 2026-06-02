@@ -155,6 +155,8 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Put("/news", s.handleAdminUpdateNews)
 				adminRouter.Post("/scanPath", s.handleAdminScanPath)
 				adminRouter.Post("/generateUpdates", s.handleAdminGenerateUpdates)
+				adminRouter.Post("/uploadFile", s.handleAdminUploadFile)
+				adminRouter.Get("/browseDir", s.handleAdminBrowseDir)
 				// User management
 				adminRouter.Get("/users", s.handleAdminListUsers)
 				adminRouter.Post("/users", s.handleAdminCreateUser)
@@ -164,6 +166,7 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Get("/stats", s.handleAdminGetStats)
 				// Feedback filtering
 				adminRouter.Get("/feedbackLogs", s.handleFeedbackLogs)
+				adminRouter.Delete("/feedbackLogs/{id}", s.handleAdminDeleteFeedback)
 				adminRouter.Get("/feedbackFilterOptions", s.handleFeedbackFilterOptions)
 			})
 		})
@@ -176,6 +179,9 @@ func (s *Server) buildRouter() chi.Router {
 		router.Get("/app", s.handleAppHome)
 		router.Get("/app/", s.handleAppHome)
 		router.Get("/app/login", s.handleAppLogin)
+
+		// Static download endpoint for uploaded update assets.
+		router.Get("/files/*", s.handleServeFile)
 		router.Get("/app/register", s.handleAppRegister)
 		router.Post("/app/register", s.handleAppRegisterSubmit)
 		router.Get("/app/feedback", s.handleAppFeedback)

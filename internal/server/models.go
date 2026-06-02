@@ -338,3 +338,30 @@ type AdminScanPathResponse struct {
 	Count int                  `json:"count"`
 	Meta  Meta                 `json:"meta"`
 }
+
+// AdminUploadResponse describes a file that was uploaded and is now served by the server.
+type AdminUploadResponse struct {
+	URL           string `json:"url"`
+	FileName      string `json:"fileName"`
+	RelativePath  string `json:"relativePath"`
+	Size          int64  `json:"size"`
+	Checksum      string `json:"checksum"`
+	HashAlgorithm string `json:"hashAlgorithm"`
+	Meta          Meta   `json:"meta"`
+}
+
+// AdminBrowseEntry describes a single entry returned by the directory browser.
+type AdminBrowseEntry struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	IsDir bool   `json:"isDir"`
+	Size  int64  `json:"size,omitempty"`
+}
+
+// AdminBrowseResponse is the response for browsing the update assets directory.
+type AdminBrowseResponse struct {
+	Path    string             `json:"path"`
+	Parent  string             `json:"parent"`
+	Entries []AdminBrowseEntry `json:"entries"`
+	Meta    Meta               `json:"meta"`
+}

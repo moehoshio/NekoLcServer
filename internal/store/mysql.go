@@ -600,6 +600,19 @@ func (s *MySQLStore) GetAPIStats(ctx context.Context, days int) (*APIStats, erro
 	return stats, nil
 }
 
+func (s *MySQLStore) DeleteFeedback(ctx context.Context, id int64) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	res, err := s.db.ExecContext(ctx, `DELETE FROM feedback_logs WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *MySQLStore) CountFeedback(ctx context.Context) (int64, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()

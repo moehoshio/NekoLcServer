@@ -2078,7 +2078,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				addBaseUrl: 'Add Base URL',
 				add: 'Add',
 				noSavedBaseUrls: 'No saved Base URLs yet.',
-				settingsSaved: 'Settings saved'
+				settingsSaved: 'Settings saved',
+				enterBaseUrl: 'Enter a Base URL to add',
+				baseUrlAdded: 'Base URL added',
+				baseUrlRemoved: 'Base URL removed'
 			},
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
@@ -2186,7 +2189,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				addBaseUrl: '添加基础 URL',
 				add: '添加',
 				noSavedBaseUrls: '尚无已保存的基础 URL。',
-				settingsSaved: '设置已保存'
+				settingsSaved: '设置已保存',
+				enterBaseUrl: '请输入要添加的基础 URL',
+				baseUrlAdded: '已添加基础 URL',
+				baseUrlRemoved: '已移除基础 URL'
 			},
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
@@ -2294,7 +2300,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				addBaseUrl: '新增基礎 URL',
 				add: '新增',
 				noSavedBaseUrls: '尚無已儲存的基礎 URL。',
-				settingsSaved: '設定已儲存'
+				settingsSaved: '設定已儲存',
+				enterBaseUrl: '請輸入要新增的基礎 URL',
+				baseUrlAdded: '已新增基礎 URL',
+				baseUrlRemoved: '已移除基礎 URL'
 			}
 		};
 		
@@ -3153,11 +3162,11 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		function addSettingsPreset() {
 			const input = document.getElementById('settings-new-baseurl');
 			const url = (input.value || '').trim();
-			if (!url) { showMessage(t('addBaseUrl'), true); return; }
+			if (!url) { showMessage(t('enterBaseUrl'), true); return; }
 			if (addBaseUrlPreset(url)) {
 				input.value = '';
 				renderSettingsPresets();
-				showMessage(t('save'));
+				showMessage(t('baseUrlAdded'));
 			} else {
 				showMessage('Base URL already saved', true);
 			}
@@ -3169,7 +3178,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			saveBaseUrlPresets(presets);
 			renderBaseUrlPresets();
 			renderSettingsPresets();
-			showMessage(t('remove'));
+			showMessage(t('baseUrlRemoved'));
 		}
 
 		// Directory browser for visual scan-path selection

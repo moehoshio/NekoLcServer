@@ -204,6 +204,14 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Delete("/users/{id}", s.handleAdminDeleteUser)
 				// Statistics
 				adminRouter.Get("/stats", s.handleAdminGetStats)
+				// Account, SMTP and home content settings
+				adminRouter.Get("/smtp", s.handleAdminGetSMTP)
+				adminRouter.Put("/smtp", s.handleAdminUpdateSMTP)
+				adminRouter.Post("/smtp/test", s.handleAdminTestEmail)
+				adminRouter.Get("/account", s.handleAdminGetAccount)
+				adminRouter.Put("/account", s.handleAdminUpdateAccount)
+				adminRouter.Get("/homeContent", s.handleAdminGetHomeContent)
+				adminRouter.Put("/homeContent", s.handleAdminUpdateHomeContent)
 				// Feedback filtering
 				adminRouter.Get("/feedbackLogs", s.handleFeedbackLogs)
 				adminRouter.Delete("/feedbackLogs/{id}", s.handleAdminDeleteFeedback)
@@ -1569,6 +1577,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<button onclick="showSection('news')" id="nav-news">📰 News</button>
 			<button onclick="showSection('users')" id="nav-users">👥 Users</button>
 			<button onclick="showSection('feedback')" id="nav-feedback">💬 Feedback</button>
+			<button onclick="showSection('email')" id="nav-email">✉️ Email &amp; Home</button>
 			<button onclick="showSection('settings')" id="nav-settings">⚙️ Settings</button>
 		</div>
 		<div class="main">
@@ -2048,6 +2057,97 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			</div>
 
 			<!-- Settings Section -->
+			<!-- Email & Home Section -->
+			<div id="section-email" class="section hidden">
+				<div class="card">
+					<h2 id="email-smtp-title">✉️ SMTP Settings</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-smtp-desc">Configure the outbound email server used for password recovery and email verification.</p>
+					<div class="form-group">
+						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="smtp-enabled" /> <span id="lbl-smtp-enabled">Enable email sending</span></label>
+					</div>
+					<div class="form-row">
+						<div class="form-group" style="flex:2;">
+							<label for="smtp-host" id="lbl-smtp-host">Host</label>
+							<input type="text" id="smtp-host" placeholder="smtp.example.com" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-port" id="lbl-smtp-port">Port</label>
+							<input type="number" id="smtp-port" placeholder="587" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-tls" id="lbl-smtp-tls">TLS Mode</label>
+							<select id="smtp-tls">
+								<option value="starttls">STARTTLS</option>
+								<option value="tls">Implicit TLS</option>
+								<option value="none">None</option>
+							</select>
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="smtp-username" id="lbl-smtp-username">Username</label>
+							<input type="text" id="smtp-username" autocomplete="off" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-password" id="lbl-smtp-password">Password</label>
+							<input type="password" id="smtp-password" autocomplete="new-password" />
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="smtp-from" id="lbl-smtp-from">From Address</label>
+							<input type="text" id="smtp-from" placeholder="noreply@example.com" />
+						</div>
+						<div class="form-group">
+							<label for="smtp-fromname" id="lbl-smtp-fromname">From Name</label>
+							<input type="text" id="smtp-fromname" placeholder="NekoLc" />
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="smtp-baseurl" id="lbl-smtp-baseurl">Base URL</label>
+						<input type="text" id="smtp-baseurl" placeholder="https://example.com" />
+						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="smtp-baseurl-help">Public base URL used to build links in emails.</p>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveSMTP()" id="btn-save-smtp">Save SMTP</button>
+						<button class="btn btn-secondary" onclick="loadEmailSettings()" id="btn-reload-smtp">Reload</button>
+					</div>
+					<h3 style="margin-top: 24px; margin-bottom: 12px; font-size: 16px;" id="email-test-title">Send Test Email</h3>
+					<div class="form-row">
+						<div class="form-group" style="flex:1;">
+							<label for="smtp-test-to" id="lbl-smtp-test-to">Recipient</label>
+							<div style="display:flex;gap:8px;">
+								<input type="email" id="smtp-test-to" placeholder="you@example.com" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="sendTestEmail()" id="btn-test-email">Send</button>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="card">
+					<h2 id="email-account-title">👤 Account Policy</h2>
+					<div class="form-group">
+						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="account-require-email" /> <span id="lbl-account-require-email">Require email at registration</span></label>
+					</div>
+					<div class="form-group">
+						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="account-verify-email" /> <span id="lbl-account-verify-email">Send verification email on registration</span></label>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveAccount()" id="btn-save-account">Save Account Policy</button>
+					</div>
+				</div>
+				<div class="card">
+					<h2 id="email-home-title">🏠 Home Page Content (Markdown)</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-home-desc">This Markdown content is rendered safely and shown on the user dashboard.</p>
+					<div class="form-group">
+						<textarea id="home-content" rows="12" style="width:100%;font-family:'Cascadia Code',Consolas,monospace;padding:10px;border-radius:8px;border:1px solid #1f2937;background:#0b1220;color:#e2e8f0;box-sizing:border-box;"></textarea>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveHomeContent()" id="btn-save-home">Save Content</button>
+						<button class="btn btn-secondary" onclick="loadHomeContent()" id="btn-reload-home">Reload</button>
+					</div>
+				</div>
+			</div>
+
 			<div id="section-settings" class="section hidden">
 				<div class="card">
 					<h2 id="settings-title">⚙️ Global Settings</h2>
@@ -2130,6 +2230,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 News',
 				navUsers: '👥 Users',
 				navFeedback: '💬 Feedback',
+				navEmail: '✉️ Email & Home',
 				navSettings: '⚙️ Settings',
 				statsDesc: 'View server usage statistics and analytics.',
 				totalRequests: 'Total Requests',
@@ -2241,6 +2342,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新闻',
 				navUsers: '👥 用户',
 				navFeedback: '💬 反馈',
+				navEmail: '✉️ 邮件与首页',
 				navSettings: '⚙️ 设置',
 				statsDesc: '查看服务器使用统计和分析。',
 				totalRequests: '总请求数',
@@ -2352,6 +2454,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新聞',
 				navUsers: '👥 使用者',
 				navFeedback: '💬 意見回饋',
+				navEmail: '✉️ 郵件與首頁',
 				navSettings: '⚙️ 設定',
 				statsDesc: '檢視伺服器使用統計和分析。',
 				totalRequests: '總請求數',
@@ -2475,6 +2578,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('nav-news').innerText = t('navNews');
 			document.getElementById('nav-users').innerText = t('navUsers');
 			document.getElementById('nav-feedback').innerText = t('navFeedback');
+			document.getElementById('nav-email').innerText = t('navEmail');
 			document.getElementById('nav-settings').innerText = t('navSettings');
 			// Statistics section
 			document.getElementById('stats-title').innerText = t('statsTitle');
@@ -2606,6 +2710,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (name === 'news' && !newsData) loadNews();
 			if (name === 'users' && !usersData) loadUsers();
 			if (name === 'feedback') loadFeedback();
+			if (name === 'email') loadEmailSettings();
 			if (name === 'settings') loadSettings();
 		}
 		
@@ -2631,6 +2736,83 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 		}
 		
+		// Email & Home (SMTP / account policy / markdown home content) functions
+		async function loadEmailSettings() {
+			await loadSMTP();
+			await loadAccountPolicy();
+			await loadHomeContent();
+		}
+		async function loadSMTP() {
+			const res = await apiRequest('GET', '/v0/api/admin/smtp');
+			if (!res || !res.ok) return;
+			const data = await res.json();
+			const c = data.smtp || {};
+			document.getElementById('smtp-enabled').checked = !!c.enabled;
+			document.getElementById('smtp-host').value = c.host || '';
+			document.getElementById('smtp-port').value = c.port || '';
+			document.getElementById('smtp-tls').value = c.tlsMode || 'starttls';
+			document.getElementById('smtp-username').value = c.username || '';
+			document.getElementById('smtp-password').value = c.password || '';
+			document.getElementById('smtp-from').value = c.from || '';
+			document.getElementById('smtp-fromname').value = c.fromName || '';
+			document.getElementById('smtp-baseurl').value = c.baseUrl || '';
+		}
+		async function saveSMTP() {
+			const smtp = {
+				enabled: document.getElementById('smtp-enabled').checked,
+				host: document.getElementById('smtp-host').value.trim(),
+				port: parseInt(document.getElementById('smtp-port').value, 10) || 0,
+				tlsMode: document.getElementById('smtp-tls').value,
+				username: document.getElementById('smtp-username').value.trim(),
+				password: document.getElementById('smtp-password').value,
+				from: document.getElementById('smtp-from').value.trim(),
+				fromName: document.getElementById('smtp-fromname').value.trim(),
+				baseUrl: document.getElementById('smtp-baseurl').value.trim()
+			};
+			const res = await apiRequest('PUT', '/v0/api/admin/smtp', { smtp });
+			if (res && res.ok) { showMessage('SMTP settings saved'); loadSMTP(); }
+			else showMessage('Failed to save SMTP settings', true);
+		}
+		async function sendTestEmail() {
+			const to = document.getElementById('smtp-test-to').value.trim();
+			if (!to) { showMessage('Enter a recipient email', true); return; }
+			const res = await apiRequest('POST', '/v0/api/admin/smtp/test', { to });
+			if (res && res.ok) showMessage('Test email sent');
+			else {
+				const data = res ? await res.json().catch(()=>({})) : {};
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Failed to send test email', true);
+			}
+		}
+		async function loadAccountPolicy() {
+			const res = await apiRequest('GET', '/v0/api/admin/account');
+			if (!res || !res.ok) return;
+			const data = await res.json();
+			const c = data.account || {};
+			document.getElementById('account-require-email').checked = !!c.requireEmail;
+			document.getElementById('account-verify-email').checked = !!c.verifyEmail;
+		}
+		async function saveAccount() {
+			const account = {
+				requireEmail: document.getElementById('account-require-email').checked,
+				verifyEmail: document.getElementById('account-verify-email').checked
+			};
+			const res = await apiRequest('PUT', '/v0/api/admin/account', { account });
+			if (res && res.ok) showMessage('Account policy saved');
+			else showMessage('Failed to save account policy', true);
+		}
+		async function loadHomeContent() {
+			const res = await apiRequest('GET', '/v0/api/admin/homeContent');
+			if (!res || !res.ok) return;
+			const data = await res.json();
+			document.getElementById('home-content').value = data.content || '';
+		}
+		async function saveHomeContent() {
+			const content = document.getElementById('home-content').value;
+			const res = await apiRequest('PUT', '/v0/api/admin/homeContent', { content });
+			if (res && res.ok) showMessage('Home content saved');
+			else showMessage('Failed to save home content', true);
+		}
+
 		// Statistics functions
 		async function loadStats() {
 			const days = document.getElementById('stats-days')?.value || 7;

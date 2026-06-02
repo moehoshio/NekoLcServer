@@ -26,6 +26,7 @@ import (
 	"github.com/moehoshio/NekoLcServer/internal/auth"
 	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/localization"
+	"github.com/moehoshio/NekoLcServer/internal/mailer"
 	"github.com/moehoshio/NekoLcServer/internal/store"
 )
 
@@ -46,6 +47,10 @@ type Server struct {
 	localizer             *localization.Localizer
 	authService           *auth.Service
 	store                 store.Store
+	mailer                *mailer.Mailer
+	accountConfig         *config.AccountConfig
+	smtpConfig            *config.SMTPConfig
+	homeContent           string
 	feedbackLogPath       string
 	debug                 bool
 	basePath              string
@@ -105,9 +110,44 @@ func New(
 		dirCache:              map[string]dirCacheEntry{},
 		loginLimiter:          newRateLimiter(loginRateLimitMax, loginRateLimitWindow),
 	}
+	srv.initAccountAndSMTP()
 	srv.router = srv.buildRouter()
 	srv.startUpdateReloader()
 	return srv, nil
+}
+
+// initAccountAndSMTP loads the account, SMTP and home-content settings. These are
+// DB-backed (so they are editable from the admin UI without a restart) and fall
+// back to values provided in the app configuration file.
+func (s *Server) initAccountAndSMTP() {
+	account := s.appConfig.Account
+	smtp := s.appConfig.SMTP
+	home := ""
+	if s.store != nil {
+		ctx := context.Background()
+		if data, err := s.store.GetConfig(ctx, store.ConfigKeyAccount); err == nil {
+			var c config.AccountConfig
+			if json.Unmarshal(data, &c) == nil {
+				account = c
+			}
+		}
+		if data, err := s.store.GetConfig(ctx, store.ConfigKeySMTP); err == nil {
+			var c config.SMTPConfig
+			if json.Unmarshal(data, &c) == nil {
+				smtp = c
+			}
+		}
+		if data, err := s.store.GetConfig(ctx, store.ConfigKeyHomeContent); err == nil {
+			var c string
+			if json.Unmarshal(data, &c) == nil {
+				home = c
+			}
+		}
+	}
+	s.accountConfig = &account
+	s.smtpConfig = &smtp
+	s.homeContent = home
+	s.mailer = mailer.New(smtp)
 }
 
 // Router returns the configured HTTP handler.
@@ -431,6 +471,70 @@ func (s *Server) setNewsItems(items []config.NewsItem) {
 	s.configMu.Lock()
 	s.newsItems = items
 	s.configMu.Unlock()
+}
+
+// currentAccountConfig returns the active account policy configuration. The
+// returned pointer must be treated as read-only.
+func (s *Server) currentAccountConfig() *config.AccountConfig {
+	s.configMu.RLock()
+	cfg := s.accountConfig
+	s.configMu.RUnlock()
+	return cfg
+}
+
+func (s *Server) setAccountConfig(cfg *config.AccountConfig) {
+	s.configMu.Lock()
+	s.accountConfig = cfg
+	s.configMu.Unlock()
+}
+
+// currentSMTPConfig returns the active SMTP configuration. The returned pointer
+// must be treated as read-only.
+func (s *Server) currentSMTPConfig() *config.SMTPConfig {
+	s.configMu.RLock()
+	cfg := s.smtpConfig
+	s.configMu.RUnlock()
+	return cfg
+}
+
+func (s *Server) setSMTPConfig(cfg *config.SMTPConfig) {
+	s.configMu.Lock()
+	s.smtpConfig = cfg
+	s.mailer = mailer.New(*cfg)
+	s.configMu.Unlock()
+}
+
+// currentMailer returns the active mailer snapshot.
+func (s *Server) currentMailer() *mailer.Mailer {
+	s.configMu.RLock()
+	m := s.mailer
+	s.configMu.RUnlock()
+	return m
+}
+
+func (s *Server) currentHomeContent() string {
+	s.configMu.RLock()
+	c := s.homeContent
+	s.configMu.RUnlock()
+	return c
+}
+
+func (s *Server) setHomeContent(content string) {
+	s.configMu.Lock()
+	s.homeContent = content
+	s.configMu.Unlock()
+}
+
+// saveConfigValue marshals and persists a configuration value to the store.
+func (s *Server) saveConfigValue(key string, value interface{}) error {
+	if s.store == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return s.store.SetConfig(context.Background(), key, data)
 }
 
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (*authClaims, error) {

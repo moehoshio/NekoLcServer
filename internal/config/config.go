@@ -54,6 +54,29 @@ type AppConfig struct {
 	Update struct {
 		ConfigPath string `json:"configPath"`
 	} `json:"update"`
+	Account AccountConfig `json:"account"`
+	SMTP    SMTPConfig    `json:"smtp"`
+}
+
+// AccountConfig controls account-related registration and verification policies.
+type AccountConfig struct {
+	RequireEmail bool `json:"requireEmail"`
+	VerifyEmail  bool `json:"verifyEmail"`
+}
+
+// SMTPConfig holds outbound email (SMTP) server settings used for account flows.
+type SMTPConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	From     string `json:"from"`
+	FromName string `json:"fromName"`
+	// TLSMode is one of "none", "starttls", or "tls" (implicit TLS).
+	TLSMode string `json:"tlsMode"`
+	// BaseURL is the externally reachable base URL used to build links in emails.
+	BaseURL string `json:"baseUrl"`
 }
 
 // LanguageBundle is the strongly typed representation of languages.json.

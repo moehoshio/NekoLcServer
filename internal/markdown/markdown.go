@@ -9,6 +9,7 @@ package markdown
 import (
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -86,7 +87,7 @@ func Render(src string) string {
 			flushPara()
 			flushList()
 			content := strings.TrimSpace(trimmed[m:])
-			tag := "h" + string(rune('0'+m))
+			tag := "h" + strconv.Itoa(m)
 			out.WriteString("<" + tag + ">" + inline(html.EscapeString(content)) + "</" + tag + ">\n")
 			continue
 		}

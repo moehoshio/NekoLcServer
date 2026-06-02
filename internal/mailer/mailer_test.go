@@ -50,6 +50,18 @@ func TestBuildMessage(t *testing.T) {
 	}
 }
 
+func TestBuildMessageStripsHeaderInjection(t *testing.T) {
+	m := New(config.SMTPConfig{From: "noreply@example.com"})
+	msg := string(m.BuildMessage("victim@example.com\r\nBcc: attacker@evil.com", "Subj\r\nX-Injected: yes", "body"))
+	if strings.Contains(msg, "\r\nBcc:") || strings.Contains(msg, "\r\nX-Injected:") {
+		t.Fatalf("header injection not sanitized:\n%s", msg)
+	}
+	// The recipient/subject text should remain, minus the CRLF and injected headers.
+	if !strings.Contains(msg, "To: victim@example.comBcc: attacker@evil.com\r\n") {
+		t.Fatalf("recipient header not as expected:\n%s", msg)
+	}
+}
+
 func TestBuildMessageEncodesNonASCIISubject(t *testing.T) {
 	m := New(config.SMTPConfig{From: "noreply@example.com"})
 	msg := string(m.BuildMessage("user@example.com", "驗證您的電子郵件", "body"))

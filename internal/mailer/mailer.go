@@ -47,9 +47,9 @@ func (m *Mailer) BuildMessage(to, subject, body string) []byte {
 		fromHeader = fmt.Sprintf("%s <%s>", name, from)
 	}
 	var b strings.Builder
-	b.WriteString("From: " + fromHeader + "\r\n")
-	b.WriteString("To: " + to + "\r\n")
-	b.WriteString("Subject: " + encodeHeader(subject) + "\r\n")
+	b.WriteString("From: " + sanitizeHeader(fromHeader) + "\r\n")
+	b.WriteString("To: " + sanitizeHeader(to) + "\r\n")
+	b.WriteString("Subject: " + encodeHeader(sanitizeHeader(subject)) + "\r\n")
 	b.WriteString("Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
@@ -57,6 +57,19 @@ func (m *Mailer) BuildMessage(to, subject, body string) []byte {
 	b.WriteString("\r\n")
 	b.WriteString(body)
 	return []byte(b.String())
+}
+
+// sanitizeHeader strips CR/LF (and NUL) characters from a header value to
+// prevent SMTP header/email injection via attacker-controlled fields such as
+// the recipient address or subject.
+func sanitizeHeader(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\r', '\n', 0:
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // encodeHeader RFC 2047 encodes a header value when it contains non-ASCII bytes.

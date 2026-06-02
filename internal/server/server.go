@@ -1420,6 +1420,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<button onclick="showSection('news')" id="nav-news">📰 News</button>
 			<button onclick="showSection('users')" id="nav-users">👥 Users</button>
 			<button onclick="showSection('feedback')" id="nav-feedback">💬 Feedback</button>
+			<button onclick="showSection('settings')" id="nav-settings">⚙️ Settings</button>
 		</div>
 		<div class="main">
 			<div id="message" class="message hidden"></div>
@@ -1896,6 +1897,63 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 				</div>
 			</div>
+
+			<!-- Settings Section -->
+			<div id="section-settings" class="section hidden">
+				<div class="card">
+					<h2 id="settings-title">⚙️ Global Settings</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="settings-desc">Configure global, commonly-used options for this dashboard. These preferences are stored in your browser.</p>
+					<div class="form-group">
+						<label for="settings-default-baseurl" id="lbl-settings-default-baseurl">Default Base URL</label>
+						<input type="text" id="settings-default-baseurl" placeholder="https://example.com/updates/" />
+						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="settings-default-baseurl-help">Used to pre-fill the Base URL field on the Updates page.</p>
+					</div>
+					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;" id="settings-update-defaults-title">Default Update Options</h3>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="settings-default-platform" id="lbl-settings-default-platform">Platform</label>
+							<select id="settings-default-platform">
+								<option value="windows">Windows</option>
+								<option value="linux">Linux</option>
+								<option value="macos">macOS</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="settings-default-arch" id="lbl-settings-default-arch">Architecture</label>
+							<select id="settings-default-arch">
+								<option value="x64">x64</option>
+								<option value="arm64">ARM64</option>
+								<option value="x86">x86</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="settings-default-type" id="lbl-settings-default-type">Type</label>
+							<select id="settings-default-type">
+								<option value="core">Core</option>
+								<option value="resource">Resource</option>
+							</select>
+						</div>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveSettings()" id="btn-save-settings">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadSettings()" id="btn-reload-settings">Reload</button>
+					</div>
+				</div>
+				<div class="card">
+					<h2 id="settings-presets-title">Saved Base URLs</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="settings-presets-desc">Manage the list of Base URLs available across the dashboard.</p>
+					<div class="form-row">
+						<div class="form-group" style="flex:1;">
+							<label for="settings-new-baseurl" id="lbl-settings-new-baseurl">Add Base URL</label>
+							<div style="display:flex;gap:8px;">
+								<input type="text" id="settings-new-baseurl" placeholder="https://example.com/updates/" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="addSettingsPreset()" id="btn-add-settings-preset">Add</button>
+							</div>
+						</div>
+					</div>
+					<div id="settings-presets-list" style="margin-top: 8px;"></div>
+				</div>
+			</div>
 		</div>
 	</div>
 	
@@ -1923,7 +1981,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 News',
 				navUsers: '👥 Users',
 				navFeedback: '💬 Feedback',
-				statsTitle: '📊 Statistics Overview',
+				navSettings: '⚙️ Settings',
 				statsDesc: 'View server usage statistics and analytics.',
 				totalRequests: 'Total Requests',
 				todayRequests: "Today's Requests",
@@ -2008,9 +2066,20 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				deleteFailed: 'Failed to delete',
 				password: 'Password',
 				save: 'Save',
-				cancel: 'Cancel'
+				cancel: 'Cancel',
+				settingsTitle: '⚙️ Global Settings',
+				settingsDesc: 'Configure global, commonly-used options for this dashboard. These preferences are stored in your browser.',
+				defaultBaseUrl: 'Default Base URL',
+				defaultBaseUrlHelp: 'Used to pre-fill the Base URL field on the Updates page.',
+				updateDefaultsTitle: 'Default Update Options',
+				type: 'Type',
+				savedBaseUrlsTitle: 'Saved Base URLs',
+				savedBaseUrlsDesc: 'Manage the list of Base URLs available across the dashboard.',
+				addBaseUrl: 'Add Base URL',
+				add: 'Add',
+				noSavedBaseUrls: 'No saved Base URLs yet.',
+				settingsSaved: 'Settings saved'
 			},
-			'zh-hans': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 统计',
@@ -2020,7 +2089,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新闻',
 				navUsers: '👥 用户',
 				navFeedback: '💬 反馈',
-				statsTitle: '📊 统计概览',
+				navSettings: '⚙️ 设置',
 				statsDesc: '查看服务器使用统计和分析。',
 				totalRequests: '总请求数',
 				todayRequests: '今日请求',
@@ -2105,9 +2174,20 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				deleteFailed: '删除失败',
 				password: '密码',
 				save: '保存',
-				cancel: '取消'
+				cancel: '取消',
+				settingsTitle: '⚙️ 全局设置',
+				settingsDesc: '配置此面板的全局常用选项。这些偏好设置存储在您的浏览器中。',
+				defaultBaseUrl: '默认基础 URL',
+				defaultBaseUrlHelp: '用于预填充更新页面中的基础 URL 字段。',
+				updateDefaultsTitle: '默认更新选项',
+				type: '类型',
+				savedBaseUrlsTitle: '已保存的基础 URL',
+				savedBaseUrlsDesc: '管理整个面板中可用的基础 URL 列表。',
+				addBaseUrl: '添加基础 URL',
+				add: '添加',
+				noSavedBaseUrls: '尚无已保存的基础 URL。',
+				settingsSaved: '设置已保存'
 			},
-			'zh-hant': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 統計',
@@ -2117,7 +2197,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新聞',
 				navUsers: '👥 使用者',
 				navFeedback: '💬 意見回饋',
-				statsTitle: '📊 統計概覽',
+				navSettings: '⚙️ 設定',
 				statsDesc: '檢視伺服器使用統計和分析。',
 				totalRequests: '總請求數',
 				todayRequests: '今日請求',
@@ -2202,7 +2282,19 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				deleteFailed: '刪除失敗',
 				password: '密碼',
 				save: '儲存',
-				cancel: '取消'
+				cancel: '取消',
+				settingsTitle: '⚙️ 全域設定',
+				settingsDesc: '設定此面板的全域常用選項。這些偏好設定儲存在您的瀏覽器中。',
+				defaultBaseUrl: '預設基礎 URL',
+				defaultBaseUrlHelp: '用於預先填入更新頁面中的基礎 URL 欄位。',
+				updateDefaultsTitle: '預設更新選項',
+				type: '類型',
+				savedBaseUrlsTitle: '已儲存的基礎 URL',
+				savedBaseUrlsDesc: '管理整個面板中可用的基礎 URL 清單。',
+				addBaseUrl: '新增基礎 URL',
+				add: '新增',
+				noSavedBaseUrls: '尚無已儲存的基礎 URL。',
+				settingsSaved: '設定已儲存'
 			}
 		};
 		
@@ -2225,6 +2317,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('nav-news').innerText = t('navNews');
 			document.getElementById('nav-users').innerText = t('navUsers');
 			document.getElementById('nav-feedback').innerText = t('navFeedback');
+			document.getElementById('nav-settings').innerText = t('navSettings');
 			// Statistics section
 			document.getElementById('stats-title').innerText = t('statsTitle');
 			document.getElementById('stats-desc').innerText = t('statsDesc');
@@ -2253,6 +2346,22 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('lbl-register-ui-url').innerText = t('registerUiUrl');
 			document.getElementById('btn-save-launcher').innerText = t('saveChanges');
 			document.getElementById('btn-reload-launcher').innerText = t('reload');
+			// Settings section
+			document.getElementById('settings-title').innerText = t('settingsTitle');
+			document.getElementById('settings-desc').innerText = t('settingsDesc');
+			document.getElementById('lbl-settings-default-baseurl').innerText = t('defaultBaseUrl');
+			document.getElementById('settings-default-baseurl-help').innerText = t('defaultBaseUrlHelp');
+			document.getElementById('settings-update-defaults-title').innerText = t('updateDefaultsTitle');
+			document.getElementById('lbl-settings-default-platform').innerText = t('platform');
+			document.getElementById('lbl-settings-default-arch').innerText = t('architecture');
+			document.getElementById('lbl-settings-default-type').innerText = t('type');
+			document.getElementById('btn-save-settings').innerText = t('saveChanges');
+			document.getElementById('btn-reload-settings').innerText = t('reload');
+			document.getElementById('settings-presets-title').innerText = t('savedBaseUrlsTitle');
+			document.getElementById('settings-presets-desc').innerText = t('savedBaseUrlsDesc');
+			document.getElementById('lbl-settings-new-baseurl').innerText = t('addBaseUrl');
+			document.getElementById('btn-add-settings-preset').innerText = t('add');
+			renderSettingsPresets();
 		}
 		
 		function getActiveStorage() {
@@ -2335,9 +2444,11 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (name === 'launcher' && !launcherData) loadLauncher();
 			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
 			if (name === 'updates' && !updatesData) loadUpdates();
+			if (name === 'updates') applyScanDefaults();
 			if (name === 'news' && !newsData) loadNews();
 			if (name === 'users' && !usersData) loadUsers();
 			if (name === 'feedback') loadFeedback();
+			if (name === 'settings') loadSettings();
 		}
 		
 		async function apiRequest(method, path, body = null) {
@@ -2972,6 +3083,93 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (!u) return '';
 			const idx = u.lastIndexOf('/');
 			return idx >= 0 ? u.substring(0, idx + 1) : u;
+		}
+
+		// Global settings (persisted in localStorage)
+		var SETTINGS_DEFAULT_BASEURL_KEY = 'nekolc_default_baseurl';
+		var SETTINGS_DEFAULT_PLATFORM_KEY = 'nekolc_default_platform';
+		var SETTINGS_DEFAULT_ARCH_KEY = 'nekolc_default_arch';
+		var SETTINGS_DEFAULT_TYPE_KEY = 'nekolc_default_type';
+
+		function loadSettings() {
+			const baseUrl = localStorage.getItem(SETTINGS_DEFAULT_BASEURL_KEY) || '';
+			const platform = localStorage.getItem(SETTINGS_DEFAULT_PLATFORM_KEY) || 'windows';
+			const arch = localStorage.getItem(SETTINGS_DEFAULT_ARCH_KEY) || 'x64';
+			const type = localStorage.getItem(SETTINGS_DEFAULT_TYPE_KEY) || 'core';
+			document.getElementById('settings-default-baseurl').value = baseUrl;
+			document.getElementById('settings-default-platform').value = platform;
+			document.getElementById('settings-default-arch').value = arch;
+			document.getElementById('settings-default-type').value = type;
+			renderSettingsPresets();
+		}
+
+		function saveSettings() {
+			const baseUrl = document.getElementById('settings-default-baseurl').value.trim();
+			localStorage.setItem(SETTINGS_DEFAULT_BASEURL_KEY, baseUrl);
+			localStorage.setItem(SETTINGS_DEFAULT_PLATFORM_KEY, document.getElementById('settings-default-platform').value);
+			localStorage.setItem(SETTINGS_DEFAULT_ARCH_KEY, document.getElementById('settings-default-arch').value);
+			localStorage.setItem(SETTINGS_DEFAULT_TYPE_KEY, document.getElementById('settings-default-type').value);
+			showMessage(t('settingsSaved'));
+		}
+
+		// Apply the saved default Base URL / update options to the Updates scan form.
+		// Only fields that are still empty/unchanged are pre-filled so user input is preserved.
+		function applyScanDefaults() {
+			const baseUrlEl = document.getElementById('scan-baseurl');
+			const defaultBaseUrl = localStorage.getItem(SETTINGS_DEFAULT_BASEURL_KEY) || '';
+			if (baseUrlEl && !baseUrlEl.value.trim() && defaultBaseUrl) {
+				baseUrlEl.value = defaultBaseUrl;
+			}
+			const platform = localStorage.getItem(SETTINGS_DEFAULT_PLATFORM_KEY);
+			const arch = localStorage.getItem(SETTINGS_DEFAULT_ARCH_KEY);
+			const type = localStorage.getItem(SETTINGS_DEFAULT_TYPE_KEY);
+			const platformEl = document.getElementById('scan-platform');
+			const archEl = document.getElementById('scan-arch');
+			const typeEl = document.getElementById('scan-type');
+			if (platform && platformEl) platformEl.value = platform;
+			if (arch && archEl) archEl.value = arch;
+			if (type && typeEl) typeEl.value = type;
+		}
+
+		// Saved Base URLs management on the Settings page (reuses the shared preset store).
+		function renderSettingsPresets() {
+			const container = document.getElementById('settings-presets-list');
+			if (!container) return;
+			const presets = getBaseUrlPresets();
+			if (presets.length === 0) {
+				container.innerHTML = '<div style="color:#94a3b8;">' + escapeHtml(t('noSavedBaseUrls')) + '</div>';
+				return;
+			}
+			let html = '';
+			presets.forEach(function(u) {
+				html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">';
+				html += '<input type="text" readonly value="' + escapeHtml(u) + '" style="flex:1;font-family:monospace;font-size:12px;" />';
+				html += '<button class="btn btn-secondary" onclick="removeSettingsPreset(\'' + encodeURIComponent(u) + '\')">' + escapeHtml(t('remove')) + '</button>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+
+		function addSettingsPreset() {
+			const input = document.getElementById('settings-new-baseurl');
+			const url = (input.value || '').trim();
+			if (!url) { showMessage(t('addBaseUrl'), true); return; }
+			if (addBaseUrlPreset(url)) {
+				input.value = '';
+				renderSettingsPresets();
+				showMessage(t('save'));
+			} else {
+				showMessage('Base URL already saved', true);
+			}
+		}
+
+		function removeSettingsPreset(encodedUrl) {
+			const target = decodeURIComponent(encodedUrl);
+			const presets = getBaseUrlPresets().filter(u => u !== target);
+			saveBaseUrlPresets(presets);
+			renderBaseUrlPresets();
+			renderSettingsPresets();
+			showMessage(t('remove'));
 		}
 
 		// Directory browser for visual scan-path selection

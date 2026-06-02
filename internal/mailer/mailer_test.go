@@ -56,7 +56,8 @@ func TestBuildMessageStripsHeaderInjection(t *testing.T) {
 	if strings.Contains(msg, "\r\nBcc:") || strings.Contains(msg, "\r\nX-Injected:") {
 		t.Fatalf("header injection not sanitized:\n%s", msg)
 	}
-	// The recipient/subject text should remain, minus the CRLF and injected headers.
+	// CRLF is stripped, so the injected "Bcc:" text is collapsed onto the To
+	// line as inert content rather than becoming a separate header.
 	if !strings.Contains(msg, "To: victim@example.comBcc: attacker@evil.com\r\n") {
 		t.Fatalf("recipient header not as expected:\n%s", msg)
 	}

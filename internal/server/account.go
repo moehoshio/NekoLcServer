@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"regexp"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -18,16 +18,26 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// emailRegex is a pragmatic email format check (not a full RFC 5322 parser).
-var emailRegex = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
-
 const (
 	resetTokenTTL  = 1 * time.Hour
 	verifyTokenTTL = 24 * time.Hour
 )
 
+// validEmail reports whether email is a syntactically valid, single address.
+// It uses net/mail for RFC 5322 compliance and rejects display-name forms,
+// control characters, and multiple addresses so the value is safe to use as an
+// SMTP recipient header.
 func validEmail(email string) bool {
-	return emailRegex.MatchString(email)
+	email = strings.TrimSpace(email)
+	if email == "" || strings.ContainsAny(email, "\r\n") {
+		return false
+	}
+	addr, err := mail.ParseAddress(email)
+	if err != nil {
+		return false
+	}
+	// Disallow display-name forms like "Name <a@b>"; require the bare address.
+	return addr.Address == email
 }
 
 // hashAccountToken hashes an opaque token for at-rest storage.

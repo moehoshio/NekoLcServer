@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -122,6 +123,14 @@ func (m *Mailer) Send(to, subject, body string) error {
 	if to == "" {
 		return errors.New("recipient is required")
 	}
+	// Validate and normalize the recipient so attacker-controlled values cannot
+	// inject SMTP headers or extra recipients (defense in depth alongside
+	// sanitizeHeader in BuildMessage).
+	parsed, err := mail.ParseAddress(to)
+	if err != nil || parsed.Address != to {
+		return errors.New("invalid recipient address")
+	}
+	to = parsed.Address
 	port := m.cfg.Port
 	if port == 0 {
 		port = 587

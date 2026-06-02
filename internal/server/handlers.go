@@ -431,12 +431,11 @@ func (s *Server) filterNewsItems(categories []string) []config.NewsItem {
 			allowed[trimmed] = struct{}{}
 		}
 	}
-	newsItems := newsSnapshot
 	if len(allowed) == 0 {
-		return cloneNewsItems(newsItems)
+		return cloneNewsItems(newsSnapshot)
 	}
 	filtered := []config.NewsItem{}
-	for _, item := range newsItems {
+	for _, item := range newsSnapshot {
 		cat := strings.ToLower(strings.TrimSpace(item.Category))
 		if _, ok := allowed[cat]; ok {
 			filtered = append(filtered, item)

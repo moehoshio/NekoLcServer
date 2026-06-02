@@ -227,12 +227,23 @@ func (s *Server) buildRouter() chi.Router {
 		router.Get("/app/feedback", s.handleAppFeedback)
 		router.Get("/app/admin", s.handleAppAdmin)
 		router.Get("/app/dashboard", s.handleAppUserDashboard)
+		router.Get("/app/forgot-password", s.handleAppForgotPasswordPage)
+		router.Get("/app/reset-password", s.handleAppResetPasswordPage)
+		router.Get("/app/verify-email", s.handleAppVerifyEmailPage)
 
 		// App-specific API endpoints (for NekoLcServer UI, separate from NekoLcApi)
 		router.Route("/app/api", func(appApiRouter chi.Router) {
 			appApiRouter.Post("/login", s.handleAppAPILogin)
 			appApiRouter.Post("/logout", s.handleAppAPILogout)
 			appApiRouter.Post("/register", s.handleAppRegisterSubmit)
+			appApiRouter.Get("/me", s.handleAppMe)
+			appApiRouter.Get("/home-content", s.handleAppHomeContent)
+			appApiRouter.Post("/change-password", s.handleAppChangePassword)
+			appApiRouter.Post("/forgot-password", s.handleAppForgotPassword)
+			appApiRouter.Post("/reset-password", s.handleAppResetPassword)
+			appApiRouter.Post("/send-verification", s.handleAppSendVerification)
+			appApiRouter.Post("/verify-email", s.handleAppVerifyEmail)
+			appApiRouter.Get("/verify-email", s.handleAppVerifyEmail)
 		})
 	}
 
@@ -800,14 +811,15 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 		</div>
 		<button onclick="login()" id="btn-login">Login</button>
 		<div class="error" id="error"></div>
+		<div class="link"><a href="{{.BasePath}}/app/forgot-password" id="link-forgot">Forgot password?</a></div>
 		<div class="link"><span id="no-account">Don't have an account?</span> <a href="{{.BasePath}}/app/register" id="link-register">Create one</a></div>
 	</div>
 	<script>
 		const basePath = '{{.BasePath}}';
 		const i18n = {
-			'en': { title: 'Sign in', username: 'Username', password: 'Password', login: 'Login', noAccount: "Don't have an account?", createOne: 'Create one', loginFailed: 'Login failed', remember: 'Remember me' },
-			'zh-hans': { title: '登录', username: '用户名', password: '密码', login: '登录', noAccount: '没有账号？', createOne: '创建账号', loginFailed: '登录失败', remember: '记住我' },
-			'zh-hant': { title: '登入', username: '使用者名稱', password: '密碼', login: '登入', noAccount: '沒有帳號？', createOne: '建立帳號', loginFailed: '登入失敗', remember: '記住我' }
+			'en': { title: 'Sign in', username: 'Username', password: 'Password', login: 'Login', noAccount: "Don't have an account?", createOne: 'Create one', loginFailed: 'Login failed', remember: 'Remember me', forgot: 'Forgot password?' },
+			'zh-hans': { title: '登录', username: '用户名', password: '密码', login: '登录', noAccount: '没有账号？', createOne: '创建账号', loginFailed: '登录失败', remember: '记住我', forgot: '忘记密码？' },
+			'zh-hant': { title: '登入', username: '使用者名稱', password: '密碼', login: '登入', noAccount: '沒有帳號？', createOne: '建立帳號', loginFailed: '登入失敗', remember: '記住我', forgot: '忘記密碼？' }
 		};
 		function getLang() { return localStorage.getItem('lang') || 'en'; }
 		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
@@ -824,6 +836,7 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 			document.getElementById('no-account').innerText = t.noAccount;
 			document.getElementById('link-register').innerText = t.createOne;
 			document.getElementById('lbl-remember').innerText = t.remember;
+			document.getElementById('link-forgot').innerText = t.forgot;
 		}
 		applyLang();
 		async function login() {
@@ -895,6 +908,8 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 		<h1 id="title">Create Account</h1>
 		<label id="lbl-username">Username</label>
 		<input id="username" autocomplete="username" />
+		<label id="lbl-email">Email</label>
+		<input id="email" type="email" autocomplete="email" />
 		<label id="lbl-password">Password</label>
 		<input id="password" type="password" autocomplete="new-password" />
 		<label id="lbl-confirm">Confirm Password</label>
@@ -907,9 +922,9 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 	<script>
 		const basePath = '{{.BasePath}}';
 		const i18n = {
-			'en': { title: 'Create Account', username: 'Username', password: 'Password', confirm: 'Confirm Password', register: 'Register', haveAccount: 'Already have an account?', signIn: 'Sign in', passwordMismatch: 'Passwords do not match', regFailed: 'Registration failed', created: 'Account created! Redirecting to login...' },
-			'zh-hans': { title: '创建账号', username: '用户名', password: '密码', confirm: '确认密码', register: '注册', haveAccount: '已有账号？', signIn: '登录', passwordMismatch: '两次密码不一致', regFailed: '注册失败', created: '账号创建成功！正在跳转到登录页面...' },
-			'zh-hant': { title: '建立帳號', username: '使用者名稱', password: '密碼', confirm: '確認密碼', register: '註冊', haveAccount: '已有帳號？', signIn: '登入', passwordMismatch: '兩次密碼不一致', regFailed: '註冊失敗', created: '帳號建立成功！正在跳轉到登入頁面...' }
+			'en': { title: 'Create Account', username: 'Username', email: 'Email', password: 'Password', confirm: 'Confirm Password', register: 'Register', haveAccount: 'Already have an account?', signIn: 'Sign in', passwordMismatch: 'Passwords do not match', regFailed: 'Registration failed', created: 'Account created! Redirecting to login...' },
+			'zh-hans': { title: '创建账号', username: '用户名', email: '邮箱', password: '密码', confirm: '确认密码', register: '注册', haveAccount: '已有账号？', signIn: '登录', passwordMismatch: '两次密码不一致', regFailed: '注册失败', created: '账号创建成功！正在跳转到登录页面...' },
+			'zh-hant': { title: '建立帳號', username: '使用者名稱', email: '電子郵件', password: '密碼', confirm: '確認密碼', register: '註冊', haveAccount: '已有帳號？', signIn: '登入', passwordMismatch: '兩次密碼不一致', regFailed: '註冊失敗', created: '帳號建立成功！正在跳轉到登入頁面...' }
 		};
 		function getLang() { return localStorage.getItem('lang') || 'en'; }
 		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
@@ -920,6 +935,7 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 			const t = i18n[lang] || i18n['en'];
 			document.getElementById('title').innerText = t.title;
 			document.getElementById('lbl-username').innerText = t.username;
+			document.getElementById('lbl-email').innerText = t.email;
 			document.getElementById('lbl-password').innerText = t.password;
 			document.getElementById('lbl-confirm').innerText = t.confirm;
 			document.getElementById('btn-register').innerText = t.register;
@@ -929,6 +945,7 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 		applyLang();
 		async function register() {
 			const username = document.getElementById('username').value.trim();
+			const email = document.getElementById('email').value.trim();
 			const password = document.getElementById('password').value;
 			const confirmPassword = document.getElementById('confirmPassword').value;
 			const lang = getLang();
@@ -942,7 +959,7 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 			const res = await fetch(basePath + '/app/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ registerRequest: { username, password } })
+				body: JSON.stringify({ registerRequest: { username, password, email } })
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(()=>({}));
@@ -1049,6 +1066,16 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "password must be at least 6 characters")
 		return
 	}
+	email := strings.ToLower(strings.TrimSpace(payload.RegisterRequest.Email))
+	accountCfg := s.currentAccountConfig()
+	if email != "" && !validEmail(email) {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "invalid email address")
+		return
+	}
+	if accountCfg != nil && accountCfg.RequireEmail && email == "" {
+		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "email is required")
+		return
+	}
 	// Check if username already exists
 	_, err := s.store.GetUserByUsername(r.Context(), username)
 	if err == nil {
@@ -1059,6 +1086,16 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
 		return
 	}
+	// Reject duplicate email addresses when one is provided.
+	if email != "" {
+		if _, err := s.store.GetUserByEmail(r.Context(), email); err == nil {
+			s.writeError(w, http.StatusConflict, lang, "Conflict", "email already in use")
+			return
+		} else if err != store.ErrNotFound {
+			s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
+			return
+		}
+	}
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -1066,10 +1103,18 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Create user with "user" role (not admin)
-	userID, err := s.store.CreateUser(r.Context(), username, string(hash), "", "user")
+	userID, err := s.store.CreateUser(r.Context(), username, string(hash), email, "user")
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
 		return
+	}
+	// Optionally send a verification email when the policy requires it.
+	if email != "" && accountCfg != nil && accountCfg.VerifyEmail {
+		if user, gerr := s.store.GetUserByID(r.Context(), userID); gerr == nil {
+			if serr := s.issueAndSendToken(r.Context(), user, store.AccountTokenPurposeVerify); serr != nil && serr != mailer.ErrDisabled {
+				fmt.Printf("register: failed to send verification email: %v\n", serr)
+			}
+		}
 	}
 	resp := RegisterResponseBody{Meta: s.meta()}
 	resp.RegisterResponse.UserID = userID

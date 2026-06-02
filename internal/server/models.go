@@ -310,6 +310,7 @@ type RegisterPayload struct {
 	RegisterRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Email    string `json:"email"`
 	} `json:"registerRequest"`
 	Preferences *Preferences `json:"preferences"`
 }

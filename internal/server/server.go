@@ -52,6 +52,7 @@ type Server struct {
 	dirCacheMu            sync.RWMutex
 	dirCache              map[string]dirCacheEntry
 	updateConfigMu        sync.RWMutex
+	loginLimiter          *rateLimiter
 }
 
 type dirCacheEntry struct {
@@ -101,6 +102,7 @@ func New(
 		debug:                 appCfg.Debug.Enabled,
 		basePath:              normalizeBasePath(appCfg.Server.BasePath),
 		dirCache:              map[string]dirCacheEntry{},
+		loginLimiter:          newRateLimiter(loginRateLimitMax, loginRateLimitWindow),
 	}
 	srv.router = srv.buildRouter()
 	srv.startUpdateReloader()

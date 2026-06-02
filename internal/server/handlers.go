@@ -98,6 +98,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
 		return
 	}
+	// Rate limit login attempts to mitigate brute-force attacks (NekoLc API spec v0.0.3+).
+	if s.loginLimiter != nil && !s.loginLimiter.Allow(clientIP(r)) {
+		s.writeError(w, http.StatusTooManyRequests, s.appConfig.Language.Default, "TooManyRequests", "Too many login attempts. Please try again later.")
+		return
+	}
 	var payload LoginPayload
 	if err := s.decode(r, &payload); err != nil {
 		s.writeError(w, http.StatusBadRequest, s.languageFromPreferences(payload.Preferences), "InvalidRequest", err.Error())
@@ -264,6 +269,11 @@ type RegisterGetResponse struct {
 }
 
 func (s *Server) handleRegisterInfo(w http.ResponseWriter, r *http.Request) {
+	// Per API spec (v0.0.4): if the account system is not implemented, return HTTP 501.
+	if s.authService == nil || !s.authService.Enabled() {
+		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account system is not available")
+		return
+	}
 	// Per API spec: return HTTP 200 with registerResponse.registerUrl
 	// The registerUrl should point to the UI registration page
 	registerURL := s.basePath + "/app/register"

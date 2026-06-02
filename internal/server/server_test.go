@@ -1102,3 +1102,53 @@ func TestGetRegister(t *testing.T) {
 		t.Fatalf("expected registerUrl to contain '/app/register' got '%s'", resp.RegisterResponse.RegisterURL)
 	}
 }
+
+// TestRegisterReturns501WhenAuthDisabled verifies that GET /v0/api/auth/register
+// returns HTTP 501 when the account system is not available (NekoLc API spec v0.0.4).
+func TestRegisterReturns501WhenAuthDisabled(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = false
+	})
+
+	rec := doRequest(t, srv, http.MethodGet, "/v0/api/auth/register", nil)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501 got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestLoginRateLimit verifies that repeated login attempts from the same client
+// are rate limited with HTTP 429 (NekoLc API spec v0.0.3+).
+func TestLoginRateLimit(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {
+		cfg.Authentication.Enabled = true
+		cfg.Authentication.Method = "mysql"
+	})
+
+	payload := map[string]interface{}{
+		"loginRequest": map[string]interface{}{
+			"username": "nobody",
+			"password": "wrong",
+		},
+	}
+
+	// The default limit allows loginRateLimitMax attempts per window.
+	for i := 0; i < loginRateLimitMax; i++ {
+		rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/login", payload)
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d unexpectedly rate limited", i+1)
+		}
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/v0/api/auth/login", payload)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 after exceeding limit, got %d", rec.Code)
+	}
+
+	var resp ErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if len(resp.Errors) == 0 || resp.Errors[0].ErrorType != "TooManyRequests" {
+		t.Fatalf("expected TooManyRequests error, got %+v", resp.Errors)
+	}
+}

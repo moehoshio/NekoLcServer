@@ -2,7 +2,7 @@
   "server": {
     "appName": "Neko Launcher Server",
     "port": "8080",
-    "apiVersion": "0.0.2",
+    "apiVersion": "0.0.4",
     "minApiVersion": "0.0.2",
     "buildVersion": "20251217",
     "releaseDate": "2025-12-17T00:00:00Z",

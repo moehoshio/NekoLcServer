@@ -1,6 +1,6 @@
 # NekoLc Server
 
-Golang implementation of the NekoLc API specification (v0.0.2). The server supports both file-based JSON configuration and database storage (MySQL/SQLite), with a visual admin dashboard for configuration management.
+Golang implementation of the NekoLc API specification (v0.0.4). The server supports both file-based JSON configuration and database storage (MySQL/SQLite), with a visual admin dashboard for configuration management.
 
 ## Features
 
@@ -124,6 +124,10 @@ The following admin API endpoints are available for configuration management (re
 When authentication is enabled, the `/v0/api/auth/*` endpoints use JWTs signed with `authentication.jwtSecret` (HS256). Access tokens carry the `tokenType="access"` claim and expire according to `tokenExpirationSec`. Refresh tokens carry `tokenType="refresh"` and follow `refreshTokenExpirationDays`.
 
 Authentication supports both username/password login and signature-based login for device authentication.
+
+The `/v0/api/auth/login` endpoint is rate limited per client IP to mitigate brute-force attacks; once the limit is exceeded the server responds with HTTP 429 and a `TooManyRequests` error (NekoLc API spec v0.0.3+).
+
+`GET /v0/api/auth/register` returns the registration page URL (`registerResponse.registerUrl`) with HTTP 200, or HTTP 501 when the account system is not available (NekoLc API spec v0.0.4).
 
 ### Update diff payloads
 

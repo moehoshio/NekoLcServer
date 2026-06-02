@@ -1390,6 +1390,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 		.tabs button { padding: 8px 16px; background: transparent; border: 1px solid #374151; border-radius: 6px; color: #cbd5e1; cursor: pointer; }
 		.tabs button.active { background: #374151; color: #f8fafc; }
+		.fb-content { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-width: 520px; }
+		.fb-content.collapsed { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-height: 4.5em; }
+		.fb-toggle { background: none; border: none; color: #38bdf8; cursor: pointer; padding: 0; margin-top: 4px; font-size: 12px; }
+		.client-info-pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-width: 520px; background:#0b1220; padding:8px; border-radius:6px; font-size:12px; margin:0; }
 	</style>
 </head>
 <body>
@@ -1450,6 +1454,9 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							<option value="14">Last 14 days</option>
 							<option value="30">Last 30 days</option>
 						</select>
+						<label style="display:flex;align-items:center;gap:8px;color:#94a3b8;font-size:14px;">
+							<input type="checkbox" id="stats-autorefresh" onchange="toggleStatsAutoRefresh()" /> <span id="lbl-autorefresh">Auto-refresh (live)</span>
+						</label>
 					</div>
 				</div>
 				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
@@ -1624,7 +1631,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					<div class="form-row">
 						<div class="form-group">
 							<label for="scan-path">Directory Path</label>
-							<input type="text" id="scan-path" placeholder="./updates/windows-x64" />
+							<div style="display:flex;gap:8px;">
+								<input type="text" id="scan-path" placeholder="./updates/windows-x64" style="flex:1;" />
+								<button type="button" class="btn btn-secondary" onclick="openDirBrowser()">📁 Browse</button>
+							</div>
 						</div>
 						<div class="form-group">
 							<label for="scan-baseurl">Base URL</label>
@@ -1663,14 +1673,36 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					<div id="scan-results" style="margin-top: 16px;"></div>
 				</div>
 				<div class="card">
-					<h2>Updates Configuration</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Current update packages for each platform and architecture.</p>
-					<div id="updates-content">
-						<div class="loading">Loading updates configuration...</div>
+					<h2>Upload Update File</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;">Upload a file to be hosted by this server. The download URL is generated automatically from the current site URL.</p>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="upload-file">File</label>
+							<input type="file" id="upload-file" />
+						</div>
+						<div class="form-group">
+							<label for="upload-subdir">Sub-directory (optional)</label>
+							<input type="text" id="upload-subdir" placeholder="windows-x64" />
+						</div>
 					</div>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="saveUpdates()">Save Changes</button>
-						<button class="btn btn-secondary" onclick="loadUpdates()">Reload</button>
+						<button class="btn btn-primary" onclick="uploadFile()">Upload</button>
+					</div>
+					<div id="upload-results" style="margin-top: 16px;"></div>
+				</div>
+			</div>
+
+			<!-- Directory browser modal -->
+			<div id="dir-browser" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:flex;align-items:center;justify-content:center;">
+				<div style="background:#111827;border:1px solid #1f2937;border-radius:12px;width:min(640px,92vw);max-height:80vh;display:flex;flex-direction:column;padding:20px;">
+					<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+						<h3 style="margin:0;">📁 Select Directory</h3>
+						<button class="btn btn-secondary" onclick="closeDirBrowser()">Close</button>
+					</div>
+					<div id="dir-browser-current" style="color:#94a3b8;font-size:13px;margin-bottom:8px;font-family:monospace;">/</div>
+					<div id="dir-browser-list" style="flex:1;overflow-y:auto;background:#0f172a;border-radius:8px;padding:8px;min-height:200px;"></div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="chooseCurrentDir()">Use This Directory</button>
 					</div>
 				</div>
 			</div>
@@ -1679,6 +1711,23 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<div id="section-news" class="section hidden">
 				<div class="card">
 					<h2>News Items</h2>
+					<div class="form-row" style="margin-bottom:12px;flex-wrap:wrap;">
+						<div class="form-group" style="flex:2;min-width:180px;">
+							<label id="lbl-news-search">Search</label>
+							<input type="text" id="news-search" placeholder="Search title, summary, category..." oninput="renderNews()" />
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px;">
+							<label id="lbl-news-sort">Sort by</label>
+							<select id="news-sort" onchange="renderNews()">
+								<option value="priority-desc">Priority (high→low)</option>
+								<option value="priority-asc">Priority (low→high)</option>
+								<option value="title-asc">Title (A→Z)</option>
+								<option value="title-desc">Title (Z→A)</option>
+								<option value="publish-desc">Publish time (newest)</option>
+								<option value="publish-asc">Publish time (oldest)</option>
+							</select>
+						</div>
+					</div>
 					<div id="news-list"></div>
 					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addNewsItem()">+ Add News Item</button>
 					<div class="actions">
@@ -1794,6 +1843,21 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						<button class="btn btn-secondary" onclick="clearFeedbackFilters()">Clear Filters</button>
 						<button class="btn btn-secondary" onclick="loadFeedback()" style="margin-left: 8px;">Reload</button>
 					</div>
+					<div class="form-row" style="margin-bottom:16px;flex-wrap:wrap;">
+						<div class="form-group" style="flex:2;min-width:180px;">
+							<label id="lbl-feedback-search">Search</label>
+							<input type="text" id="feedback-search" placeholder="Search content, device, platform..." oninput="renderFeedback()" />
+						</div>
+						<div class="form-group" style="flex:1;min-width:150px;">
+							<label id="lbl-feedback-sort">Sort by</label>
+							<select id="feedback-sort" onchange="renderFeedback()">
+								<option value="time-desc">Time (newest)</option>
+								<option value="time-asc">Time (oldest)</option>
+								<option value="platform-asc">Platform (A→Z)</option>
+								<option value="coreVersion-asc">Core version (A→Z)</option>
+							</select>
+						</div>
+					</div>
 					<div id="feedback-list">
 						<div class="loading">Loading feedback...</div>
 					</div>
@@ -1810,6 +1874,9 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		let newsData = null;
 		let usersData = null;
 		let statsData = null;
+		let feedbackData = [];
+		let statsAutoRefreshTimer = null;
+		let dirBrowserPath = '';
 		
 		// i18n translations
 		const i18n = {
@@ -2285,6 +2352,18 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			// Render platforms
 			renderPlatformsList(statsData.platformCounts || {});
 		}
+
+		function toggleStatsAutoRefresh() {
+			const enabled = document.getElementById('stats-autorefresh')?.checked;
+			if (statsAutoRefreshTimer) {
+				clearInterval(statsAutoRefreshTimer);
+				statsAutoRefreshTimer = null;
+			}
+			if (enabled) {
+				statsAutoRefreshTimer = setInterval(loadStats, 5000);
+				loadStats();
+			}
+		}
 		
 		function renderDailyChart(dailyStats) {
 			const container = document.getElementById('daily-chart');
@@ -2725,6 +2804,97 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			updatesData = null;
 			loadUpdates();
 		}
+
+		async function uploadFile() {
+			const input = document.getElementById('upload-file');
+			if (!input || !input.files || input.files.length === 0) {
+				showMessage('Please choose a file to upload', true);
+				return;
+			}
+			const subdir = document.getElementById('upload-subdir').value.trim();
+			const form = new FormData();
+			form.append('file', input.files[0]);
+			if (subdir) form.append('subdir', subdir);
+			const res = await fetch(basePath + '/v0/api/admin/uploadFile', {
+				method: 'POST',
+				headers: { 'Authorization': 'Bearer ' + getToken() },
+				body: form
+			});
+			if (res.status === 401 || res.status === 403) { logout(); return; }
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Upload failed', true);
+				return;
+			}
+			const container = document.getElementById('upload-results');
+			let html = '<div style="background:#0f172a;padding:12px;border-radius:8px;">';
+			html += '<div style="color:#22d3ee;margin-bottom:8px;">Uploaded ' + escapeHtml(data.fileName) + ' (' + data.size + ' bytes)</div>';
+			html += '<div style="display:flex;gap:8px;align-items:center;">';
+			html += '<input type="text" readonly value="' + escapeHtml(data.url) + '" style="flex:1;font-family:monospace;font-size:12px;" id="upload-url" />';
+			html += '<button class="btn btn-secondary" onclick="copyUploadUrl()">Copy</button>';
+			html += '<button class="btn btn-secondary" onclick="useUploadUrl()">Use as Base URL</button>';
+			html += '</div>';
+			html += '<div style="color:#94a3b8;font-size:12px;margin-top:8px;">sha256: ' + escapeHtml(data.checksum) + '</div>';
+			html += '</div>';
+			container.innerHTML = html;
+			showMessage('File uploaded successfully');
+		}
+
+		function copyUploadUrl() {
+			const el = document.getElementById('upload-url');
+			if (!el) return;
+			el.select();
+			if (navigator.clipboard) { navigator.clipboard.writeText(el.value); }
+			else { document.execCommand('copy'); }
+			showMessage('URL copied to clipboard');
+		}
+
+		function useUploadUrl() {
+			const el = document.getElementById('upload-url');
+			if (!el) return;
+			document.getElementById('scan-baseurl').value = el.value;
+			showMessage('Base URL set from uploaded file');
+		}
+
+		// Directory browser for visual scan-path selection
+		function openDirBrowser() {
+			document.getElementById('dir-browser').classList.remove('hidden');
+			browseDir('');
+		}
+
+		function closeDirBrowser() {
+			document.getElementById('dir-browser').classList.add('hidden');
+		}
+
+		async function browseDir(path) {
+			const res = await apiRequest('GET', '/v0/api/admin/browseDir?path=' + encodeURIComponent(path || ''));
+			if (!res) return;
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Browse failed', true);
+				return;
+			}
+			dirBrowserPath = data.path || '';
+			document.getElementById('dir-browser-current').innerText = '/' + dirBrowserPath;
+			let html = '';
+			if (data.path) {
+				html += '<div class="dir-row" style="padding:8px;cursor:pointer;" onclick="browseDir(\'' + encodeURIComponent(data.parent || '').replace(/'/g, "\\'") + '\')">📁 ..</div>';
+			}
+			(data.entries || []).forEach(e => {
+				if (e.isDir) {
+					html += '<div class="dir-row" style="padding:8px;cursor:pointer;color:#e2e8f0;" onclick="browseDir(\'' + e.path.replace(/'/g, "\\'") + '\')">📁 ' + escapeHtml(e.name) + '</div>';
+				} else {
+					html += '<div style="padding:8px;color:#64748b;">📄 ' + escapeHtml(e.name) + '</div>';
+				}
+			});
+			document.getElementById('dir-browser-list').innerHTML = html || '<div style="color:#94a3b8;padding:8px;">Empty directory</div>';
+		}
+
+		function chooseCurrentDir() {
+			document.getElementById('scan-path').value = dirBrowserPath || '.';
+			closeDirBrowser();
+			showMessage('Directory selected: ' + (dirBrowserPath || '.'));
+		}
 		
 		// News functions
 		async function loadNews() {
@@ -2741,8 +2911,34 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				container.innerHTML = '<p style="color:#94a3b8;">No news items.</p>';
 				return;
 			}
+			// Pair each item with its original index so edits map to the real array.
+			let view = newsData.items.map((item, idx) => ({ item, idx }));
+			const term = (document.getElementById('news-search')?.value || '').trim().toLowerCase();
+			if (term) {
+				view = view.filter(({ item }) =>
+					(item.title || '').toLowerCase().includes(term) ||
+					(item.summary || '').toLowerCase().includes(term) ||
+					(item.category || '').toLowerCase().includes(term) ||
+					(item.id || '').toLowerCase().includes(term));
+			}
+			const sort = document.getElementById('news-sort')?.value || 'priority-desc';
+			view.sort((a, b) => {
+				switch (sort) {
+					case 'priority-asc': return (a.item.priority || 0) - (b.item.priority || 0);
+					case 'title-asc': return (a.item.title || '').localeCompare(b.item.title || '');
+					case 'title-desc': return (b.item.title || '').localeCompare(a.item.title || '');
+					case 'publish-asc': return String(a.item.publishTime || '').localeCompare(String(b.item.publishTime || ''));
+					case 'publish-desc': return String(b.item.publishTime || '').localeCompare(String(a.item.publishTime || ''));
+					case 'priority-desc':
+					default: return (b.item.priority || 0) - (a.item.priority || 0);
+				}
+			});
+			if (view.length === 0) {
+				container.innerHTML = '<p style="color:#94a3b8;">No news items match your search.</p>';
+				return;
+			}
 			let html = '';
-			newsData.items.forEach((item, idx) => {
+			view.forEach(({ item, idx }) => {
 				html += '<div class="news-item" id="news-item-' + idx + '">';
 				html += '<div class="header-row"><h3>' + escapeHtml(item.title || 'Untitled') + '</h3>';
 				html += '<button class="btn btn-danger" onclick="removeNewsItem(' + idx + ')">Remove</button></div>';
@@ -2973,30 +3169,84 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			const res = await apiRequest('GET', '/v0/api/admin/feedbackLogs?' + params);
 			if (!res) return;
 			const data = await res.json();
+			feedbackData = data.feedbackLogs || [];
+			renderFeedback();
+		}
+
+		function renderFeedback() {
 			const container = document.getElementById('feedback-list');
-			if (!data.feedbackLogs || data.feedbackLogs.length === 0) {
+			let view = (feedbackData || []).slice();
+			const term = (document.getElementById('feedback-search')?.value || '').trim().toLowerCase();
+			if (term) {
+				view = view.filter(item =>
+					(item.content || '').toLowerCase().includes(term) ||
+					(item.deviceId || '').toLowerCase().includes(term) ||
+					(item.platform || '').toLowerCase().includes(term) ||
+					(item.coreVersion || '').toLowerCase().includes(term));
+			}
+			const sort = document.getElementById('feedback-sort')?.value || 'time-desc';
+			view.sort((a, b) => {
+				switch (sort) {
+					case 'time-asc': return String(a.receivedAt || '').localeCompare(String(b.receivedAt || ''));
+					case 'platform-asc': return (a.platform || '').localeCompare(b.platform || '');
+					case 'coreVersion-asc': return (a.coreVersion || '').localeCompare(b.coreVersion || '');
+					case 'time-desc':
+					default: return String(b.receivedAt || '').localeCompare(String(a.receivedAt || ''));
+				}
+			});
+			if (view.length === 0) {
 				container.innerHTML = '<p style="color:#94a3b8;">No feedback entries matching filters.</p>';
 				return;
 			}
-			let html = '<table style="width:100%;border-collapse:collapse;">';
+			let html = '<table style="width:100%;border-collapse:collapse;table-layout:fixed;">';
 			html += '<thead><tr style="border-bottom:1px solid #374151;">';
-			html += '<th style="text-align:left;padding:8px;">Time</th>';
-			html += '<th style="text-align:left;padding:8px;">Platform</th>';
-			html += '<th style="text-align:left;padding:8px;">Version</th>';
+			html += '<th style="text-align:left;padding:8px;width:160px;">Time</th>';
+			html += '<th style="text-align:left;padding:8px;width:110px;">Platform</th>';
+			html += '<th style="text-align:left;padding:8px;width:90px;">Version</th>';
 			html += '<th style="text-align:left;padding:8px;">Content</th>';
+			html += '<th style="text-align:left;padding:8px;width:80px;">Actions</th>';
 			html += '</tr></thead>';
 			html += '<tbody>';
-			data.feedbackLogs.forEach(item => {
-				html += '<tr style="border-bottom:1px solid #1f2937;">';
-				html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:13px;">' + escapeHtml(item.receivedAt || '') + '</td>';
-				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.platform || '-') + '</td>';
-				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.coreVersion || '-') + '</td>';
-				html += '<td style="padding:8px;white-space:pre-wrap;">' + escapeHtml(item.content || '') + '</td>';
+			view.forEach(item => {
+				const long = (item.content || '').length > 160 || (item.content || '').split('\n').length > 3;
+				html += '<tr style="border-bottom:1px solid #1f2937;vertical-align:top;">';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.receivedAt || '') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;word-break:break-word;">' + escapeHtml(item.platform || '-') + '</td>';
+				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;word-break:break-word;">' + escapeHtml(item.coreVersion || '-') + '</td>';
+				html += '<td style="padding:8px;">';
+				html += '<div class="fb-content' + (long ? ' collapsed' : '') + '" id="fb-content-' + item.id + '">' + escapeHtml(item.content || '') + '</div>';
+				if (long) {
+					html += '<button class="fb-toggle" onclick="toggleFeedback(' + item.id + ')" id="fb-toggle-' + item.id + '">Show more</button>';
+				}
+				html += '</td>';
+				html += '<td style="padding:8px;"><button class="btn btn-danger" style="padding:6px 12px;font-size:12px;" onclick="deleteFeedback(' + item.id + ')">Delete</button></td>';
 				html += '</tr>';
 			});
 			html += '</tbody></table>';
-			html += '<p style="color:#94a3b8;font-size:13px;margin-top:12px;">Showing ' + data.feedbackLogs.length + ' entries</p>';
+			html += '<p style="color:#94a3b8;font-size:13px;margin-top:12px;">Showing ' + view.length + ' entries</p>';
 			container.innerHTML = html;
+		}
+
+		function toggleFeedback(id) {
+			const el = document.getElementById('fb-content-' + id);
+			const btn = document.getElementById('fb-toggle-' + id);
+			if (!el) return;
+			const collapsed = el.classList.toggle('collapsed');
+			if (btn) btn.innerText = collapsed ? 'Show more' : 'Show less';
+		}
+
+		async function deleteFeedback(id) {
+			if (!confirm('Delete this feedback entry?')) return;
+			const res = await apiRequest('DELETE', '/v0/api/admin/feedbackLogs/' + id);
+			if (!res) return;
+			if (res.status === 204) {
+				feedbackData = (feedbackData || []).filter(f => f.id !== id);
+				renderFeedback();
+				showMessage('Feedback entry deleted');
+			} else {
+				const data = await res.json().catch(() => ({}));
+				showMessage((data.errors && data.errors[0] && data.errors[0].errorMessage) || 'Failed to delete feedback', true);
+			}
 		}
 		
 		// Initialize

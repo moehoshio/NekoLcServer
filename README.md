@@ -89,9 +89,11 @@ Access the visual admin dashboard at `http://localhost:8080/app/admin`. Features
 
 - **Launcher Configuration**: Manage hosts, WebSocket settings, security settings
 - **Maintenance**: Enable/disable maintenance mode with custom messages
-- **Updates**: Configure update packages for each platform and architecture
-- **News**: Create and manage news items
-- **Feedback**: View user feedback logs
+- **Updates**: Configure update packages for each platform and architecture. Upload files (hosted by the server with an auto-generated download URL), browse and scan server directories visually, search and sort items
+- **News**: Create and manage multiple news items with search and sorting
+- **Feedback**: View user feedback logs with search, sorting, deletion, and collapsible long entries
+
+Uploaded update assets are served as static files at `/files/<relative-path>` (resolved within the configured update assets directory; path traversal is rejected).
 
 ### First Login
 
@@ -118,6 +120,9 @@ The following admin API endpoints are available for configuration management (re
 - `PUT /v0/api/admin/news` - Update news items
 - `POST /v0/api/admin/scanPath` - Scan a directory for update files
 - `POST /v0/api/admin/generateUpdates` - Generate update config from directory
+- `POST /v0/api/admin/uploadFile` - Upload a file (multipart `file`, optional `subdir`); stored under the update assets directory and served by this server. The response includes an absolute download `url` generated from the current request URL (scheme/host/base path)
+- `GET /v0/api/admin/browseDir` - Browse sub-directories/files under the update assets directory (for the visual directory picker; optional `path` query)
+- `DELETE /v0/api/admin/feedbackLogs/{id}` - Delete a single feedback log entry
 
 ## Authentication (JWT)
 

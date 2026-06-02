@@ -66,19 +66,13 @@ func resolveSafePath(basePath, userPath string) (string, error) {
 // pathWithinBase reports whether target is the base directory itself or a
 // descendant of it. It uses a path-separator boundary check so that sibling
 // directories sharing a common prefix (e.g. "/data/assets-evil" vs
-// "/data/assets") are not mistaken for being inside the base.
+// "/data/assets") are not mistaken for being inside the base. Both target and
+// base are expected to be cleaned, absolute paths.
 func pathWithinBase(target, base string) bool {
 	if target == base {
 		return true
 	}
-	rel, err := filepath.Rel(base, target)
-	if err != nil {
-		return false
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return false
-	}
-	return true
+	return strings.HasPrefix(target, base+string(os.PathSeparator))
 }
 
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
@@ -1446,8 +1440,10 @@ func (s *Server) handleAdminUploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// filepath.Base returns only the final path element, so the result never
+	// contains a path separator; only "."/".." need to be rejected here.
 	name := filepath.Base(filepath.FromSlash(header.Filename))
-	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+	if name == "" || name == "." || name == ".." {
 		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", "invalid file name")
 		return
 	}

@@ -2909,18 +2909,32 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			}
 			dirBrowserPath = data.path || '';
 			document.getElementById('dir-browser-current').innerText = '/' + dirBrowserPath;
-			let html = '';
+			const list = document.getElementById('dir-browser-list');
+			list.innerHTML = '';
+			const addRow = (label, navPath, clickable) => {
+				const row = document.createElement('div');
+				row.textContent = label;
+				if (clickable) {
+					row.className = 'dir-row';
+					row.style.cssText = 'padding:8px;cursor:pointer;color:#e2e8f0;';
+					row.addEventListener('click', () => browseDir(navPath));
+				} else {
+					row.style.cssText = 'padding:8px;color:#64748b;';
+				}
+				list.appendChild(row);
+			};
 			if (data.path) {
-				html += '<div class="dir-row" style="padding:8px;cursor:pointer;" onclick="browseDir(\'' + encodeURIComponent(data.parent || '').replace(/'/g, "\\'") + '\')">📁 ..</div>';
+				addRow('📁 ..', data.parent || '', true);
 			}
 			(data.entries || []).forEach(e => {
-				if (e.isDir) {
-					html += '<div class="dir-row" style="padding:8px;cursor:pointer;color:#e2e8f0;" onclick="browseDir(\'' + e.path.replace(/'/g, "\\'") + '\')">📁 ' + escapeHtml(e.name) + '</div>';
-				} else {
-					html += '<div style="padding:8px;color:#64748b;">📄 ' + escapeHtml(e.name) + '</div>';
-				}
+				addRow((e.isDir ? '📁 ' : '📄 ') + e.name, e.path, !!e.isDir);
 			});
-			document.getElementById('dir-browser-list').innerHTML = html || '<div style="color:#94a3b8;padding:8px;">Empty directory</div>';
+			if (!list.children.length) {
+				const empty = document.createElement('div');
+				empty.style.cssText = 'color:#94a3b8;padding:8px;';
+				empty.textContent = 'Empty directory';
+				list.appendChild(empty);
+			}
 		}
 
 		function chooseCurrentDir() {

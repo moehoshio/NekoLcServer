@@ -49,6 +49,7 @@ type Server struct {
 	feedbackLogPath       string
 	debug                 bool
 	basePath              string
+	configMu              sync.RWMutex
 	dirCacheMu            sync.RWMutex
 	dirCache              map[string]dirCacheEntry
 	updateConfigMu        sync.RWMutex
@@ -313,14 +314,15 @@ func (s *Server) writeError(w http.ResponseWriter, status int, lang, errorType, 
 	s.writeJSON(w, status, resp)
 }
 func (s *Server) maintenanceForClient(client *ClientInfo) (config.MaintenanceInfo, bool) {
-	if s.maintenanceConfig != nil && s.maintenanceConfig.MaintenanceActive {
-		return s.maintenanceConfig.MaintenanceInfo, true
+	cfg := s.currentMaintenanceConfig()
+	if cfg != nil && cfg.MaintenanceActive {
+		return cfg.MaintenanceInfo, true
 	}
 	key := platformKey(client)
-	if key == "" || s.maintenanceConfig == nil {
+	if key == "" || cfg == nil {
 		return config.MaintenanceInfo{}, false
 	}
-	if platform, ok := s.maintenanceConfig.PlatformSpecific[key]; ok && platform.MaintenanceActive {
+	if platform, ok := cfg.PlatformSpecific[key]; ok && platform.MaintenanceActive {
 		return platform.MaintenanceInfo, true
 	}
 	return config.MaintenanceInfo{}, false
@@ -377,6 +379,52 @@ func (s *Server) currentUpdateConfig() *config.UpdateConfig {
 	cfg := s.updateConfig
 	s.updateConfigMu.RUnlock()
 	return cfg
+}
+
+// currentLauncherConfig returns the active launcher configuration. The returned
+// pointer must be treated as read-only; updates replace the whole pointer under
+// configMu so existing readers keep observing a consistent snapshot.
+func (s *Server) currentLauncherConfig() *config.LauncherConfig {
+	s.configMu.RLock()
+	cfg := s.launcherConfig
+	s.configMu.RUnlock()
+	return cfg
+}
+
+func (s *Server) setLauncherConfig(cfg *config.LauncherConfig) {
+	s.configMu.Lock()
+	s.launcherConfig = cfg
+	s.configMu.Unlock()
+}
+
+// currentMaintenanceConfig returns the active maintenance configuration. The
+// returned pointer must be treated as read-only.
+func (s *Server) currentMaintenanceConfig() *config.MaintenanceConfig {
+	s.configMu.RLock()
+	cfg := s.maintenanceConfig
+	s.configMu.RUnlock()
+	return cfg
+}
+
+func (s *Server) setMaintenanceConfig(cfg *config.MaintenanceConfig) {
+	s.configMu.Lock()
+	s.maintenanceConfig = cfg
+	s.configMu.Unlock()
+}
+
+// currentNewsItems returns the active news items. The returned slice must be
+// treated as read-only.
+func (s *Server) currentNewsItems() []config.NewsItem {
+	s.configMu.RLock()
+	items := s.newsItems
+	s.configMu.RUnlock()
+	return items
+}
+
+func (s *Server) setNewsItems(items []config.NewsItem) {
+	s.configMu.Lock()
+	s.newsItems = items
+	s.configMu.Unlock()
 }
 
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (*authClaims, error) {
@@ -1193,9 +1241,10 @@ func modTimeSafe(path string) time.Time {
 
 // saveLauncherConfig writes the current launcher configuration to database.
 func (s *Server) saveLauncherConfig() error {
+	cfg := s.currentLauncherConfig()
 	// Try to save to database first
 	if s.store != nil {
-		data, err := json.Marshal(s.launcherConfig)
+		data, err := json.Marshal(cfg)
 		if err != nil {
 			return err
 		}
@@ -1208,9 +1257,10 @@ func (s *Server) saveLauncherConfig() error {
 
 // saveMaintenanceConfig writes the current maintenance configuration to database and/or file.
 func (s *Server) saveMaintenanceConfig() error {
+	cfg := s.currentMaintenanceConfig()
 	// Try to save to database first
 	if s.store != nil {
-		data, err := json.Marshal(s.maintenanceConfig)
+		data, err := json.Marshal(cfg)
 		if err != nil {
 			return err
 		}
@@ -1220,7 +1270,7 @@ func (s *Server) saveMaintenanceConfig() error {
 	}
 	// Also save to file if path is configured
 	if s.maintenanceConfigPath != "" {
-		return saveJSONFile(s.maintenanceConfigPath, s.maintenanceConfig)
+		return saveJSONFile(s.maintenanceConfigPath, cfg)
 	}
 	return nil
 }

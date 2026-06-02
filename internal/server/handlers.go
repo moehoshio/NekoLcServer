@@ -37,7 +37,7 @@ func resolveSafePath(basePath, userPath string) (string, error) {
 				return "", err
 			}
 			// Ensure the absolute path is within base directory
-			if !strings.HasPrefix(cleanPath, absBase) {
+			if !pathWithinBase(cleanPath, absBase) {
 				return "", errors.New("path must be within the assets directory")
 			}
 		}
@@ -54,10 +54,28 @@ func resolveSafePath(basePath, userPath string) (string, error) {
 	resolved := filepath.Join(absBase, cleanPath)
 	resolved = filepath.Clean(resolved)
 	// Verify the resolved path is still within the base directory
-	if !strings.HasPrefix(resolved, absBase) {
+	if !pathWithinBase(resolved, absBase) {
 		return "", errors.New("path traversal detected")
 	}
 	return resolved, nil
+}
+
+// pathWithinBase reports whether target is the base directory itself or a
+// descendant of it. It uses a path-separator boundary check so that sibling
+// directories sharing a common prefix (e.g. "/data/assets-evil" vs
+// "/data/assets") are not mistaken for being inside the base.
+func pathWithinBase(target, base string) bool {
+	if target == base {
+		return true
+	}
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return false
+	}
+	return true
 }
 
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
@@ -277,8 +295,8 @@ func (s *Server) handleRegisterInfo(w http.ResponseWriter, r *http.Request) {
 	// Per API spec: return HTTP 200 with registerResponse.registerUrl
 	// The registerUrl should point to the UI registration page
 	registerURL := s.basePath + "/app/register"
-	if s.launcherConfig != nil && s.launcherConfig.Security.UI.RegisterURL != "" {
-		registerURL = s.prependBasePath(s.launcherConfig.Security.UI.RegisterURL)
+	if launcherCfg := s.currentLauncherConfig(); launcherCfg != nil && launcherCfg.Security.UI.RegisterURL != "" {
+		registerURL = s.prependBasePath(launcherCfg.Security.UI.RegisterURL)
 	}
 
 	resp := RegisterGetResponse{
@@ -294,12 +312,13 @@ func (s *Server) handleLauncherConfig(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, s.languageFromPreferences(payload.Preferences), "InvalidRequest", err.Error())
 		return
 	}
-	if s.launcherConfig == nil {
+	launcherCfg := s.currentLauncherConfig()
+	if launcherCfg == nil {
 		s.writeError(w, http.StatusInternalServerError, s.languageFromPreferences(payload.Preferences), "InternalError", "Launcher configuration missing")
 		return
 	}
 	// Create a copy of the launcher config with basePath prepended to security URLs
-	cfgCopy := *s.launcherConfig
+	cfgCopy := *launcherCfg
 	cfgCopy.Security.LoginURL = s.prependBasePath(cfgCopy.Security.LoginURL)
 	cfgCopy.Security.LogoutURL = s.prependBasePath(cfgCopy.Security.LogoutURL)
 	cfgCopy.Security.RefreshURL = s.prependBasePath(cfgCopy.Security.RefreshURL)
@@ -398,11 +417,12 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) filterNewsItems(categories []string) []config.NewsItem {
-	if len(s.newsItems) == 0 {
+	newsSnapshot := s.currentNewsItems()
+	if len(newsSnapshot) == 0 {
 		return nil
 	}
 	if len(categories) == 0 {
-		return cloneNewsItems(s.newsItems)
+		return cloneNewsItems(newsSnapshot)
 	}
 	allowed := map[string]struct{}{}
 	for _, cat := range categories {
@@ -411,11 +431,12 @@ func (s *Server) filterNewsItems(categories []string) []config.NewsItem {
 			allowed[trimmed] = struct{}{}
 		}
 	}
+	newsItems := newsSnapshot
 	if len(allowed) == 0 {
-		return cloneNewsItems(s.newsItems)
+		return cloneNewsItems(newsItems)
 	}
 	filtered := []config.NewsItem{}
-	for _, item := range s.newsItems {
+	for _, item := range newsItems {
 		cat := strings.ToLower(strings.TrimSpace(item.Category))
 		if _, ok := allowed[cat]; ok {
 			filtered = append(filtered, item)
@@ -1030,7 +1051,7 @@ func (s *Server) handleAdminGetLauncher(w http.ResponseWriter, r *http.Request) 
 	if _, err := s.requireAdmin(w, r); err != nil {
 		return
 	}
-	cfg := s.launcherConfig
+	cfg := s.currentLauncherConfig()
 	if cfg == nil {
 		cfg = &config.LauncherConfig{}
 	}
@@ -1051,7 +1072,7 @@ func (s *Server) handleAdminUpdateLauncher(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	// Update in-memory config
-	s.launcherConfig = &payload.Launcher
+	s.setLauncherConfig(&payload.Launcher)
 	// Save to database and file
 	if err := s.saveLauncherConfig(); err != nil {
 		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
@@ -1068,7 +1089,7 @@ func (s *Server) handleAdminGetMaintenance(w http.ResponseWriter, r *http.Reques
 	if _, err := s.requireAdmin(w, r); err != nil {
 		return
 	}
-	cfg := s.maintenanceConfig
+	cfg := s.currentMaintenanceConfig()
 	if cfg == nil {
 		cfg = &config.MaintenanceConfig{}
 	}
@@ -1089,7 +1110,7 @@ func (s *Server) handleAdminUpdateMaintenance(w http.ResponseWriter, r *http.Req
 		return
 	}
 	// Update in-memory config
-	s.maintenanceConfig = &payload.Maintenance
+	s.setMaintenanceConfig(&payload.Maintenance)
 	// Save to file
 	if err := s.saveMaintenanceConfig(); err != nil {
 		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
@@ -1150,7 +1171,7 @@ func (s *Server) handleAdminGetNews(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.requireAdmin(w, r); err != nil {
 		return
 	}
-	items := s.newsItems
+	items := s.currentNewsItems()
 	if items == nil {
 		items = []config.NewsItem{}
 	}
@@ -1171,7 +1192,7 @@ func (s *Server) handleAdminUpdateNews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Update in-memory config
-	s.newsItems = normalizeNewsItems(&payload.News)
+	s.setNewsItems(normalizeNewsItems(&payload.News))
 	// Save to file
 	if err := s.saveNewsConfig(&payload.News); err != nil {
 		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())

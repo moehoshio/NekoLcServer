@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -73,7 +74,9 @@ func (s *Service) IssueTokens(subject, role string) (string, string, error) {
 		return "", "", err
 	}
 	if s.store != nil {
-		if err := s.store.SaveRefreshToken(defaultCtx(), subjectToID(subject), hashToken(refresh), time.Now().UTC().Add(s.refreshTTL)); err != nil {
+		ctx, cancel := defaultCtx()
+		defer cancel()
+		if err := s.store.SaveRefreshToken(ctx, subjectToID(subject), hashToken(refresh), time.Now().UTC().Add(s.refreshTTL)); err != nil {
 			return "", "", err
 		}
 	}
@@ -87,7 +90,9 @@ func (s *Service) Refresh(refreshToken string) (string, error) {
 		return "", err
 	}
 	if s.store != nil {
-		valid, err := s.store.RefreshTokenValid(defaultCtx(), hashToken(refreshToken), time.Now().UTC())
+		ctx, cancel := defaultCtx()
+		defer cancel()
+		valid, err := s.store.RefreshTokenValid(ctx, hashToken(refreshToken), time.Now().UTC())
 		if err != nil || !valid {
 			return "", errors.New("refresh token revoked or expired")
 		}
@@ -122,17 +127,21 @@ func (s *Service) ParseAccess(token string) (*claims, error) {
 func (s *Service) Revoke(accessToken, refreshToken string) {
 	s.revokeToken(accessToken)
 	if s.store != nil && refreshToken != "" {
-		_ = s.store.RevokeRefreshToken(defaultCtx(), hashToken(refreshToken))
+		ctx, cancel := defaultCtx()
+		defer cancel()
+		_ = s.store.RevokeRefreshToken(ctx, hashToken(refreshToken))
 	}
 	s.revokeToken(refreshToken)
 }
 
 // VerifySignature validates the identifier signature for login requests.
+// The comparison is performed in constant time to avoid leaking information
+// about the expected signature through timing side-channels.
 func (s *Service) VerifySignature(identifier string, timestamp int64, signature string) bool {
 	payload := fmt.Sprintf("%s:%d:%s", identifier, timestamp, string(s.secret))
 	sum := sha256.Sum256([]byte(payload))
 	expected := base64.StdEncoding.EncodeToString(sum[:])
-	return expected == signature
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) == 1
 }
 
 const (
@@ -228,9 +237,8 @@ func (s *Service) cleanupRevokedLocked() {
 	}
 }
 
-func defaultCtx() context.Context {
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	return ctx
+func defaultCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 5*time.Second)
 }
 
 func hashToken(raw string) string {

@@ -26,7 +26,7 @@ func TestSQLiteStore(t *testing.T) {
 	}
 
 	// Test CreateUser and GetUserByUsername
-	userID, err := store.CreateUser(ctx, "testuser", "hashedpassword", "user")
+	userID, err := store.CreateUser(ctx, "testuser", "hashedpassword", "", "user")
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}

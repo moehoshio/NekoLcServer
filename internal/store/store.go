@@ -5,18 +5,39 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
 // User represents an account in persistent storage.
 type User struct {
-	ID        int64
-	Username  string
-	Password  string // bcrypt hash
-	Role      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID            int64
+	Username      string
+	Password      string // bcrypt hash
+	Email         string
+	EmailVerified bool
+	Role          string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
+
+// AccountToken represents a single-use, hashed token for account flows such as
+// password recovery or email verification.
+type AccountToken struct {
+	ID        int64
+	UserID    int64
+	TokenHash string
+	Purpose   string
+	ExpiresAt time.Time
+	UsedAt    sql.NullTime
+	CreatedAt time.Time
+}
+
+// Account token purposes.
+const (
+	AccountTokenPurposeReset  = "reset"
+	AccountTokenPurposeVerify = "verify"
+)
 
 // RefreshToken represents a persisted refresh token.
 type RefreshToken struct {
@@ -119,11 +140,15 @@ type Store interface {
 	Ping(ctx context.Context) error
 
 	// Users
-	CreateUser(ctx context.Context, username, passwordHash, role string) (int64, error)
+	CreateUser(ctx context.Context, username, passwordHash, email, role string) (int64, error)
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id int64) (*User, error)
 	ListUsers(ctx context.Context, limit, offset int) ([]User, error)
-	UpdateUser(ctx context.Context, id int64, passwordHash, role string) error
+	UpdateUser(ctx context.Context, id int64, passwordHash, email, role string) error
+	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
+	UpdateUserEmail(ctx context.Context, id int64, email string, verified bool) error
+	SetEmailVerified(ctx context.Context, id int64, verified bool) error
 	DeleteUser(ctx context.Context, id int64) error
 	CountUsers(ctx context.Context) (int64, error)
 	HasUsers(ctx context.Context) (bool, error)
@@ -132,6 +157,10 @@ type Store interface {
 	SaveRefreshToken(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 	RefreshTokenValid(ctx context.Context, tokenHash string, now time.Time) (bool, error)
+
+	// Account tokens (password reset / email verification)
+	SaveAccountToken(ctx context.Context, userID int64, tokenHash, purpose string, expiresAt time.Time) error
+	ConsumeAccountToken(ctx context.Context, tokenHash, purpose string, now time.Time) (int64, error)
 
 	// Feedback logs
 	SaveFeedback(ctx context.Context, entry FeedbackLog) error
@@ -161,7 +190,15 @@ const (
 	ConfigKeyUpdates     = "updates"
 	ConfigKeyLanguages   = "languages"
 	ConfigKeyApp         = "app"
+	ConfigKeySMTP        = "smtp"
+	ConfigKeyAccount     = "account"
+	ConfigKeyHomeContent = "homeContent"
 )
+
+// normalizeEmail lowercases and trims an email address for consistent storage and lookup.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
 
 func ensureRole(role string) string {
 	if role == "admin" {

@@ -962,7 +962,7 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Create user with "user" role (not admin)
-	userID, err := s.store.CreateUser(r.Context(), username, string(hash), "user")
+	userID, err := s.store.CreateUser(r.Context(), username, string(hash), "", "user")
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, lang, "InternalError", err.Error())
 		return

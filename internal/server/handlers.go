@@ -1630,16 +1630,19 @@ type AdminUserListResponse struct {
 
 // AdminUserInfo represents user information for admin views (without password).
 type AdminUserInfo struct {
-	ID        int64  `json:"id"`
-	Username  string `json:"username"`
-	Role      string `json:"role"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID            int64  `json:"id"`
+	Username      string `json:"username"`
+	Email         string `json:"email,omitempty"`
+	EmailVerified bool   `json:"emailVerified"`
+	Role          string `json:"role"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
 }
 
 // AdminUpdateUserRequest is the request body for updating a user.
 type AdminUpdateUserRequest struct {
 	Password string `json:"password,omitempty"`
+	Email    string `json:"email,omitempty"`
 	Role     string `json:"role"`
 }
 
@@ -1647,6 +1650,7 @@ type AdminUpdateUserRequest struct {
 type AdminCreateUserRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Email    string `json:"email,omitempty"`
 	Role     string `json:"role"`
 }
 
@@ -1672,11 +1676,13 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, u := range users {
 		resp.Users = append(resp.Users, AdminUserInfo{
-			ID:        u.ID,
-			Username:  u.Username,
-			Role:      u.Role,
-			CreatedAt: u.CreatedAt.Format("2006-01-02T15:04:05Z"),
-			UpdatedAt: u.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+			ID:            u.ID,
+			Username:      u.Username,
+			Email:         u.Email,
+			EmailVerified: u.EmailVerified,
+			Role:          u.Role,
+			CreatedAt:     u.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt:     u.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		})
 	}
 	s.writeJSON(w, http.StatusOK, resp)
@@ -1705,7 +1711,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	id, err := s.store.CreateUser(ctx, strings.TrimSpace(req.Username), string(hash), req.Role)
+	id, err := s.store.CreateUser(ctx, strings.TrimSpace(req.Username), string(hash), strings.TrimSpace(req.Email), req.Role)
 	if err != nil {
 		s.writeError(w, http.StatusConflict, s.appConfig.Language.Default, "InvalidRequest", "username already exists or error: "+err.Error())
 		return
@@ -1745,7 +1751,7 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		passwordHash = string(hash)
 	}
-	if err := s.store.UpdateUser(ctx, id, passwordHash, req.Role); err != nil {
+	if err := s.store.UpdateUser(ctx, id, passwordHash, strings.TrimSpace(req.Email), req.Role); err != nil {
 		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
 		return
 	}

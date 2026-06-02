@@ -114,6 +114,17 @@ func (s *SQLiteStore) init() error {
         )`,
 		`CREATE INDEX IF NOT EXISTS idx_api_events_created ON api_events(created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_events_endpoint ON api_events(endpoint)`,
+		`CREATE TABLE IF NOT EXISTS account_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            purpose TEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )`,
+		`CREATE INDEX IF NOT EXISTS idx_account_tokens_user ON account_tokens(user_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -128,6 +139,8 @@ func (s *SQLiteStore) init() error {
 		`ALTER TABLE feedback_logs ADD COLUMN platform TEXT NULL`,
 		`ALTER TABLE feedback_logs ADD COLUMN arch TEXT NULL`,
 		`ALTER TABLE feedback_logs ADD COLUMN region TEXT NULL`,
+		`ALTER TABLE users ADD COLUMN email TEXT NULL`,
+		`ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range migrations {
 		// Ignore "duplicate column" errors which occur when column already exists
@@ -137,13 +150,26 @@ func (s *SQLiteStore) init() error {
 			return fmt.Errorf("migration failed: %w", err)
 		}
 	}
+	// Unique email index (must run after the email column exists). SQLite permits
+	// multiple NULLs in a UNIQUE index, so accounts without an email are allowed.
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`); err != nil {
+		return fmt.Errorf("create users email index failed: %w", err)
+	}
 	return nil
 }
 
-func (s *SQLiteStore) CreateUser(ctx context.Context, username, passwordHash, role string) (int64, error) {
+func nullableEmail(email string) interface{} {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil
+	}
+	return email
+}
+
+func (s *SQLiteStore) CreateUser(ctx context.Context, username, passwordHash, email, role string) (int64, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO users (username, password_hash, role) VALUES (?,?,?)`, username, passwordHash, ensureRole(role))
+	res, err := s.db.ExecContext(ctx, `INSERT INTO users (username, password_hash, email, role) VALUES (?,?,?,?)`, username, passwordHash, nullableEmail(email), ensureRole(role))
 	if err != nil {
 		return 0, err
 	}
@@ -153,23 +179,36 @@ func (s *SQLiteStore) CreateUser(ctx context.Context, username, passwordHash, ro
 func (s *SQLiteStore) GetUserByUsername(ctx context.Context, username string) (*User, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE username=?`, username)
-	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, err
+	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users WHERE username=?`, username)
+	return scanUserRow(row)
+}
+
+func (s *SQLiteStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil, ErrNotFound
 	}
-	return &u, nil
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users WHERE email=?`, email)
+	return scanUserRow(row)
 }
 
 func (s *SQLiteStore) GetUserByID(ctx context.Context, id int64) (*User, error) {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE id=?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users WHERE id=?`, id)
+	return scanUserRow(row)
+}
+
+// rowScanner abstracts *sql.Row and *sql.Rows for shared user scanning.
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanUserRow(row rowScanner) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.Email, &u.EmailVerified, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -187,31 +226,67 @@ func (s *SQLiteStore) ListUsers(ctx context.Context, limit, offset int) ([]User,
 	}
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, `SELECT id, username, password_hash, role, created_at, updated_at FROM users ORDER BY id ASC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username, password_hash, COALESCE(email,''), COALESCE(email_verified,0), role, created_at, updated_at FROM users ORDER BY id ASC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []User{}
 	for rows.Next() {
-		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.Password, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		u, err := scanUserRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, u)
+		out = append(out, *u)
 	}
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) UpdateUser(ctx context.Context, id int64, passwordHash, role string) error {
+func (s *SQLiteStore) UpdateUser(ctx context.Context, id int64, passwordHash, email, role string) error {
 	ctx, cancel := withTimeout(ctx)
 	defer cancel()
 	if passwordHash != "" {
-		_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, passwordHash, ensureRole(role), id)
+		if _, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, passwordHash, ensureRole(role), id); err != nil {
+			return err
+		}
+	} else {
+		if _, err := s.db.ExecContext(ctx, `UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, ensureRole(role), id); err != nil {
+			return err
+		}
+	}
+	if normalizeEmail(email) != "" {
+		_, err := s.db.ExecContext(ctx, `UPDATE users SET email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, nullableEmail(email), id)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, ensureRole(role), id)
+	return nil
+}
+
+func (s *SQLiteStore) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, passwordHash, id)
 	return err
+}
+
+func (s *SQLiteStore) UpdateUserEmail(ctx context.Context, id int64, email string, verified bool) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET email = ?, email_verified = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, nullableEmail(email), boolToInt(verified), id)
+	return err
+}
+
+func (s *SQLiteStore) SetEmailVerified(ctx context.Context, id int64, verified bool) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET email_verified = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, boolToInt(verified), id)
+	return err
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func (s *SQLiteStore) DeleteUser(ctx context.Context, id int64) error {
@@ -279,6 +354,43 @@ func (s *SQLiteStore) RefreshTokenValid(ctx context.Context, tokenHash string, n
 		return false, nil
 	}
 	return true, nil
+}
+
+func (s *SQLiteStore) SaveAccountToken(ctx context.Context, userID int64, tokenHash, purpose string, expiresAt time.Time) error {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO account_tokens (user_id, token_hash, purpose, expires_at) VALUES (?,?,?,?)`, userID, tokenHash, purpose, expiresAt)
+	return err
+}
+
+func (s *SQLiteStore) ConsumeAccountToken(ctx context.Context, tokenHash, purpose string, now time.Time) (int64, error) {
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	row := tx.QueryRowContext(ctx, `SELECT id, user_id, expires_at, used_at FROM account_tokens WHERE token_hash = ? AND purpose = ?`, tokenHash, purpose)
+	var id, userID int64
+	var expires time.Time
+	var usedAt sql.NullTime
+	if err := row.Scan(&id, &userID, &expires, &usedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	if usedAt.Valid || now.After(expires) {
+		return 0, ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE account_tokens SET used_at = ? WHERE id = ?`, now, id); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return userID, nil
 }
 
 func (s *SQLiteStore) SaveFeedback(ctx context.Context, entry FeedbackLog) error {

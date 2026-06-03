@@ -59,6 +59,7 @@ type Server struct {
 	dirCache              map[string]dirCacheEntry
 	updateConfigMu        sync.RWMutex
 	loginLimiter          *rateLimiter
+	wsHub                 *wsHub
 }
 
 type dirCacheEntry struct {
@@ -109,6 +110,11 @@ func New(
 		basePath:              normalizeBasePath(appCfg.Server.BasePath),
 		dirCache:              map[string]dirCacheEntry{},
 		loginLimiter:          newRateLimiter(loginRateLimitMax, loginRateLimitWindow),
+	}
+	// Initialize WebSocket hub if WebSocket is enabled in launcher config
+	if launcherCfg != nil && launcherCfg.WebSocket.Enable {
+		srv.wsHub = newWSHub(srv)
+		go srv.wsHub.run()
 	}
 	srv.initAccountAndSMTP()
 	srv.router = srv.buildRouter()
@@ -216,8 +222,13 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Get("/feedbackLogs", s.handleFeedbackLogs)
 				adminRouter.Delete("/feedbackLogs/{id}", s.handleAdminDeleteFeedback)
 				adminRouter.Get("/feedbackFilterOptions", s.handleFeedbackFilterOptions)
+				// WebSocket broadcast
+				adminRouter.Post("/broadcast", s.handleAdminBroadcast)
 			})
 		})
+
+		// WebSocket endpoint
+		router.Get("/v0/ws", s.handleWebSocket)
 
 		if s.debug {
 			router.Get("/debug/feedback", s.handleFeedbackView)
@@ -648,6 +659,12 @@ func (s *Server) apiTrackingMiddleware(next http.Handler) http.Handler {
 		// Skip tracking for static assets and certain paths
 		path := r.URL.Path
 		if strings.HasPrefix(path, "/app") && !strings.HasPrefix(path, "/app/api") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Skip wrapping for WebSocket upgrades to preserve http.Hijacker
+		if strings.Contains(strings.ToLower(r.Header.Get("Upgrade")), "websocket") {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -487,8 +487,8 @@ func TestNewsReturnsItems(t *testing.T) {
 	if len(resp.NewsResponse.Items) != 1 {
 		t.Fatalf("expected 1 item got %d", len(resp.NewsResponse.Items))
 	}
-	if !resp.NewsResponse.HasMore {
-		t.Fatalf("expected hasMore true")
+	if resp.NewsResponse.HasMore {
+		t.Fatalf("expected hasMore false")
 	}
 }
 

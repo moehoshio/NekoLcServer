@@ -581,7 +581,7 @@ func (s *Server) resolveUpdateFiles(client *ClientInfo) ([]UpdateFileResponse, b
 		files = append(files, s.filesFromEntries(latest.Resource, false)...)
 	}
 
-	return files, len(files) > 0, latest
+	return files, needCore || needResource, latest
 }
 
 func findDiff(diffs []config.DiffFile, clientVersion string, isCore bool) *config.DiffFile {

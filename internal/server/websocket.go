@@ -259,7 +259,10 @@ func (c *wsClient) sendPong() {
 		Action: "pong",
 		Meta:   c.hub.server.meta(),
 	}
-	data, _ := json.Marshal(resp)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
 	select {
 	case c.send <- data:
 	default:
@@ -283,7 +286,10 @@ func (c *wsClient) handleQuery(msg WSClientMessage) {
 			NotifyChanged: notification,
 			Meta:          s.meta(),
 		}
-		data, _ := json.Marshal(resp)
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return
+		}
 		select {
 		case c.send <- data:
 		default:
@@ -296,7 +302,10 @@ func (c *wsClient) handleQuery(msg WSClientMessage) {
 		Action: "pong",
 		Meta:   s.meta(),
 	}
-	data, _ := json.Marshal(resp)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
 	select {
 	case c.send <- data:
 	default:
@@ -313,7 +322,10 @@ func (c *wsClient) sendError(errorType, message string) {
 		}},
 		Meta: c.hub.server.meta(),
 	}
-	data, _ := json.Marshal(resp)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
 	select {
 	case c.send <- data:
 	default:

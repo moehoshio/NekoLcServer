@@ -2351,6 +2351,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				baseUrlAdded: 'Base URL added',
 				baseUrlRemoved: 'Base URL removed'
 			},
+			'zh-hans': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 统计',
@@ -2463,6 +2464,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				baseUrlAdded: '已添加基础 URL',
 				baseUrlRemoved: '已移除基础 URL'
 			},
+			'zh-hant': {
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 統計',
@@ -3938,10 +3940,12 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		}
 		
 		// Initialize
-		checkAuth();
-		applyLang();
-		renderBaseUrlPresets();
-		loadStats();
+		(async () => {
+			await checkAuth();
+			applyLang();
+			renderBaseUrlPresets();
+			loadStats();
+		})();
 	</script>
 </body>
 </html>`))

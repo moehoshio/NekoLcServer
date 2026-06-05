@@ -27,6 +27,7 @@ import (
 	"github.com/moehoshio/NekoLcServer/internal/config"
 	"github.com/moehoshio/NekoLcServer/internal/localization"
 	"github.com/moehoshio/NekoLcServer/internal/mailer"
+	"github.com/moehoshio/NekoLcServer/internal/markdown"
 	"github.com/moehoshio/NekoLcServer/internal/store"
 )
 
@@ -257,6 +258,7 @@ func (s *Server) buildRouter() chi.Router {
 
 		router.Get("/app", s.handleAppHome)
 		router.Get("/app/", s.handleAppHome)
+		router.Get("/app/news", s.handleAppNews)
 		router.Get("/app/login", s.handleAppLogin)
 
 		// Static download endpoint for uploaded update assets.
@@ -571,7 +573,7 @@ func (s *Server) currentSiteConfig() *config.SiteConfig {
 	cfg := s.siteConfig
 	s.configMu.RUnlock()
 	if cfg == nil {
-		return &config.SiteConfig{}
+		return &config.SiteConfig{ShowNews: true, ShowMaintenance: true}
 	}
 	return cfg
 }
@@ -792,7 +794,6 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 		<div class="links">
 			<a href="{{.BasePath}}/app/login" class="btn btn-primary" id="link-signin">🔑 Sign In</a>
 			<a href="{{.BasePath}}/app/register" class="btn btn-secondary" id="link-register">📝 Register</a>
-			<a href="{{.BasePath}}/app/admin" class="btn btn-secondary" id="link-admin">⚙️ Admin Dashboard</a>
 		</div>
 		<div class="features">
 			<div class="feature">
@@ -828,7 +829,6 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 			document.getElementById('subtitle').innerText = t.subtitle;
 			document.getElementById('link-signin').innerText = t.signin;
 			document.getElementById('link-register').innerText = t.register;
-			document.getElementById('link-admin').innerText = t.admin;
 			document.getElementById('f1-title').innerText = t.f1t;
 			document.getElementById('f1-desc').innerText = t.f1d;
 			document.getElementById('f2-title').innerText = t.f2t;
@@ -854,6 +854,88 @@ func (s *Server) handleAppHome(w http.ResponseWriter, r *http.Request) {
 		"SEODescription": site.SEODescription,
 		"Announcement":   site.Announcement,
 	})
+}
+
+// appNewsTemplate renders a single news item as a public, shareable permalink.
+// It is the target of the URLs auto-generated for maintenance announcements that
+// reference an in-app news item.
+var appNewsTemplate = template.Must(template.New("appNews").Parse(`<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>{{if .Found}}{{.Title}} · {{end}}{{.SiteName}}</title>
+	<style>` + sharedPageStyle + `
+		body { display: block; height: auto; }
+		.news { max-width: 760px; margin: 48px auto; padding: 0 20px; }
+		.news .back { display: inline-block; margin-bottom: 24px; color: #22d3ee; text-decoration: none; }
+		.news .back:hover { text-decoration: underline; }
+		.news h1 { font-size: 28px; line-height: 1.3; }
+		.news .meta { color: var(--text-soft); font-size: 14px; margin: 8px 0 20px 0; }
+		.news .poster { width: 100%; border-radius: 12px; margin-bottom: 20px; }
+		.news .summary { font-size: 17px; color: var(--text-soft); margin-bottom: 20px; }
+		.news .body { line-height: 1.7; }
+		.news .body img { max-width: 100%; border-radius: 8px; }
+		.news .body pre { background: var(--surface-2); padding: 12px; border-radius: 8px; overflow-x: auto; }
+		.news .body code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+		.news .ext { display: inline-block; margin-top: 24px; color: #22d3ee; text-decoration: none; }
+		.news .notfound { text-align: center; color: var(--text-soft); margin-top: 48px; }</style>
+</head>
+<body>
+	<div class="news">
+		<a href="{{.BasePath}}/app" class="back">← {{.SiteName}}</a>
+		{{if .Found}}
+		<h1>{{.Title}}</h1>
+		<div class="meta">{{if .PublishTime}}{{.PublishTime}}{{end}}{{if .Category}} · {{.Category}}{{end}}</div>
+		{{if .PosterURL}}<img class="poster" src="{{.PosterURL}}" alt="" />{{end}}
+		{{if .Summary}}<div class="summary">{{.Summary}}</div>{{end}}
+		<div class="body">{{.ContentHTML}}</div>
+		{{if .ExternalLink}}<a class="ext" href="{{.ExternalLink}}" target="_blank" rel="noopener noreferrer">🔗 {{.ExternalLink}}</a>{{end}}
+		{{else}}
+		<div class="notfound">News item not found.</div>
+		{{end}}
+	</div>
+</body>
+</html>`))
+
+// handleAppNews renders the public permalink page for a single news item,
+// selected by its id query parameter.
+func (s *Server) handleAppNews(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	site := s.currentSiteConfig()
+	name := site.SiteName
+	if name == "" {
+		name = "NekoLcServer"
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	data := map[string]interface{}{
+		"BasePath": s.basePath,
+		"SiteName": name,
+		"Found":    false,
+	}
+	if id != "" {
+		for _, item := range s.currentNewsItems() {
+			if item.ID == id {
+				data["Found"] = true
+				data["Title"] = item.Title
+				data["PublishTime"] = item.PublishTime
+				data["Category"] = item.Category
+				data["PosterURL"] = item.PosterURL
+				data["Summary"] = item.Summary
+				data["ExternalLink"] = item.Link
+				body := item.Content
+				if strings.TrimSpace(body) == "" {
+					body = item.Summary
+				}
+				data["ContentHTML"] = template.HTML(markdown.Render(body))
+				break
+			}
+		}
+	}
+	if data["Found"] == false {
+		w.WriteHeader(http.StatusNotFound)
+	}
+	appNewsTemplate.Execute(w, data)
 }
 
 var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype html>
@@ -1918,7 +2000,17 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 					<div class="form-group">
 						<label for="maint-link" id="lbl-maint-link">Announcement Link</label>
-						<input type="text" id="maint-link" placeholder="https://..." />
+						<div class="form-row" style="align-items: flex-end;">
+							<div class="form-group" style="flex: 1; margin-bottom: 0;">
+								<input type="text" id="maint-link" placeholder="https://..." />
+							</div>
+							<div class="form-group" style="flex: 1; margin-bottom: 0;">
+								<select id="maint-link-news" onchange="applyMaintLinkNews()">
+									<option value="" id="opt-maint-news-none">— Select a news item —</option>
+								</select>
+							</div>
+						</div>
+						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="maint-link-news-help">Pick an existing news item to auto-generate its link, or type a custom URL above.</p>
 					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveMaintenance()" id="btn-save-maint">Save Changes</button>
@@ -2309,12 +2401,22 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						<textarea id="site-announcement" rows="3" placeholder="Shown as a banner on the home page (leave empty to hide)."></textarea>
 						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="site-announcement-help">Displayed as a banner on the public home page. Leave empty to hide.</p>
 					</div>
+					<h3 id="dashboard-options-title" style="margin: 20px 0 8px 0;">📊 Dashboard Options</h3>
+					<p style="color: var(--text-muted); margin-bottom: 12px; font-size: 13px;" id="dashboard-options-desc">Control which sections are shown on the signed-in user dashboard.</p>
+					<div class="form-group toggle">
+						<input type="checkbox" id="site-show-news" />
+						<label for="site-show-news" id="lbl-site-show-news">Show news on dashboard</label>
+					</div>
+					<div class="form-group toggle">
+						<input type="checkbox" id="site-show-maintenance" />
+						<label for="site-show-maintenance" id="lbl-site-show-maintenance">Show maintenance status on dashboard</label>
+					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveSite()" id="btn-save-site">Save Changes</button>
 					</div>
 				</div>
 				<div class="card">
-					<h2 id="email-home-title">🏠 Home Page Content (Markdown)</h2>
+					<h2 id="email-home-title">🏠 Dashboard Content (Markdown)</h2>
 					<p style="color: var(--text-muted); margin-bottom: 16px;" id="email-home-desc">This Markdown content is rendered safely and shown on the user dashboard.</p>
 					<div class="form-group">
 						<textarea id="home-content" rows="12" style="width:100%;font-family:'Cascadia Code',Consolas,monospace;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-3);color:var(--text);box-sizing:border-box;"></textarea>
@@ -2450,6 +2552,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				startTime: 'Start Time',
 				endTime: 'Expected End Time',
 				announcementLink: 'Announcement Link',
+				selectNews: '— Select a news item —',
+				selectNewsHelp: 'Pick an existing news item to auto-generate its link, or type a custom URL above.',
 				platformMaintTitle: 'Platform-Specific Maintenance',
 				platformMaintDesc: 'Configure maintenance settings per platform (e.g., windows-x64, linux-arm64).',
 				addPlatform: '+ Add Platform',
@@ -2529,7 +2633,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				accountRequireEmail: 'Require email at registration',
 				accountVerifyEmail: 'Send verification email on registration',
 				saveAccountPolicy: 'Save Account Policy',
-				emailHomeTitle: '🏠 Home Page Content (Markdown)',
+				emailHomeTitle: '🏠 Dashboard Content (Markdown)',
 				emailHomeDesc: 'This Markdown content is rendered safely and shown on the user dashboard.',
 				saveContent: 'Save Content',
 				acctPolicyTitle: '👤 Account Policy',
@@ -2544,6 +2648,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				seoDescriptionHelp: 'Used for the home page meta description tag.',
 				announcement: 'Site Announcement',
 				announcementHelp: 'Displayed as a banner on the public home page. Leave empty to hide.',
+				dashboardOptions: '📊 Dashboard Options',
+				dashboardOptionsDesc: 'Control which sections are shown on the signed-in user dashboard.',
+				showNews: 'Show news on dashboard',
+				showMaintenance: 'Show maintenance status on dashboard',
 				messageDefault: 'Message (Default)',
 				localizedMessages: 'Localized Messages',
 				localizedMessagesHelp: 'Add messages for different languages. The default message above will be used if no localized message is available.',
@@ -2619,6 +2727,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				startTime: '开始时间',
 				endTime: '预计结束时间',
 				announcementLink: '公告链接',
+				selectNews: '— 选择一条新闻 —',
+				selectNewsHelp: '选择一条已有新闻以自动生成其链接，或在上方输入自定义网址。',
 				platformMaintTitle: '平台特定维护',
 				platformMaintDesc: '为不同平台配置维护设置（例如：windows-x64、linux-arm64）。',
 				addPlatform: '+ 添加平台',
@@ -2698,7 +2808,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				accountRequireEmail: '注册时要求邮箱',
 				accountVerifyEmail: '注册时发送验证邮件',
 				saveAccountPolicy: '保存账户策略',
-				emailHomeTitle: '🏠 首页内容（Markdown）',
+				emailHomeTitle: '🏠 仪表板内容（Markdown）',
 				emailHomeDesc: '此 Markdown 内容将安全渲染并显示在用户仪表板上。',
 				saveContent: '保存内容',
 				acctPolicyTitle: '👤 账户策略',
@@ -2713,6 +2823,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				seoDescriptionHelp: '用于首页的 meta description 标签。',
 				announcement: '站点公告',
 				announcementHelp: '以横幅形式显示在公开首页。留空则隐藏。',
+				dashboardOptions: '📊 仪表板选项',
+				dashboardOptionsDesc: '控制登录用户仪表板上显示哪些区块。',
+				showNews: '在仪表板显示新闻',
+				showMaintenance: '在仪表板显示维护状态',
 				messageDefault: '消息（默认）',
 				localizedMessages: '本地化消息',
 				localizedMessagesHelp: '为不同语言添加消息。如果没有对应的本地化消息，将使用上方的默认消息。',
@@ -2788,6 +2902,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				startTime: '開始時間',
 				endTime: '預計結束時間',
 				announcementLink: '公告連結',
+				selectNews: '— 選擇一則新聞 —',
+				selectNewsHelp: '選擇一則已有新聞以自動產生其連結，或在上方輸入自訂網址。',
 				platformMaintTitle: '平台特定維護',
 				platformMaintDesc: '為不同平台設定維護設定（例如：windows-x64、linux-arm64）。',
 				addPlatform: '+ 新增平台',
@@ -2867,7 +2983,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				accountRequireEmail: '註冊時要求電子郵件',
 				accountVerifyEmail: '註冊時傳送驗證郵件',
 				saveAccountPolicy: '儲存帳戶策略',
-				emailHomeTitle: '🏠 首頁內容（Markdown）',
+				emailHomeTitle: '🏠 儀表板內容（Markdown）',
 				emailHomeDesc: '此 Markdown 內容將安全渲染並顯示在使用者儀表板上。',
 				saveContent: '儲存內容',
 				acctPolicyTitle: '👤 帳戶策略',
@@ -2882,6 +2998,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				seoDescriptionHelp: '用於首頁的 meta description 標籤。',
 				announcement: '站點公告',
 				announcementHelp: '以橫幅形式顯示在公開首頁。留空則隱藏。',
+				dashboardOptions: '📊 儀表板選項',
+				dashboardOptionsDesc: '控制登入使用者儀表板上顯示哪些區塊。',
+				showNews: '在儀表板顯示新聞',
+				showMaintenance: '在儀表板顯示維護狀態',
 				messageDefault: '訊息（預設）',
 				localizedMessages: '本地化訊息',
 				localizedMessagesHelp: '為不同語言新增訊息。若沒有對應的本地化訊息，將使用上方的預設訊息。',
@@ -3022,6 +3142,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('site-seo-help').innerText = t('seoDescriptionHelp');
 			document.getElementById('lbl-site-announcement').innerText = t('announcement');
 			document.getElementById('site-announcement-help').innerText = t('announcementHelp');
+			document.getElementById('dashboard-options-title').innerText = t('dashboardOptions');
+			document.getElementById('dashboard-options-desc').innerText = t('dashboardOptionsDesc');
+			document.getElementById('lbl-site-show-news').innerText = t('showNews');
+			document.getElementById('lbl-site-show-maintenance').innerText = t('showMaintenance');
 			document.getElementById('btn-save-site').innerText = t('saveChanges');
 			// Maintenance section
 			document.getElementById('maint-title').innerText = t('maintTitle');
@@ -3038,6 +3162,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('lbl-maint-start').innerText = t('startTime');
 			document.getElementById('lbl-maint-end').innerText = t('endTime');
 			document.getElementById('lbl-maint-link').innerText = t('announcementLink');
+			document.getElementById('opt-maint-news-none').innerText = t('selectNews');
+			document.getElementById('maint-link-news-help').innerText = t('selectNewsHelp');
 			document.getElementById('btn-save-maint').innerText = t('saveChanges');
 			document.getElementById('btn-reload-maint').innerText = t('reload');
 			document.getElementById('platform-maint-title').innerText = t('platformMaintTitle');
@@ -3210,6 +3336,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				document.getElementById('site-name').value = c.siteName || '';
 				document.getElementById('site-seo').value = c.seoDescription || '';
 				document.getElementById('site-announcement').value = c.announcement || '';
+				document.getElementById('site-show-news').checked = c.showNews !== false;
+				document.getElementById('site-show-maintenance').checked = c.showMaintenance !== false;
 			}
 			await loadHomeContent();
 		}
@@ -3217,7 +3345,9 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			const site = {
 				siteName: document.getElementById('site-name').value.trim(),
 				seoDescription: document.getElementById('site-seo').value.trim(),
-				announcement: document.getElementById('site-announcement').value.trim()
+				announcement: document.getElementById('site-announcement').value.trim(),
+				showNews: document.getElementById('site-show-news').checked,
+				showMaintenance: document.getElementById('site-show-maintenance').checked
 			};
 			const res = await apiRequest('PUT', '/v0/api/admin/site', { site });
 			if (res && res.ok) showMessage(t('settingsSaved'));
@@ -3467,8 +3597,55 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			}
 			renderLocalizedMessages();
 			renderPlatformMaintenance();
+			populateMaintLinkNews();
 		}
-		
+
+		// newsUrlFor builds the URL returned for a maintenance announcement that
+		// points at an existing news item. If the news item already carries its own
+		// external link we use that; otherwise we generate a stable permalink to the
+		// in-app news page.
+		function newsUrlFor(item) {
+			if (item && item.link && item.link.trim()) return item.link.trim();
+			if (!item || !item.id) return '';
+			return window.location.origin + basePath + '/app/news?id=' + encodeURIComponent(item.id);
+		}
+
+		// populateMaintLinkNews fills the news dropdown next to the announcement link
+		// with the news items currently configured on the server.
+		async function populateMaintLinkNews() {
+			const sel = document.getElementById('maint-link-news');
+			if (!sel) return;
+			let items = newsData && newsData.items;
+			if (!items) {
+				const res = await apiRequest('GET', '/v0/api/admin/news');
+				if (res && res.ok) {
+					const data = await res.json();
+					newsData = data.news;
+					items = newsData && newsData.items;
+				}
+			}
+			const none = document.getElementById('opt-maint-news-none');
+			sel.innerHTML = '';
+			sel.appendChild(none ? none : new Option(t('selectNews') || '— Select a news item —', ''));
+			(items || []).forEach(item => {
+				const label = (item.title && item.title.trim()) ? item.title : (item.id || '');
+				const opt = new Option(label, item.id || '');
+				sel.appendChild(opt);
+			});
+			sel.value = '';
+		}
+
+		// applyMaintLinkNews writes the generated URL for the selected news item into
+		// the announcement link field.
+		function applyMaintLinkNews() {
+			const sel = document.getElementById('maint-link-news');
+			if (!sel || !sel.value) return;
+			const items = (newsData && newsData.items) || [];
+			const item = items.find(n => (n.id || '') === sel.value);
+			const url = newsUrlFor(item);
+			if (url) document.getElementById('maint-link').value = url;
+		}
+
 		function renderLocalizedMessages() {
 			const container = document.getElementById('localized-messages-list');
 			if (!maintenanceData || !maintenanceData.maintenanceInfo) {
@@ -4512,6 +4689,7 @@ h2 { margin: 0 0 16px 0; color: var(--text-strong); font-size: 18px; }
 <button class="btn-primary" onclick="openModal('pw')" id="btn-change-password">Change Password</button>
 <button class="btn-secondary" onclick="openModal('email')" id="btn-change-email">Change Email</button>
 <button class="btn-secondary hidden" onclick="sendVerification()" id="btn-verify-email">Verify Email</button>
+<a href="{{.BasePath}}/app/admin" class="btn-secondary hidden" id="link-admin">⚙️ Admin Dashboard</a>
 <a href="{{.BasePath}}/app" class="btn-secondary" id="link-home">Home</a>
 </div>
 <div id="account-message" style="margin-top:12px;min-height:18px;"></div>
@@ -4561,9 +4739,9 @@ h2 { margin: 0 0 16px 0; color: var(--text-strong); font-size: 18px; }
 <script>
 const basePath = '{{.BasePath}}';
 const i18n = {
-'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed', themeAuto: 'Auto', themeLight: 'Light', themeDark: 'Dark' },
-'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败', themeAuto: '自动', themeLight: '浅色', themeDark: '深色' },
-'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗', themeAuto: '自動', themeLight: '淺色', themeDark: '深色' }
+'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', adminPanel: '⚙️ Admin Dashboard', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed', themeAuto: 'Auto', themeLight: 'Light', themeDark: 'Dark' },
+'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', adminPanel: '⚙️ 管理面板', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败', themeAuto: '自动', themeLight: '浅色', themeDark: '深色' },
+'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', adminPanel: '⚙️ 管理面板', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗', themeAuto: '自動', themeLight: '淺色', themeDark: '深色' }
 };
 let currentUser = null;
 function getLang() { return localStorage.getItem('lang') || 'en'; }
@@ -4602,6 +4780,7 @@ document.getElementById('link-home').innerText = tt.home;
 document.getElementById('btn-change-password').innerText = tt.changePassword;
 document.getElementById('btn-change-email').innerText = tt.changeEmail;
 document.getElementById('btn-verify-email').innerText = tt.verifyEmail;
+document.getElementById('link-admin').innerText = tt.adminPanel;
 document.getElementById('news-title').innerText = '📰 ' + tt.news;
 document.getElementById('home-content-title').innerText = '📌 ' + tt.announcements;
 document.getElementById('maintenance-title').innerText = '🔧 ' + tt.maintenance;
@@ -4643,6 +4822,11 @@ document.getElementById('username').innerText = currentUser.username || tt.user;
 document.getElementById('info-username').innerText = currentUser.username || '-';
 document.getElementById('info-email').innerText = currentUser.email || tt.noEmail;
 document.getElementById('info-role').innerText = (currentUser.role === 'admin') ? tt.admin : tt.user;
+// Surface the admin panel entry only for admin users — access to the
+// back-office dashboard is gated by role rather than shown to everyone.
+const adminLink = document.getElementById('link-admin');
+if (currentUser.role === 'admin') { adminLink.classList.remove('hidden'); }
+else { adminLink.classList.add('hidden'); }
 const statusEl = document.getElementById('info-status');
 if (currentUser.email) {
 if (currentUser.emailVerified) { statusEl.className = 'badge badge-ok'; statusEl.innerText = tt.verified; document.getElementById('btn-verify-email').classList.add('hidden'); }

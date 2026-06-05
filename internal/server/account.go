@@ -401,25 +401,29 @@ func (s *Server) handleAppHomeContent(w http.ResponseWriter, r *http.Request) {
 		News:            []HomeNewsItem{},
 		Meta:            s.meta(),
 	}
-	if mc := s.currentMaintenanceConfig(); mc != nil && mc.MaintenanceActive {
-		resp.Maintenance = &MaintenanceNotice{
-			Active:  true,
-			Status:  mc.MaintenanceInfo.Status,
-			Message: mc.MaintenanceInfo.Message,
+	site := s.currentSiteConfig()
+	if site.ShowMaintenance {
+		if mc := s.currentMaintenanceConfig(); mc != nil && mc.MaintenanceActive {
+			resp.Maintenance = &MaintenanceNotice{
+				Active:  true,
+				Status:  mc.MaintenanceInfo.Status,
+				Message: mc.MaintenanceInfo.Message,
+			}
 		}
 	}
-	for _, item := range s.currentNewsItems() {
-		resp.News = append(resp.News, HomeNewsItem{
-			ID:          item.ID,
-			Title:       item.Title,
-			Summary:     item.Summary,
-			Link:        item.Link,
-			PublishTime: item.PublishTime,
-		})
-		if len(resp.News) >= 10 {
-			break
+	if site.ShowNews {
+		for _, item := range s.currentNewsItems() {
+			resp.News = append(resp.News, HomeNewsItem{
+				ID:          item.ID,
+				Title:       item.Title,
+				Summary:     item.Summary,
+				Link:        item.Link,
+				PublishTime: item.PublishTime,
+			})
+			if len(resp.News) >= 10 {
+				break
+			}
 		}
 	}
 	s.writeJSON(w, http.StatusOK, resp)
 }
-

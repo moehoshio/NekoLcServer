@@ -54,7 +54,9 @@
   "site": {
     "siteName": "NekoLcServer",
     "seoDescription": "A modern launcher server for managing updates, news, and user authentication",
-    "announcement": ""
+    "announcement": "",
+    "showNews": true,
+    "showMaintenance": true
   },
   "webSocket": {
     "enable": false,

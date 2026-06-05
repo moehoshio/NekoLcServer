@@ -94,6 +94,37 @@ type SiteConfig struct {
 	SiteName       string `json:"siteName"`
 	SEODescription string `json:"seoDescription"`
 	Announcement   string `json:"announcement"`
+	// ShowNews toggles whether the news list is shown on the user dashboard.
+	ShowNews bool `json:"showNews"`
+	// ShowMaintenance toggles whether the maintenance notice is shown on the user dashboard.
+	ShowMaintenance bool `json:"showMaintenance"`
+}
+
+// UnmarshalJSON defaults ShowNews and ShowMaintenance to true when the fields
+// are absent so that configs predating these options (and the default config)
+// keep showing news and maintenance on the dashboard. Explicit "false" values
+// still disable them.
+func (c *SiteConfig) UnmarshalJSON(data []byte) error {
+	type alias SiteConfig
+	aux := &struct {
+		ShowNews        *bool `json:"showNews"`
+		ShowMaintenance *bool `json:"showMaintenance"`
+		*alias
+	}{alias: (*alias)(c)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.ShowNews == nil {
+		c.ShowNews = true
+	} else {
+		c.ShowNews = *aux.ShowNews
+	}
+	if aux.ShowMaintenance == nil {
+		c.ShowMaintenance = true
+	} else {
+		c.ShowMaintenance = *aux.ShowMaintenance
+	}
+	return nil
 }
 
 // WebSocketServerConfig controls the server-side WebSocket listener. When Port is

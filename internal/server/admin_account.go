@@ -161,19 +161,23 @@ func (s *Server) handleAdminUpdateSite(w http.ResponseWriter, r *http.Request) {
 // AppSiteConfigResponse is the public, non-sensitive view of the site config
 // used by the public-facing pages (announcement banner, branding).
 type AppSiteConfigResponse struct {
-	SiteName       string `json:"siteName"`
-	SEODescription string `json:"seoDescription"`
-	Announcement   string `json:"announcement"`
-	Meta           Meta   `json:"meta"`
+	SiteName        string `json:"siteName"`
+	SEODescription  string `json:"seoDescription"`
+	Announcement    string `json:"announcement"`
+	ShowNews        bool   `json:"showNews"`
+	ShowMaintenance bool   `json:"showMaintenance"`
+	Meta            Meta   `json:"meta"`
 }
 
 func (s *Server) handleAppSiteConfig(w http.ResponseWriter, r *http.Request) {
 	site := s.currentSiteConfig()
 	resp := AppSiteConfigResponse{
-		SiteName:       site.SiteName,
-		SEODescription: site.SEODescription,
-		Announcement:   site.Announcement,
-		Meta:           s.meta(),
+		SiteName:        site.SiteName,
+		SEODescription:  site.SEODescription,
+		Announcement:    site.Announcement,
+		ShowNews:        site.ShowNews,
+		ShowMaintenance: site.ShowMaintenance,
+		Meta:            s.meta(),
 	}
 	s.writeJSON(w, http.StatusOK, resp)
 }

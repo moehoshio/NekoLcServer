@@ -1014,14 +1014,40 @@ var appFeedbackTemplate = template.Must(template.New("appFeedback").Parse(`<!doc
 		.content { white-space: pre-wrap; color: #f8fafc; }
 		.code { background: #111827; padding: 8px; border-radius: 6px; font-family: "Cascadia Code", Consolas, monospace; color: #cbd5e1; white-space: pre-wrap; }
 		.error { color: #f87171; margin: 8px 0; }
+		.lang-switch { position: absolute; top: 16px; right: 16px; }
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; cursor: pointer; }
 	</style>
 </head>
 <body>
-	<h1>Feedback Logs</h1>
+	<div class="lang-switch">
+		<select id="langSelect" onchange="changeLang()">
+			<option value="en">English</option>
+			<option value="zh-hans">简体中文</option>
+			<option value="zh-hant">繁體中文</option>
+		</select>
+	</div>
+	<h1 id="title">Feedback Logs</h1>
 	<div class="error" id="error"></div>
-	<table id="table"><thead><tr><th>When</th><th>Content</th><th>Client</th></tr></thead><tbody></tbody></table>
+	<table id="table"><thead><tr><th id="th-when">When</th><th id="th-content">Content</th><th id="th-client">Client</th></tr></thead><tbody></tbody></table>
 	<script>
 		const basePath = '{{.BasePath}}';
+		const i18n = {
+			'en': { title: 'Feedback Logs', when: 'When', content: 'Content', client: 'Client', failed: 'Failed to load logs' },
+			'zh-hans': { title: '反馈日志', when: '时间', content: '内容', client: '客户端', failed: '加载日志失败' },
+			'zh-hant': { title: '意見回饋記錄', when: '時間', content: '內容', client: '用戶端', failed: '載入記錄失敗' }
+		};
+		function getLang() { return localStorage.getItem('lang') || 'en'; }
+		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function applyLang() {
+			const t = i18n[getLang()] || i18n['en'];
+			document.getElementById('langSelect').value = getLang();
+			document.getElementById('title').innerText = t.title;
+			document.getElementById('th-when').innerText = t.when;
+			document.getElementById('th-content').innerText = t.content;
+			document.getElementById('th-client').innerText = t.client;
+		}
+		applyLang();
 		function escapeHtml(str) {
 			if (!str) return '';
 			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -1031,7 +1057,7 @@ var appFeedbackTemplate = template.Must(template.New("appFeedback").Parse(`<!doc
 			if (!token) { window.location.href = basePath + '/app/login'; return; }
 			const res = await fetch(basePath + '/v0/api/feedbackLogs?limit=50', { headers: { 'Authorization': 'Bearer ' + token } });
 			if (res.status === 401 || res.status === 403) { localStorage.removeItem('accessToken'); window.location.href = basePath + '/app/login'; return; }
-			if (!res.ok) { document.getElementById('error').innerText = 'Failed to load logs'; return; }
+			if (!res.ok) { const t = i18n[getLang()] || i18n['en']; document.getElementById('error').innerText = t.failed; return; }
 			const data = await res.json();
 			const tbody = document.querySelector('#table tbody');
 			tbody.innerHTML = '';
@@ -2349,7 +2375,31 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				settingsSaved: 'Settings saved',
 				enterBaseUrl: 'Enter a Base URL to add',
 				baseUrlAdded: 'Base URL added',
-				baseUrlRemoved: 'Base URL removed'
+				baseUrlRemoved: 'Base URL removed',
+				statsTitle: '📊 Statistics',
+				emailSmtpTitle: '✉️ SMTP Settings',
+				emailSmtpDesc: 'Configure the outbound email server used for password recovery and email verification.',
+				smtpEnabled: 'Enable email sending',
+				smtpHost: 'Host',
+				smtpPort: 'Port',
+				smtpTls: 'TLS Mode',
+				smtpUsername: 'Username',
+				smtpPassword: 'Password',
+				smtpFrom: 'From Address',
+				smtpFromName: 'From Name',
+				smtpBaseUrl: 'Base URL',
+				smtpBaseUrlHelp: 'Public base URL used to build links in emails.',
+				saveSMTP: 'Save SMTP',
+				emailTestTitle: 'Send Test Email',
+				smtpTestTo: 'Recipient',
+				sendTest: 'Send',
+				emailAccountTitle: '👤 Account Policy',
+				accountRequireEmail: 'Require email at registration',
+				accountVerifyEmail: 'Send verification email on registration',
+				saveAccountPolicy: 'Save Account Policy',
+				emailHomeTitle: '🏠 Home Page Content (Markdown)',
+				emailHomeDesc: 'This Markdown content is rendered safely and shown on the user dashboard.',
+				saveContent: 'Save Content'
 			},
 			'zh-hans': {
 				adminTitle: '🐱 NekoLc 管理面板',
@@ -2462,7 +2512,31 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				settingsSaved: '设置已保存',
 				enterBaseUrl: '请输入要添加的基础 URL',
 				baseUrlAdded: '已添加基础 URL',
-				baseUrlRemoved: '已移除基础 URL'
+				baseUrlRemoved: '已移除基础 URL',
+				statsTitle: '📊 统计',
+				emailSmtpTitle: '✉️ SMTP 设置',
+				emailSmtpDesc: '配置用于密码恢复和邮箱验证的外发邮件服务器。',
+				smtpEnabled: '启用邮件发送',
+				smtpHost: '主机',
+				smtpPort: '端口',
+				smtpTls: 'TLS 模式',
+				smtpUsername: '用户名',
+				smtpPassword: '密码',
+				smtpFrom: '发件人地址',
+				smtpFromName: '发件人名称',
+				smtpBaseUrl: '基础 URL',
+				smtpBaseUrlHelp: '用于生成邮件中链接的公共基础 URL。',
+				saveSMTP: '保存 SMTP',
+				emailTestTitle: '发送测试邮件',
+				smtpTestTo: '收件人',
+				sendTest: '发送',
+				emailAccountTitle: '👤 账户策略',
+				accountRequireEmail: '注册时要求邮箱',
+				accountVerifyEmail: '注册时发送验证邮件',
+				saveAccountPolicy: '保存账户策略',
+				emailHomeTitle: '🏠 首页内容（Markdown）',
+				emailHomeDesc: '此 Markdown 内容将安全渲染并显示在用户仪表板上。',
+				saveContent: '保存内容'
 			},
 			'zh-hant': {
 				adminTitle: '🐱 NekoLc 管理面板',
@@ -2575,7 +2649,31 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				settingsSaved: '設定已儲存',
 				enterBaseUrl: '請輸入要新增的基礎 URL',
 				baseUrlAdded: '已新增基礎 URL',
-				baseUrlRemoved: '已移除基礎 URL'
+				baseUrlRemoved: '已移除基礎 URL',
+				statsTitle: '📊 統計',
+				emailSmtpTitle: '✉️ SMTP 設定',
+				emailSmtpDesc: '設定用於密碼恢復和電子郵件驗證的外寄郵件伺服器。',
+				smtpEnabled: '啟用郵件傳送',
+				smtpHost: '主機',
+				smtpPort: '連接埠',
+				smtpTls: 'TLS 模式',
+				smtpUsername: '使用者名稱',
+				smtpPassword: '密碼',
+				smtpFrom: '寄件人地址',
+				smtpFromName: '寄件人名稱',
+				smtpBaseUrl: '基礎 URL',
+				smtpBaseUrlHelp: '用於產生郵件中連結的公共基礎 URL。',
+				saveSMTP: '儲存 SMTP',
+				emailTestTitle: '傳送測試郵件',
+				smtpTestTo: '收件人',
+				sendTest: '傳送',
+				emailAccountTitle: '👤 帳戶策略',
+				accountRequireEmail: '註冊時要求電子郵件',
+				accountVerifyEmail: '註冊時傳送驗證郵件',
+				saveAccountPolicy: '儲存帳戶策略',
+				emailHomeTitle: '🏠 首頁內容（Markdown）',
+				emailHomeDesc: '此 Markdown 內容將安全渲染並顯示在使用者儀表板上。',
+				saveContent: '儲存內容'
 			}
 		};
 		
@@ -2643,6 +2741,32 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('settings-presets-desc').innerText = t('savedBaseUrlsDesc');
 			document.getElementById('lbl-settings-new-baseurl').innerText = t('addBaseUrl');
 			document.getElementById('btn-add-settings-preset').innerText = t('add');
+			// Email & Home section
+			document.getElementById('email-smtp-title').innerText = t('emailSmtpTitle');
+			document.getElementById('email-smtp-desc').innerText = t('emailSmtpDesc');
+			document.getElementById('lbl-smtp-enabled').innerText = t('smtpEnabled');
+			document.getElementById('lbl-smtp-host').innerText = t('smtpHost');
+			document.getElementById('lbl-smtp-port').innerText = t('smtpPort');
+			document.getElementById('lbl-smtp-tls').innerText = t('smtpTls');
+			document.getElementById('lbl-smtp-username').innerText = t('smtpUsername');
+			document.getElementById('lbl-smtp-password').innerText = t('smtpPassword');
+			document.getElementById('lbl-smtp-from').innerText = t('smtpFrom');
+			document.getElementById('lbl-smtp-fromname').innerText = t('smtpFromName');
+			document.getElementById('lbl-smtp-baseurl').innerText = t('smtpBaseUrl');
+			document.getElementById('smtp-baseurl-help').innerText = t('smtpBaseUrlHelp');
+			document.getElementById('btn-save-smtp').innerText = t('saveSMTP');
+			document.getElementById('btn-reload-smtp').innerText = t('reload');
+			document.getElementById('email-test-title').innerText = t('emailTestTitle');
+			document.getElementById('lbl-smtp-test-to').innerText = t('smtpTestTo');
+			document.getElementById('btn-test-email').innerText = t('sendTest');
+			document.getElementById('email-account-title').innerText = t('emailAccountTitle');
+			document.getElementById('lbl-account-require-email').innerText = t('accountRequireEmail');
+			document.getElementById('lbl-account-verify-email').innerText = t('accountVerifyEmail');
+			document.getElementById('btn-save-account').innerText = t('saveAccountPolicy');
+			document.getElementById('email-home-title').innerText = t('emailHomeTitle');
+			document.getElementById('email-home-desc').innerText = t('emailHomeDesc');
+			document.getElementById('btn-save-home').innerText = t('saveContent');
+			document.getElementById('btn-reload-home').innerText = t('reload');
 			renderSettingsPresets();
 		}
 		

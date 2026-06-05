@@ -112,6 +112,23 @@ func main() {
 		}
 	}()
 
+	// Optionally start a dedicated WebSocket listener on a separate port.
+	var wsSrv *http.Server
+	if addr := srv.WebSocketDedicatedAddr(); addr != "" {
+		wsSrv = &http.Server{
+			Addr:        addr,
+			Handler:     srv.WebSocketHandler(),
+			ReadTimeout: 15 * time.Second,
+			IdleTimeout: 60 * time.Second,
+		}
+		go func() {
+			log.Printf("NekoLc WebSocket listening on %s", wsSrv.Addr)
+			if err := wsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				serverErrors <- err
+			}
+		}()
+	}
+
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -124,6 +141,11 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if wsSrv != nil {
+		if err := wsSrv.Shutdown(ctx); err != nil {
+			log.Printf("websocket shutdown failed: %v", err)
+		}
+	}
 	if err := httpSrv.Shutdown(ctx); err != nil {
 		log.Fatalf("graceful shutdown failed: %v", err)
 	}

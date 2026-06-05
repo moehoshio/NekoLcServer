@@ -54,14 +54,55 @@ type AppConfig struct {
 	Update struct {
 		ConfigPath string `json:"configPath"`
 	} `json:"update"`
-	Account AccountConfig `json:"account"`
-	SMTP    SMTPConfig    `json:"smtp"`
+	Account   AccountConfig         `json:"account"`
+	SMTP      SMTPConfig            `json:"smtp"`
+	Site      SiteConfig            `json:"site"`
+	WebSocket WebSocketServerConfig `json:"webSocket"`
 }
 
 // AccountConfig controls account-related registration and verification policies.
 type AccountConfig struct {
-	RequireEmail bool `json:"requireEmail"`
-	VerifyEmail  bool `json:"verifyEmail"`
+	// AllowRegistration controls whether new accounts may be created.
+	AllowRegistration bool `json:"allowRegistration"`
+	RequireEmail      bool `json:"requireEmail"`
+	VerifyEmail       bool `json:"verifyEmail"`
+}
+
+// UnmarshalJSON defaults AllowRegistration to true when the field is absent so
+// that configs predating this option (and the default config) keep registration
+// enabled. An explicit "allowRegistration": false still disables it.
+func (a *AccountConfig) UnmarshalJSON(data []byte) error {
+	type alias AccountConfig
+	aux := &struct {
+		AllowRegistration *bool `json:"allowRegistration"`
+		*alias
+	}{alias: (*alias)(a)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.AllowRegistration == nil {
+		a.AllowRegistration = true
+	} else {
+		a.AllowRegistration = *aux.AllowRegistration
+	}
+	return nil
+}
+
+// SiteConfig holds site-wide presentation settings (name, SEO and announcement)
+// that are editable from the admin dashboard and surfaced on public pages.
+type SiteConfig struct {
+	SiteName       string `json:"siteName"`
+	SEODescription string `json:"seoDescription"`
+	Announcement   string `json:"announcement"`
+}
+
+// WebSocketServerConfig controls the server-side WebSocket listener. When Port is
+// empty (or equal to the main server port) the WebSocket endpoint is served on the
+// main HTTP listener at Path; otherwise a dedicated listener is started on Port.
+type WebSocketServerConfig struct {
+	Enable bool   `json:"enable"`
+	Port   string `json:"port"`
+	Path   string `json:"path"`
 }
 
 // SMTPConfig holds outbound email (SMTP) server settings used for account flows.

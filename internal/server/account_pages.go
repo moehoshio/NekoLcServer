@@ -5,12 +5,16 @@ import (
 	"net/http"
 )
 
-// sharedPageStyle is reused across the small account-action pages.
-const sharedPageStyle = `body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
-		.card { background: #111827; padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
+// sharedPageStyle is reused across the small account-action pages. Colors are
+// driven by CSS variables so the pages follow the operating-system light/dark
+// preference automatically.
+const sharedPageStyle = `:root { --bg:#0f172a; --surface:#111827; --surface-2:#0b1220; --border:#1f2937; --text:#e2e8f0; --text-soft:#cbd5e1; }
+		@media (prefers-color-scheme: light) { :root { --bg:#f1f5f9; --surface:#ffffff; --surface-2:#f8fafc; --border:#e2e8f0; --text:#1e293b; --text-soft:#334155; } }
+		body { font-family: "Segoe UI", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+		.card { background: var(--surface); padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.20); width: 360px; }
 		h1 { margin: 0 0 12px 0; font-size: 22px; }
-		label { display: block; margin-top: 12px; color: #cbd5e1; }
-		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+		label { display: block; margin-top: 12px; color: var(--text-soft); }
+		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); box-sizing: border-box; }
 		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
 		button:hover { filter: brightness(1.05); }
 		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
@@ -19,7 +23,7 @@ const sharedPageStyle = `body { font-family: "Segoe UI", sans-serif; background:
 		.link a { color: #22d3ee; text-decoration: none; }
 		.link a:hover { text-decoration: underline; }
 		.lang-switch { position: absolute; top: 16px; right: 16px; }
-		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; cursor: pointer; }`
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }`
 
 var appForgotPasswordTemplate = template.Must(template.New("appForgot").Parse(`<!doctype html>
 <html lang="en">

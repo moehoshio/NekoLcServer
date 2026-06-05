@@ -201,19 +201,17 @@ These settings can also be changed at runtime from the Admin Dashboard under **U
 
 ### Email (SMTP)
 
-```json
-"smtp": {
-  "enabled": false,
-  "host": "smtp.example.com",
-  "port": 587,
-  "username": "user@example.com",
-  "password": "your-smtp-password",
-  "from": "noreply@example.com",
-  "fromName": "NekoLc",
-  "tlsMode": "starttls",
-  "baseUrl": "https://your-domain.com"
-}
-```
+- **Statistics**: Live server usage overview that auto-refreshes while open (no manual refresh needed); pick the time range.
+- **Launcher Configuration**: Manage hosts, WebSocket settings, security settings
+- **Maintenance**: Enable/disable maintenance mode with custom messages
+- **Updates**: Configure update packages for each platform and architecture. Upload files (hosted by the server with an auto-generated download URL), browse and scan server directories visually, search and sort items
+- **News**: Create and manage multiple news items with search and sorting
+- **Feedback**: View user feedback logs with search, sorting, deletion, and collapsible long entries
+- **Users**: Manage user accounts, plus the **Account Policy** (`allowRegistration`, `requireEmail`, `verifyEmail`). When the account/authentication feature is disabled, the user-facing pages (`/app/login`, `/app/register`, `/app/dashboard`) show a "feature not enabled" notice.
+- **Email**: Configure SMTP (used for password recovery and email verification). Includes a "send test email" action.
+- **Site Config**: Configure the site name, SEO description, a site announcement (banner), and the Markdown home-page content shown on the user dashboard. The site name and SEO description are rendered server-side into the public home page (`<title>` / `<meta name="description">`), and a non-empty announcement is shown as a banner.
+
+The dashboard, user dashboard and public pages support **light / dark / auto** themes. The admin and user dashboards expose a theme switcher (Auto / Light / Dark, stored per-browser); other pages follow the operating-system `prefers-color-scheme` setting automatically. The interface is localized in English, Simplified Chinese and Traditional Chinese.
 
 | Option | Description | Default |
 |--------|-------------|---------|

@@ -762,6 +762,18 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 		.footer a:hover { text-decoration: underline; }
 		.lang-switch { position: absolute; top: 16px; right: 16px; }
 		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #e2e8f0; cursor: pointer; }
+		@media (prefers-color-scheme: light) {
+			body { background: linear-gradient(135deg, #f1f5f9 0%, #e0e7ff 50%, #f1f5f9 100%); color: #1e293b; }
+			.subtitle { color: #475569; }
+			.btn-secondary { background: rgba(15, 23, 42, 0.06); color: #1e293b; border: 1px solid rgba(15, 23, 42, 0.12); }
+			.btn-secondary:hover { background: rgba(15, 23, 42, 0.12); }
+			.features .feature { background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(15,23,42,0.06); }
+			.feature h3 { color: #0f172a; }
+			.feature p { color: #475569; }
+			.footer { color: #64748b; }
+			.announcement { color: #3730a3; background: rgba(129,140,248,0.14); border: 1px solid rgba(129,140,248,0.4); }
+			.lang-switch select { border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; }
+		}
 	</style>
 </head>
 <body>
@@ -851,11 +863,13 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>NekoLc Login</title>
 	<style>
-		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
-		.card { background: #111827; padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
+		:root { --bg:#0f172a; --surface:#111827; --surface-2:#0b1220; --border:#1f2937; --text:#e2e8f0; --text-soft:#cbd5e1; }
+		@media (prefers-color-scheme: light) { :root { --bg:#f1f5f9; --surface:#ffffff; --surface-2:#f8fafc; --border:#e2e8f0; --text:#1e293b; --text-soft:#334155; } }
+		body { font-family: "Segoe UI", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+		.card { background: var(--surface); padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
 		h1 { margin: 0 0 12px 0; font-size: 22px; }
-		label { display: block; margin-top: 12px; color: #cbd5e1; }
-		input[type="text"], input[type="password"] { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+		label { display: block; margin-top: 12px; color: var(--text-soft); }
+		input[type="text"], input[type="password"] { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); box-sizing: border-box; }
 		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
 		button:hover { filter: brightness(1.05); }
 		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
@@ -863,7 +877,7 @@ var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype h
 		.link a { color: #22d3ee; text-decoration: none; }
 		.link a:hover { text-decoration: underline; }
 		.lang-switch { position: absolute; top: 16px; right: 16px; }
-		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; cursor: pointer; }
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
 		.remember-me { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 		.remember-me input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
 		.remember-me label { margin-top: 0; cursor: pointer; }
@@ -958,11 +972,13 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>NekoLc Register</title>
 	<style>
-		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
-		.card { background: #111827; padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
+		:root { --bg:#0f172a; --surface:#111827; --surface-2:#0b1220; --border:#1f2937; --text:#e2e8f0; --text-soft:#cbd5e1; }
+		@media (prefers-color-scheme: light) { :root { --bg:#f1f5f9; --surface:#ffffff; --surface-2:#f8fafc; --border:#e2e8f0; --text:#1e293b; --text-soft:#334155; } }
+		body { font-family: "Segoe UI", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; }
+		.card { background: var(--surface); padding: 32px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); width: 360px; }
 		h1 { margin: 0 0 12px 0; font-size: 22px; }
-		label { display: block; margin-top: 12px; color: #cbd5e1; }
-		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+		label { display: block; margin-top: 12px; color: var(--text-soft); }
+		input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); box-sizing: border-box; }
 		button { width: 100%; margin-top: 18px; padding: 12px; border: none; border-radius: 10px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 700; cursor: pointer; }
 		button:hover { filter: brightness(1.05); }
 		.error { color: #f87171; margin-top: 10px; min-height: 20px; }
@@ -971,7 +987,7 @@ var appRegisterTemplate = template.Must(template.New("appRegister").Parse(`<!doc
 		.link a { color: #22d3ee; text-decoration: none; }
 		.link a:hover { text-decoration: underline; }
 		.lang-switch { position: absolute; top: 16px; right: 16px; }
-		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; cursor: pointer; }
+		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
 	</style>
 </head>
 <body>
@@ -1604,41 +1620,62 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>NekoLc Admin Dashboard</title>
 	<style>
+		:root {
+			--bg: #0f172a; --surface: #111827; --surface-2: #1e293b; --surface-3: #0b1220;
+			--border: #1f2937; --border-2: #374151;
+			--text: #e2e8f0; --text-strong: #f8fafc; --text-muted: #94a3b8; --text-soft: #cbd5e1;
+			--hover: #1f2937; --hover-2: #4b5563; --accent: #818cf8;
+		}
+		:root[data-theme="light"] {
+			--bg: #f1f5f9; --surface: #ffffff; --surface-2: #f8fafc; --surface-3: #eef2f7;
+			--border: #e2e8f0; --border-2: #cbd5e1;
+			--text: #1e293b; --text-strong: #0f172a; --text-muted: #64748b; --text-soft: #334155;
+			--hover: #e2e8f0; --hover-2: #cbd5e1; --accent: #6366f1;
+		}
+		@media (prefers-color-scheme: light) {
+			:root:not([data-theme]) {
+				--bg: #f1f5f9; --surface: #ffffff; --surface-2: #f8fafc; --surface-3: #eef2f7;
+				--border: #e2e8f0; --border-2: #cbd5e1;
+				--text: #1e293b; --text-strong: #0f172a; --text-muted: #64748b; --text-soft: #334155;
+				--hover: #e2e8f0; --hover-2: #cbd5e1; --accent: #6366f1;
+			}
+		}
 		* { box-sizing: border-box; }
-		body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; min-height: 100vh; }
-		.header { background: #111827; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1f2937; }
+		body { font-family: "Segoe UI", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; min-height: 100vh; }
+		.header { background: var(--surface); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
 		.header h1 { margin: 0; font-size: 20px; }
 		.header .user { display: flex; align-items: center; gap: 12px; }
-		.header button { background: #374151; border: none; padding: 8px 16px; border-radius: 6px; color: #e2e8f0; cursor: pointer; }
-		.header button:hover { background: #4b5563; }
+		.header button { background: var(--border-2); border: none; padding: 8px 16px; border-radius: 6px; color: var(--text); cursor: pointer; }
+		.header button:hover { background: var(--hover-2); }
+		.header select { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text); cursor: pointer; }
 		.container { display: flex; min-height: calc(100vh - 60px); }
-		.sidebar { width: 220px; background: #111827; padding: 16px; border-right: 1px solid #1f2937; }
-		.sidebar button { width: 100%; text-align: left; padding: 12px 16px; margin-bottom: 8px; background: transparent; border: none; border-radius: 8px; color: #cbd5e1; cursor: pointer; font-size: 14px; }
-		.sidebar button:hover, .sidebar button.active { background: #1f2937; color: #f8fafc; }
+		.sidebar { width: 220px; background: var(--surface); padding: 16px; border-right: 1px solid var(--border); }
+		.sidebar button { width: 100%; text-align: left; padding: 12px 16px; margin-bottom: 8px; background: transparent; border: none; border-radius: 8px; color: var(--text-soft); cursor: pointer; font-size: 14px; }
+		.sidebar button:hover, .sidebar button.active { background: var(--hover); color: var(--text-strong); }
 		.main { flex: 1; padding: 24px; overflow-y: auto; }
-		.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid #1f2937; }
-		.card h2 { margin: 0 0 16px 0; font-size: 18px; color: #f8fafc; }
+		.card { background: var(--surface); border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid var(--border); }
+		.card h2 { margin: 0 0 16px 0; font-size: 18px; color: var(--text-strong); }
 		.form-group { margin-bottom: 16px; }
-		.form-group label { display: block; margin-bottom: 6px; color: #94a3b8; font-size: 14px; }
-		.form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: #e2e8f0; font-size: 14px; }
-		.form-group input:focus, .form-group textarea:focus { outline: none; border-color: #818cf8; }
+		.form-group label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size: 14px; }
+		.form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--surface-3); color: var(--text); font-size: 14px; }
+		.form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
 		.form-group textarea { resize: vertical; min-height: 80px; font-family: "Cascadia Code", Consolas, monospace; }
 		.form-row { display: flex; gap: 16px; }
 		.form-row .form-group { flex: 1; }
 		.toggle { display: flex; align-items: center; gap: 12px; }
-		.toggle input[type="checkbox"] { width: 44px; height: 24px; appearance: none; background: #374151; border-radius: 12px; position: relative; cursor: pointer; transition: background 0.2s; }
+		.toggle input[type="checkbox"] { width: 44px; height: 24px; appearance: none; background: var(--border-2); border-radius: 12px; position: relative; cursor: pointer; transition: background 0.2s; }
 		.toggle input[type="checkbox"]:checked { background: #22d3ee; }
 		.toggle input[type="checkbox"]::before { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #f8fafc; border-radius: 50%; transition: transform 0.2s; }
 		.toggle input[type="checkbox"]:checked::before { transform: translateX(20px); }
-		.toggle span { color: #e2e8f0; font-size: 14px; }
+		.toggle span, .toggle label { color: var(--text); font-size: 14px; }
 		.form-group input[type="file"] { padding: 8px; cursor: pointer; }
 		.form-group input[type="file"]::file-selector-button { padding: 9px 16px; margin-right: 12px; border: none; border-radius: 8px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 600; cursor: pointer; transition: filter 0.2s; }
 		.form-group input[type="file"]::file-selector-button:hover { filter: brightness(1.1); }
 		.btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; transition: all 0.2s; }
 		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
 		.btn-primary:hover { filter: brightness(1.1); }
-		.btn-secondary { background: #374151; color: #e2e8f0; }
-		.btn-secondary:hover { background: #4b5563; }
+		.btn-secondary { background: var(--border-2); color: var(--text); }
+		.btn-secondary:hover { background: var(--hover-2); }
 		.btn-danger { background: #dc2626; color: #fff; }
 		.btn-danger:hover { background: #ef4444; }
 		.actions { display: flex; gap: 12px; margin-top: 16px; }
@@ -1646,29 +1683,35 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		.message.success { background: #065f46; color: #a7f3d0; }
 		.message.error { background: #7f1d1d; color: #fca5a5; }
 		.hidden { display: none; }
-		.news-item { background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+		.news-item { background: var(--surface-2); padding: 16px; border-radius: 8px; margin-bottom: 12px; }
 		.news-item .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 		.news-item h3 { margin: 0; font-size: 16px; }
-		.platform-section { background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+		.platform-section { background: var(--surface-2); padding: 16px; border-radius: 8px; margin-bottom: 12px; }
 		.platform-section h3 { margin: 0 0 12px 0; font-size: 16px; }
-		.arch-item { background: #0f172a; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
-		.arch-item h4 { margin: 0 0 8px 0; font-size: 14px; color: #94a3b8; }
-		.loading { display: flex; align-items: center; justify-content: center; padding: 40px; color: #94a3b8; }
+		.arch-item { background: var(--surface-3); padding: 12px; border-radius: 6px; margin-bottom: 8px; }
+		.arch-item h4 { margin: 0 0 8px 0; font-size: 14px; color: var(--text-muted); }
+		.loading { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text-muted); }
 		.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-		.tabs button { padding: 8px 16px; background: transparent; border: 1px solid #374151; border-radius: 6px; color: #cbd5e1; cursor: pointer; }
-		.tabs button.active { background: #374151; color: #f8fafc; }
+		.tabs button { padding: 8px 16px; background: transparent; border: 1px solid var(--border-2); border-radius: 6px; color: var(--text-soft); cursor: pointer; }
+		.tabs button.active { background: var(--border-2); color: var(--text-strong); }
 		.fb-content { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-width: 520px; }
 		.fb-content.collapsed { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-height: 4.5em; }
 		.fb-toggle { background: none; border: none; color: #38bdf8; cursor: pointer; padding: 0; margin-top: 4px; font-size: 12px; }
-		.client-info-pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-width: 520px; background:#0b1220; padding:8px; border-radius:6px; font-size:12px; margin:0; }
+		.client-info-pre { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; max-width: 520px; background: var(--surface-3); padding:8px; border-radius:6px; font-size:12px; margin:0; }
 	</style>
+	<script>(function(){var th=localStorage.getItem('theme');if(th==='light'||th==='dark'){document.documentElement.setAttribute('data-theme',th);}})();</script>
 </head>
 <body>
 	<div class="header">
 		<h1 id="admin-title">🐱 NekoLc Admin Dashboard</h1>
 		<div class="user">
+			<select id="themeSelect" onchange="changeTheme()" style="margin-right:8px;" aria-label="Theme">
+				<option value="auto" id="opt-theme-auto">Auto</option>
+				<option value="light" id="opt-theme-light">Light</option>
+				<option value="dark" id="opt-theme-dark">Dark</option>
+			</select>
 			<div class="lang-switch" style="margin-right:12px;">
-				<select id="langSelect" onchange="changeLang()" style="padding:6px 10px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#e2e8f0;cursor:pointer;">
+				<select id="langSelect" onchange="changeLang()">
 					<option value="en">English</option>
 					<option value="zh-hans">简体中文</option>
 					<option value="zh-hant">繁體中文</option>
@@ -1687,7 +1730,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<button onclick="showSection('news')" id="nav-news">📰 News</button>
 			<button onclick="showSection('users')" id="nav-users">👥 Users</button>
 			<button onclick="showSection('feedback')" id="nav-feedback">💬 Feedback</button>
-			<button onclick="showSection('email')" id="nav-email">✉️ Email &amp; Home</button>
+			<button onclick="showSection('email')" id="nav-email">✉️ Email</button>
 			<button onclick="showSection('site')" id="nav-site">🌐 Site Config</button>
 			<button onclick="showSection('settings')" id="nav-settings">⚙️ Settings</button>
 		</div>
@@ -1698,7 +1741,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<div id="section-stats" class="section">
 				<div class="card">
 					<h2 id="stats-title">📊 Statistics Overview</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="stats-desc">View server usage statistics and analytics.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="stats-desc">View server usage statistics and analytics.</p>
 					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
 						<div style="background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); padding: 24px; border-radius: 12px;">
 							<div style="font-size: 14px; opacity: 0.9;" id="lbl-total-requests">Total Requests</div>
@@ -1717,36 +1760,33 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							<div style="font-size: 32px; font-weight: 700;" id="stat-total-feedback">-</div>
 						</div>
 					</div>
-					<div class="actions" style="margin-bottom: 24px;">
-						<button class="btn btn-secondary" onclick="loadStats()">🔄 Refresh</button>
-						<select id="stats-days" onchange="loadStats()" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0;">
+					<div class="actions" style="margin-bottom: 24px; align-items: center;">
+						<select id="stats-days" onchange="loadStats()" style="padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text);">
 							<option value="7">Last 7 days</option>
 							<option value="14">Last 14 days</option>
 							<option value="30">Last 30 days</option>
 						</select>
-						<label style="display:flex;align-items:center;gap:8px;color:#94a3b8;font-size:14px;">
-							<input type="checkbox" id="stats-autorefresh" onchange="toggleStatsAutoRefresh()" /> <span id="lbl-autorefresh">Auto-refresh (live)</span>
-						</label>
+						<span id="stats-live" style="color: var(--text-muted); font-size: 13px; display:inline-flex; align-items:center; gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></span>Live</span>
 					</div>
 				</div>
 				<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
 					<div class="card">
 						<h3 style="margin-bottom: 16px;">📈 Daily Requests</h3>
-						<div id="daily-chart" style="height: 200px; background: #0f172a; border-radius: 8px; padding: 16px; display: flex; align-items: flex-end; gap: 8px; justify-content: space-around;">
-							<div style="color: #94a3b8; text-align: center;">Loading...</div>
+						<div id="daily-chart" style="height: 200px; background: var(--surface-3); border-radius: 8px; padding: 16px; display: flex; align-items: flex-end; gap: 8px; justify-content: space-around;">
+							<div style="color: var(--text-muted); text-align: center;">Loading...</div>
 						</div>
 					</div>
 					<div class="card">
 						<h3 style="margin-bottom: 16px;">🔗 Top Endpoints</h3>
 						<div id="endpoints-list" style="max-height: 200px; overflow-y: auto;">
-							<div style="color: #94a3b8;">Loading...</div>
+							<div style="color: var(--text-muted);">Loading...</div>
 						</div>
 					</div>
 				</div>
 				<div class="card" style="margin-top: 20px;">
 					<h3 style="margin-bottom: 16px;">💻 Platform Distribution</h3>
 					<div id="platforms-list" style="display: flex; flex-wrap: wrap; gap: 12px;">
-						<div style="color: #94a3b8;">Loading...</div>
+						<div style="color: var(--text-muted);">Loading...</div>
 					</div>
 				</div>
 			</div>
@@ -1755,7 +1795,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<div id="section-launcher" class="section hidden">
 				<div class="card">
 					<h2 id="launcher-title">Launcher Configuration</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="launcher-desc">Configure launcher settings that clients receive.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="launcher-desc">Configure launcher settings that clients receive.</p>
 					<div class="form-group">
 						<label for="launcher-hosts" id="lbl-hosts">Hosts (one per line)</label>
 						<textarea id="launcher-hosts" rows="3" placeholder="https://api.example.com"></textarea>
@@ -1837,77 +1877,77 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<!-- Maintenance Section -->
 			<div id="section-maintenance" class="section hidden">
 				<div class="card">
-					<h2>Maintenance Configuration</h2>
+					<h2 id="maint-title">Maintenance Configuration</h2>
 					<div class="form-group toggle">
 						<input type="checkbox" id="maint-active" />
-						<label for="maint-active">Maintenance Active</label>
+						<label for="maint-active" id="lbl-maint-active">Maintenance Active</label>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="maint-status">Status</label>
+							<label for="maint-status" id="lbl-maint-status">Status</label>
 							<select id="maint-status">
-								<option value="none">None</option>
-								<option value="scheduled">Scheduled</option>
-								<option value="progress">In Progress</option>
+								<option value="none" id="opt-status-none">None</option>
+								<option value="scheduled" id="opt-status-scheduled">Scheduled</option>
+								<option value="progress" id="opt-status-progress">In Progress</option>
 							</select>
 						</div>
 						<div class="form-group">
-							<label for="maint-poster">Poster URL</label>
+							<label for="maint-poster" id="lbl-maint-poster">Poster URL</label>
 							<input type="text" id="maint-poster" placeholder="https://..." />
 						</div>
 					</div>
 					<div class="form-group">
-						<label for="maint-message">Message (Default)</label>
+						<label for="maint-message" id="lbl-maint-message">Message (Default)</label>
 						<textarea id="maint-message" rows="2"></textarea>
 					</div>
 					<div class="form-group">
-						<label>Localized Messages</label>
-						<p style="color: #94a3b8; margin-bottom: 8px; font-size: 13px;">Add messages for different languages. The default message above will be used if no localized message is available.</p>
+						<label id="lbl-maint-localized">Localized Messages</label>
+						<p style="color: var(--text-muted); margin-bottom: 8px; font-size: 13px;" id="maint-localized-help">Add messages for different languages. The default message above will be used if no localized message is available.</p>
 						<div id="localized-messages-list"></div>
-						<button type="button" class="btn btn-secondary" style="margin-top: 8px;" onclick="addLocalizedMessage()">+ Add Language</button>
+						<button type="button" class="btn btn-secondary" style="margin-top: 8px;" onclick="addLocalizedMessage()" id="btn-add-language">+ Add Language</button>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="maint-start">Start Time</label>
+							<label for="maint-start" id="lbl-maint-start">Start Time</label>
 							<input type="datetime-local" id="maint-start" />
 						</div>
 						<div class="form-group">
-							<label for="maint-end">Expected End Time</label>
+							<label for="maint-end" id="lbl-maint-end">Expected End Time</label>
 							<input type="datetime-local" id="maint-end" />
 						</div>
 					</div>
 					<div class="form-group">
-						<label for="maint-link">Announcement Link</label>
+						<label for="maint-link" id="lbl-maint-link">Announcement Link</label>
 						<input type="text" id="maint-link" placeholder="https://..." />
 					</div>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="saveMaintenance()">Save Changes</button>
-						<button class="btn btn-secondary" onclick="loadMaintenance()">Reload</button>
+						<button class="btn btn-primary" onclick="saveMaintenance()" id="btn-save-maint">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadMaintenance()" id="btn-reload-maint">Reload</button>
 					</div>
 				</div>
 				<div class="card">
-					<h2>Platform-Specific Maintenance</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Configure maintenance settings per platform (e.g., windows-x64, linux-arm64).</p>
+					<h2 id="platform-maint-title">Platform-Specific Maintenance</h2>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="platform-maint-desc">Configure maintenance settings per platform (e.g., windows-x64, linux-arm64).</p>
 					<div id="platform-maintenance-list"></div>
-					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addPlatformMaintenance()">+ Add Platform</button>
+					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addPlatformMaintenance()" id="btn-add-platform">+ Add Platform</button>
 				</div>
 			</div>
 			
 			<!-- Updates Section -->
 			<div id="section-updates" class="section hidden">
 				<div class="card">
-					<h2>Auto-Generate from Directory</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Scan a directory to automatically generate update files with checksums.</p>
+					<h2 id="updates-autogen-title">Auto-Generate from Directory</h2>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="updates-autogen-desc">Scan a directory to automatically generate update files with checksums.</p>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="scan-path">Directory Path</label>
+							<label for="scan-path" id="lbl-scan-path">Directory Path</label>
 							<div style="display:flex;gap:8px;">
 								<input type="text" id="scan-path" placeholder="./updates/windows-x64" style="flex:1;" />
-								<button type="button" class="btn btn-secondary" onclick="openDirBrowser()">📁 Browse</button>
+								<button type="button" class="btn btn-secondary" onclick="openDirBrowser()" id="btn-browse">📁 Browse</button>
 							</div>
 						</div>
 						<div class="form-group">
-							<label for="scan-baseurl">Base URL</label>
+							<label for="scan-baseurl" id="lbl-scan-baseurl">Base URL</label>
 							<div style="display:flex;gap:8px;">
 								<input type="text" id="scan-baseurl" placeholder="https://example.com/updates/" style="flex:1;" />
 								<button type="button" class="btn btn-secondary" onclick="saveBaseUrlPreset()" title="Save current Base URL" aria-label="Save current Base URL">💾 Save</button>
@@ -1922,7 +1962,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="scan-platform">Platform</label>
+							<label for="scan-platform" id="lbl-scan-platform">Platform</label>
 							<select id="scan-platform">
 								<option value="windows">Windows</option>
 								<option value="linux">Linux</option>
@@ -1930,7 +1970,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							</select>
 						</div>
 						<div class="form-group">
-							<label for="scan-arch">Architecture</label>
+							<label for="scan-arch" id="lbl-scan-arch">Architecture</label>
 							<select id="scan-arch">
 								<option value="x64">x64</option>
 								<option value="arm64">ARM64</option>
@@ -1938,7 +1978,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							</select>
 						</div>
 						<div class="form-group">
-							<label for="scan-type">Type</label>
+							<label for="scan-type" id="lbl-scan-type">Type</label>
 							<select id="scan-type">
 								<option value="core">Core</option>
 								<option value="resource">Resource</option>
@@ -1946,31 +1986,31 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						</div>
 					</div>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="generateUpdates()">Generate & Save</button>
-						<button class="btn btn-secondary" onclick="scanPath()">Scan Only</button>
+						<button class="btn btn-primary" onclick="generateUpdates()" id="btn-generate">Generate & Save</button>
+						<button class="btn btn-secondary" onclick="scanPath()" id="btn-scan-only">Scan Only</button>
 					</div>
 					<div id="scan-results" style="margin-top: 16px;"></div>
 				</div>
 				<div class="card">
-					<h2>Upload Update File</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Upload a file to be hosted by this server. The download URL is generated automatically from the current site URL.</p>
+					<h2 id="upload-title">Upload Update File</h2>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="upload-desc">Upload a file to be hosted by this server. The download URL is generated automatically from the current site URL.</p>
 					<div class="form-row">
 						<div class="form-group">
-							<label for="upload-file">File</label>
+							<label for="upload-file" id="lbl-upload-file">File</label>
 							<input type="file" id="upload-file" />
 						</div>
 						<div class="form-group">
-							<label for="upload-subdir">Sub-directory (optional)</label>
+							<label for="upload-subdir" id="lbl-upload-subdir">Sub-directory (optional)</label>
 							<input type="text" id="upload-subdir" placeholder="windows-x64" />
 						</div>
 					</div>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="uploadFile()">Upload</button>
+						<button class="btn btn-primary" onclick="uploadFile()" id="btn-upload">Upload</button>
 					</div>
 					<div id="upload-results" style="margin-top: 16px;"></div>
 				</div>
 				<div class="card">
-					<h2>Updates Configuration</h2>
+					<h2 id="updates-config-title">Updates Configuration</h2>
 					<div class="form-row" style="margin-bottom:12px;flex-wrap:wrap;">
 						<div class="form-group" style="flex:2;min-width:180px;">
 							<label id="lbl-updates-search">Search</label>
@@ -1984,28 +2024,28 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 							</select>
 						</div>
 					</div>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Current update packages for each platform and architecture.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="updates-config-desc">Current update packages for each platform and architecture.</p>
 					<div id="updates-content">
 						<div class="loading">Loading updates configuration...</div>
 					</div>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="saveUpdates()">Save Changes</button>
-						<button class="btn btn-secondary" onclick="loadUpdates()">Reload</button>
+						<button class="btn btn-primary" onclick="saveUpdates()" id="btn-save-updates">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadUpdates()" id="btn-reload-updates">Reload</button>
 					</div>
 				</div>
 			</div>
 
 			<!-- Directory browser modal -->
 			<div id="dir-browser" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;display:none;align-items:center;justify-content:center;">
-				<div style="background:#111827;border:1px solid #1f2937;border-radius:12px;width:min(640px,92vw);max-height:80vh;display:flex;flex-direction:column;padding:20px;">
+				<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:min(640px,92vw);max-height:80vh;display:flex;flex-direction:column;padding:20px;">
 					<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-						<h3 style="margin:0;">📁 Select Directory</h3>
-						<button class="btn btn-secondary" onclick="closeDirBrowser()">Close</button>
+						<h3 style="margin:0;" id="dir-browser-title">📁 Select Directory</h3>
+						<button class="btn btn-secondary" onclick="closeDirBrowser()" id="btn-dir-close">Close</button>
 					</div>
-					<div id="dir-browser-current" style="color:#94a3b8;font-size:13px;margin-bottom:8px;font-family:monospace;">/</div>
-					<div id="dir-browser-list" style="flex:1;overflow-y:auto;background:#0f172a;border-radius:8px;padding:8px;min-height:200px;"></div>
+					<div id="dir-browser-current" style="color:var(--text-muted);font-size:13px;margin-bottom:8px;font-family:monospace;">/</div>
+					<div id="dir-browser-list" style="flex:1;overflow-y:auto;background:var(--surface-3);border-radius:8px;padding:8px;min-height:200px;"></div>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="chooseCurrentDir()">Use This Directory</button>
+						<button class="btn btn-primary" onclick="chooseCurrentDir()" id="btn-dir-use">Use This Directory</button>
 					</div>
 				</div>
 			</div>
@@ -2013,7 +2053,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<!-- News Section -->
 			<div id="section-news" class="section hidden">
 				<div class="card">
-					<h2>News Items</h2>
+					<h2 id="news-title">News Items</h2>
 					<div class="form-row" style="margin-bottom:12px;flex-wrap:wrap;">
 						<div class="form-group" style="flex:2;min-width:180px;">
 							<label id="lbl-news-search">Search</label>
@@ -2032,10 +2072,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						</div>
 					</div>
 					<div id="news-list"></div>
-					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addNewsItem()">+ Add News Item</button>
+					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addNewsItem()" id="btn-add-news">+ Add News Item</button>
 					<div class="actions">
-						<button class="btn btn-primary" onclick="saveNews()">Save Changes</button>
-						<button class="btn btn-secondary" onclick="loadNews()">Reload</button>
+						<button class="btn btn-primary" onclick="saveNews()" id="btn-save-news">Save Changes</button>
+						<button class="btn btn-secondary" onclick="loadNews()" id="btn-reload-news">Reload</button>
 					</div>
 				</div>
 			</div>
@@ -2044,7 +2084,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<div id="section-users" class="section hidden">
 				<div class="card">
 					<h2 id="acct-policy-title">👤 Account Policy</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="acct-policy-desc">Control whether visitors can register and what is required at registration.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="acct-policy-desc">Control whether visitors can register and what is required at registration.</p>
 					<div class="form-group">
 						<label class="toggle"><input type="checkbox" id="account-allow-registration" /> <span id="lbl-account-allow-registration">Allow new user registration</span></label>
 					</div>
@@ -2060,11 +2100,11 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				</div>
 				<div class="card">
 					<h2>User Management</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;">Manage user accounts and permissions.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;">Manage user accounts and permissions.</p>
 					<div class="actions" style="margin-bottom: 16px;">
 						<button class="btn btn-primary" onclick="showAddUserForm()">+ Add User</button>
 					</div>
-					<div id="add-user-form" style="display:none; margin-bottom: 16px; padding: 16px; background: #0b1220; border-radius: 8px;">
+					<div id="add-user-form" style="display:none; margin-bottom: 16px; padding: 16px; background: var(--surface-3); border-radius: 8px;">
 						<h3 style="margin-bottom: 12px;">New User</h3>
 						<div class="form-row">
 							<div class="form-group">
@@ -2091,15 +2131,15 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					<table class="data-table" style="width: 100%;">
 						<thead>
 							<tr>
-								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">ID</th>
-								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Username</th>
-								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Role</th>
-								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Created</th>
-								<th style="text-align: left; padding: 10px; border-bottom: 1px solid #374151;">Actions</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid var(--border-2);">ID</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid var(--border-2);">Username</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid var(--border-2);">Role</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid var(--border-2);">Created</th>
+								<th style="text-align: left; padding: 10px; border-bottom: 1px solid var(--border-2);">Actions</th>
 							</tr>
 						</thead>
 						<tbody id="users-table-body">
-							<tr><td colspan="5" style="padding: 20px; text-align: center; color: #94a3b8;">Loading users...</td></tr>
+							<tr><td colspan="5" style="padding: 20px; text-align: center; color: var(--text-muted);">Loading users...</td></tr>
 						</tbody>
 					</table>
 				</div>
@@ -2186,7 +2226,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<div id="section-email" class="section hidden">
 				<div class="card">
 					<h2 id="email-smtp-title">✉️ SMTP Settings</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-smtp-desc">Configure the outbound email server used for password recovery and email verification.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="email-smtp-desc">Configure the outbound email server used for password recovery and email verification.</p>
 					<div class="form-group">
 						<label class="toggle"><input type="checkbox" id="smtp-enabled" /> <span id="lbl-smtp-enabled">Enable email sending</span></label>
 					</div>
@@ -2231,7 +2271,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					<div class="form-group">
 						<label for="smtp-baseurl" id="lbl-smtp-baseurl">Base URL</label>
 						<input type="text" id="smtp-baseurl" placeholder="https://example.com" />
-						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="smtp-baseurl-help">Public base URL used to build links in emails.</p>
+						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="smtp-baseurl-help">Public base URL used to build links in emails.</p>
 					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveSMTP()" id="btn-save-smtp">Save SMTP</button>
@@ -2247,11 +2287,37 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						</div>
 					</div>
 				</div>
+			</div>
+
+			<!-- Site Config Section -->
+			<div id="section-site" class="section hidden">
+				<div class="card">
+					<h2 id="site-title">🌐 Site Configuration</h2>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="site-desc">Configure site-wide branding and announcements shown on public pages.</p>
+					<div class="form-group">
+						<label for="site-name" id="lbl-site-name">Site Name</label>
+						<input type="text" id="site-name" placeholder="NekoLcServer" />
+						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="site-name-help">Shown as the page title and heading on the public home page.</p>
+					</div>
+					<div class="form-group">
+						<label for="site-seo" id="lbl-site-seo">SEO Description</label>
+						<textarea id="site-seo" rows="3" placeholder="A short description for search engines."></textarea>
+						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="site-seo-help">Used for the home page meta description tag.</p>
+					</div>
+					<div class="form-group">
+						<label for="site-announcement" id="lbl-site-announcement">Site Announcement (Banner)</label>
+						<textarea id="site-announcement" rows="3" placeholder="Shown as a banner on the home page (leave empty to hide)."></textarea>
+						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="site-announcement-help">Displayed as a banner on the public home page. Leave empty to hide.</p>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveSite()" id="btn-save-site">Save Changes</button>
+					</div>
+				</div>
 				<div class="card">
 					<h2 id="email-home-title">🏠 Home Page Content (Markdown)</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-home-desc">This Markdown content is rendered safely and shown on the user dashboard.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="email-home-desc">This Markdown content is rendered safely and shown on the user dashboard.</p>
 					<div class="form-group">
-						<textarea id="home-content" rows="12" style="width:100%;font-family:'Cascadia Code',Consolas,monospace;padding:10px;border-radius:8px;border:1px solid #1f2937;background:#0b1220;color:#e2e8f0;box-sizing:border-box;"></textarea>
+						<textarea id="home-content" rows="12" style="width:100%;font-family:'Cascadia Code',Consolas,monospace;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-3);color:var(--text);box-sizing:border-box;"></textarea>
 					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveHomeContent()" id="btn-save-home">Save Content</button>
@@ -2259,40 +2325,14 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				</div>
 			</div>
 
-			<!-- Site Config Section -->
-			<div id="section-site" class="section hidden">
-				<div class="card">
-					<h2 id="site-title">🌐 Site Configuration</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="site-desc">Configure site-wide branding and announcements shown on public pages.</p>
-					<div class="form-group">
-						<label for="site-name" id="lbl-site-name">Site Name</label>
-						<input type="text" id="site-name" placeholder="NekoLcServer" />
-						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="site-name-help">Shown as the page title and heading on the public home page.</p>
-					</div>
-					<div class="form-group">
-						<label for="site-seo" id="lbl-site-seo">SEO Description</label>
-						<textarea id="site-seo" rows="3" placeholder="A short description for search engines."></textarea>
-						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="site-seo-help">Used for the home page meta description tag.</p>
-					</div>
-					<div class="form-group">
-						<label for="site-announcement" id="lbl-site-announcement">Site Announcement</label>
-						<textarea id="site-announcement" rows="3" placeholder="Shown as a banner on the home page (leave empty to hide)."></textarea>
-						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="site-announcement-help">Displayed as a banner on the public home page. Leave empty to hide.</p>
-					</div>
-					<div class="actions">
-						<button class="btn btn-primary" onclick="saveSite()" id="btn-save-site">Save Changes</button>
-					</div>
-				</div>
-			</div>
-
 			<div id="section-settings" class="section hidden">
 				<div class="card">
 					<h2 id="settings-title">⚙️ Global Settings</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="settings-desc">Configure global, commonly-used options for this dashboard. These preferences are stored in your browser.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="settings-desc">Configure global, commonly-used options for this dashboard. These preferences are stored in your browser.</p>
 					<div class="form-group">
 						<label for="settings-default-baseurl" id="lbl-settings-default-baseurl">Default Base URL</label>
 						<input type="text" id="settings-default-baseurl" placeholder="https://example.com/updates/" />
-						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="settings-default-baseurl-help">Used to pre-fill the Base URL field on the Updates page.</p>
+						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="settings-default-baseurl-help">Used to pre-fill the Base URL field on the Updates page.</p>
 					</div>
 					<h3 style="margin-top: 24px; margin-bottom: 16px; font-size: 16px;" id="settings-update-defaults-title">Default Update Options</h3>
 					<div class="form-row">
@@ -2327,7 +2367,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				</div>
 				<div class="card">
 					<h2 id="settings-presets-title">Saved Base URLs</h2>
-					<p style="color: #94a3b8; margin-bottom: 16px;" id="settings-presets-desc">Manage the list of Base URLs available across the dashboard.</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="settings-presets-desc">Manage the list of Base URLs available across the dashboard.</p>
 					<div class="form-row">
 						<div class="form-group" style="flex:1;">
 							<label for="settings-new-baseurl" id="lbl-settings-new-baseurl">Add Base URL</label>
@@ -2367,7 +2407,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 News',
 				navUsers: '👥 Users',
 				navFeedback: '💬 Feedback',
-				navEmail: '✉️ Email & Home',
+				navEmail: '✉️ Email',
 				navSettings: '⚙️ Settings',
 				statsDesc: 'View server usage statistics and analytics.',
 				totalRequests: 'Total Requests',
@@ -2503,7 +2543,28 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				seoDescription: 'SEO Description',
 				seoDescriptionHelp: 'Used for the home page meta description tag.',
 				announcement: 'Site Announcement',
-				announcementHelp: 'Displayed as a banner on the public home page. Leave empty to hide.'
+				announcementHelp: 'Displayed as a banner on the public home page. Leave empty to hide.',
+				messageDefault: 'Message (Default)',
+				localizedMessages: 'Localized Messages',
+				localizedMessagesHelp: 'Add messages for different languages. The default message above will be used if no localized message is available.',
+				addLanguage: '+ Add Language',
+				browse: '📁 Browse',
+				generateSave: 'Generate & Save',
+				scanOnly: 'Scan Only',
+				uploadTitle: 'Upload Update File',
+				uploadDesc: 'Upload a file to be hosted by this server. The download URL is generated automatically from the current site URL.',
+				file: 'File',
+				subdir: 'Sub-directory (optional)',
+				upload: 'Upload',
+				search: 'Search',
+				sortBy: 'Sort by',
+				selectDirectory: '📁 Select Directory',
+				close: 'Close',
+				useThisDirectory: 'Use This Directory',
+				newsItems: 'News Items',
+				themeAuto: 'Auto',
+				themeLight: 'Light',
+				themeDark: 'Dark'
 			},
 			'zh-hans': {
 				adminTitle: '🐱 NekoLc 管理面板',
@@ -2515,7 +2576,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新闻',
 				navUsers: '👥 用户',
 				navFeedback: '💬 反馈',
-				navEmail: '✉️ 邮件与首页',
+				navEmail: '✉️ 邮件',
 				navSettings: '⚙️ 设置',
 				statsDesc: '查看服务器使用统计和分析。',
 				totalRequests: '总请求数',
@@ -2651,7 +2712,28 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				seoDescription: 'SEO 描述',
 				seoDescriptionHelp: '用于首页的 meta description 标签。',
 				announcement: '站点公告',
-				announcementHelp: '以横幅形式显示在公开首页。留空则隐藏。'
+				announcementHelp: '以横幅形式显示在公开首页。留空则隐藏。',
+				messageDefault: '消息（默认）',
+				localizedMessages: '本地化消息',
+				localizedMessagesHelp: '为不同语言添加消息。如果没有对应的本地化消息，将使用上方的默认消息。',
+				addLanguage: '+ 添加语言',
+				browse: '📁 浏览',
+				generateSave: '生成并保存',
+				scanOnly: '仅扫描',
+				uploadTitle: '上传更新文件',
+				uploadDesc: '上传由本服务器托管的文件。下载 URL 会根据当前站点 URL 自动生成。',
+				file: '文件',
+				subdir: '子目录（可选）',
+				upload: '上传',
+				search: '搜索',
+				sortBy: '排序方式',
+				selectDirectory: '📁 选择目录',
+				close: '关闭',
+				useThisDirectory: '使用此目录',
+				newsItems: '新闻项目',
+				themeAuto: '自动',
+				themeLight: '浅色',
+				themeDark: '深色'
 			},
 			'zh-hant': {
 				adminTitle: '🐱 NekoLc 管理面板',
@@ -2663,7 +2745,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				navNews: '📰 新聞',
 				navUsers: '👥 使用者',
 				navFeedback: '💬 意見回饋',
-				navEmail: '✉️ 郵件與首頁',
+				navEmail: '✉️ 郵件',
 				navSettings: '⚙️ 設定',
 				statsDesc: '檢視伺服器使用統計和分析。',
 				totalRequests: '總請求數',
@@ -2799,7 +2881,28 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				seoDescription: 'SEO 描述',
 				seoDescriptionHelp: '用於首頁的 meta description 標籤。',
 				announcement: '站點公告',
-				announcementHelp: '以橫幅形式顯示在公開首頁。留空則隱藏。'
+				announcementHelp: '以橫幅形式顯示在公開首頁。留空則隱藏。',
+				messageDefault: '訊息（預設）',
+				localizedMessages: '本地化訊息',
+				localizedMessagesHelp: '為不同語言新增訊息。若沒有對應的本地化訊息，將使用上方的預設訊息。',
+				addLanguage: '+ 新增語言',
+				browse: '📁 瀏覽',
+				generateSave: '產生並儲存',
+				scanOnly: '僅掃描',
+				uploadTitle: '上傳更新檔案',
+				uploadDesc: '上傳由本伺服器託管的檔案。下載 URL 會根據目前站點 URL 自動產生。',
+				file: '檔案',
+				subdir: '子目錄（選填）',
+				upload: '上傳',
+				search: '搜尋',
+				sortBy: '排序方式',
+				selectDirectory: '📁 選擇目錄',
+				close: '關閉',
+				useThisDirectory: '使用此目錄',
+				newsItems: '新聞項目',
+				themeAuto: '自動',
+				themeLight: '淺色',
+				themeDark: '深色'
 			}
 		};
 		
@@ -2807,10 +2910,25 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
 		function changeLang() { setLang(document.getElementById('langSelect').value); }
 		function t(key) { const lang = getLang(); return (i18n[lang] && i18n[lang][key]) || i18n['en'][key] || key; }
-		
+
+		function getTheme() { return localStorage.getItem('theme') || 'auto'; }
+		function applyTheme() {
+			const th = getTheme();
+			if (th === 'light' || th === 'dark') document.documentElement.setAttribute('data-theme', th);
+			else document.documentElement.removeAttribute('data-theme');
+			const sel = document.getElementById('themeSelect');
+			if (sel) sel.value = th;
+		}
+		function changeTheme() { localStorage.setItem('theme', document.getElementById('themeSelect').value); applyTheme(); }
+
 		function applyLang() {
 			const lang = getLang();
 			document.getElementById('langSelect').value = lang;
+			// Theme switcher
+			document.getElementById('opt-theme-auto').innerText = t('themeAuto');
+			document.getElementById('opt-theme-light').innerText = t('themeLight');
+			document.getElementById('opt-theme-dark').innerText = t('themeDark');
+			applyTheme();
 			// Header
 			document.getElementById('admin-title').innerText = t('adminTitle');
 			document.getElementById('btn-logout').innerText = t('logout');
@@ -2905,9 +3023,64 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('lbl-site-announcement').innerText = t('announcement');
 			document.getElementById('site-announcement-help').innerText = t('announcementHelp');
 			document.getElementById('btn-save-site').innerText = t('saveChanges');
+			// Maintenance section
+			document.getElementById('maint-title').innerText = t('maintTitle');
+			document.getElementById('lbl-maint-active').innerText = t('maintActive');
+			document.getElementById('lbl-maint-status').innerText = t('status');
+			document.getElementById('opt-status-none').innerText = t('statusNone');
+			document.getElementById('opt-status-scheduled').innerText = t('statusScheduled');
+			document.getElementById('opt-status-progress').innerText = t('statusProgress');
+			document.getElementById('lbl-maint-poster').innerText = t('posterUrl');
+			document.getElementById('lbl-maint-message').innerText = t('messageDefault');
+			document.getElementById('lbl-maint-localized').innerText = t('localizedMessages');
+			document.getElementById('maint-localized-help').innerText = t('localizedMessagesHelp');
+			document.getElementById('btn-add-language').innerText = t('addLanguage');
+			document.getElementById('lbl-maint-start').innerText = t('startTime');
+			document.getElementById('lbl-maint-end').innerText = t('endTime');
+			document.getElementById('lbl-maint-link').innerText = t('announcementLink');
+			document.getElementById('btn-save-maint').innerText = t('saveChanges');
+			document.getElementById('btn-reload-maint').innerText = t('reload');
+			document.getElementById('platform-maint-title').innerText = t('platformMaintTitle');
+			document.getElementById('platform-maint-desc').innerText = t('platformMaintDesc');
+			document.getElementById('btn-add-platform').innerText = t('addPlatform');
+			// Updates section
+			document.getElementById('updates-autogen-title').innerText = t('updatesAutoGen');
+			document.getElementById('updates-autogen-desc').innerText = t('updatesAutoGenDesc');
+			document.getElementById('lbl-scan-path').innerText = t('dirPath');
+			document.getElementById('btn-browse').innerText = t('browse');
+			document.getElementById('lbl-scan-baseurl').innerText = t('baseUrl');
+			document.getElementById('lbl-scan-platform').innerText = t('platform');
+			document.getElementById('lbl-scan-arch').innerText = t('architecture');
+			document.getElementById('lbl-scan-type').innerText = t('type');
+			document.getElementById('btn-generate').innerText = t('generateSave');
+			document.getElementById('btn-scan-only').innerText = t('scanOnly');
+			document.getElementById('upload-title').innerText = t('uploadTitle');
+			document.getElementById('upload-desc').innerText = t('uploadDesc');
+			document.getElementById('lbl-upload-file').innerText = t('file');
+			document.getElementById('lbl-upload-subdir').innerText = t('subdir');
+			document.getElementById('btn-upload').innerText = t('upload');
+			document.getElementById('updates-config-title').innerText = t('updatesConfig');
+			document.getElementById('lbl-updates-search').innerText = t('search');
+			document.getElementById('lbl-updates-sort').innerText = t('sortBy');
+			document.getElementById('updates-config-desc').innerText = t('updatesConfigDesc');
+			document.getElementById('btn-save-updates').innerText = t('saveChanges');
+			document.getElementById('btn-reload-updates').innerText = t('reload');
+			document.getElementById('dir-browser-title').innerText = t('selectDirectory');
+			document.getElementById('btn-dir-close').innerText = t('close');
+			document.getElementById('btn-dir-use').innerText = t('useThisDirectory');
+			// News section
+			document.getElementById('news-title').innerText = t('newsItems');
+			document.getElementById('lbl-news-search').innerText = t('search');
+			document.getElementById('lbl-news-sort').innerText = t('sortBy');
+			document.getElementById('btn-add-news').innerText = t('addNewsItem');
+			document.getElementById('btn-save-news').innerText = t('saveChanges');
+			document.getElementById('btn-reload-news').innerText = t('reload');
+			// Feedback search/sort labels
+			document.getElementById('lbl-feedback-search').innerText = t('search');
+			document.getElementById('lbl-feedback-sort').innerText = t('sortBy');
 			renderSettingsPresets();
 		}
-		
+
 		function getActiveStorage() {
 			// Check localStorage first (persistent), then sessionStorage (session-only)
 			if (localStorage.getItem('accessToken')) return localStorage;
@@ -2983,8 +3156,13 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
 			document.getElementById('section-' + name).classList.remove('hidden');
 			document.querySelector('.sidebar button[onclick*="' + name + '"]').classList.add('active');
-			
-			if (name === 'stats' && !statsData) loadStats();
+
+			// The statistics view always refreshes live while it is open.
+			if (statsAutoRefreshTimer) { clearInterval(statsAutoRefreshTimer); statsAutoRefreshTimer = null; }
+			if (name === 'stats') {
+				loadStats();
+				statsAutoRefreshTimer = setInterval(loadStats, 5000);
+			}
 			if (name === 'launcher' && !launcherData) loadLauncher();
 			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
 			if (name === 'updates' && !updatesData) loadUpdates();
@@ -3023,16 +3201,17 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		// Email & Home (SMTP / account policy / markdown home content) functions
 		async function loadEmailSettings() {
 			await loadSMTP();
-			await loadHomeContent();
 		}
 		async function loadSite() {
 			const res = await apiRequest('GET', '/v0/api/admin/site');
-			if (!res || !res.ok) return;
-			const data = await res.json();
-			const c = data.site || {};
-			document.getElementById('site-name').value = c.siteName || '';
-			document.getElementById('site-seo').value = c.seoDescription || '';
-			document.getElementById('site-announcement').value = c.announcement || '';
+			if (res && res.ok) {
+				const data = await res.json();
+				const c = data.site || {};
+				document.getElementById('site-name').value = c.siteName || '';
+				document.getElementById('site-seo').value = c.seoDescription || '';
+				document.getElementById('site-announcement').value = c.announcement || '';
+			}
+			await loadHomeContent();
 		}
 		async function saveSite() {
 			const site = {
@@ -3141,22 +3320,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			renderPlatformsList(statsData.platformCounts || {});
 		}
 
-		function toggleStatsAutoRefresh() {
-			const enabled = document.getElementById('stats-autorefresh')?.checked;
-			if (statsAutoRefreshTimer) {
-				clearInterval(statsAutoRefreshTimer);
-				statsAutoRefreshTimer = null;
-			}
-			if (enabled) {
-				statsAutoRefreshTimer = setInterval(loadStats, 5000);
-				loadStats();
-			}
-		}
-		
 		function renderDailyChart(dailyStats) {
 			const container = document.getElementById('daily-chart');
 			if (!dailyStats || dailyStats.length === 0) {
-				container.innerHTML = '<div style="color: #94a3b8; text-align: center; width: 100%;">No data available</div>';
+				container.innerHTML = '<div style="color: var(--text-muted); text-align: center; width: 100%;">No data available</div>';
 				return;
 			}
 			
@@ -3167,7 +3334,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				const date = stat.date.split('-').slice(1).join('/');
 				html += '<div style="display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 40px;">';
 				html += '<div style="background: linear-gradient(180deg, #22d3ee 0%, #818cf8 100%); width: 80%; height: ' + height + 'px; border-radius: 4px 4px 0 0; transition: height 0.3s;"></div>';
-				html += '<div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">' + date + '</div>';
+				html += '<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">' + date + '</div>';
 				html += '<div style="font-size: 10px; color: #64748b;">' + stat.count + '</div>';
 				html += '</div>';
 			});
@@ -3177,21 +3344,21 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		function renderEndpointsList(endpoints) {
 			const container = document.getElementById('endpoints-list');
 			if (!endpoints || endpoints.length === 0) {
-				container.innerHTML = '<div style="color: #94a3b8;">No endpoint data available</div>';
+				container.innerHTML = '<div style="color: var(--text-muted);">No endpoint data available</div>';
 				return;
 			}
 			
 			let html = '';
 			endpoints.slice(0, 10).forEach((ep, idx) => {
 				const percent = endpoints[0]?.count > 0 ? (ep.count / endpoints[0].count * 100) : 0;
-				html += '<div style="display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #1f2937;">';
+				html += '<div style="display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border);">';
 				html += '<span style="color: #64748b; width: 20px;">' + (idx + 1) + '</span>';
 				html += '<div style="flex: 1;">';
 				html += '<div style="font-size: 13px; margin-bottom: 4px;">' + escapeHtml(ep.endpoint) + '</div>';
-				html += '<div style="background: #1f2937; height: 4px; border-radius: 2px; overflow: hidden;">';
+				html += '<div style="background: var(--border); height: 4px; border-radius: 2px; overflow: hidden;">';
 				html += '<div style="background: linear-gradient(90deg, #22d3ee, #818cf8); height: 100%; width: ' + percent + '%;"></div>';
 				html += '</div></div>';
-				html += '<span style="color: #94a3b8; font-size: 13px;">' + ep.count.toLocaleString() + '</span>';
+				html += '<span style="color: var(--text-muted); font-size: 13px;">' + ep.count.toLocaleString() + '</span>';
 				html += '</div>';
 			});
 			container.innerHTML = html;
@@ -3201,7 +3368,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			const container = document.getElementById('platforms-list');
 			const platforms = Object.entries(platformCounts);
 			if (!platforms || platforms.length === 0) {
-				container.innerHTML = '<div style="color: #94a3b8;">No platform data available</div>';
+				container.innerHTML = '<div style="color: var(--text-muted);">No platform data available</div>';
 				return;
 			}
 			
@@ -3211,7 +3378,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				const color = colors[idx % colors.length];
 				html += '<div style="background: ' + color + '20; border: 1px solid ' + color + '40; padding: 12px 20px; border-radius: 8px; display: flex; flex-direction: column; align-items: center;">';
 				html += '<div style="font-size: 24px; font-weight: 700; color: ' + color + ';">' + count.toLocaleString() + '</div>';
-				html += '<div style="font-size: 13px; color: #94a3b8;">' + escapeHtml(platform) + '</div>';
+				html += '<div style="font-size: 13px; color: var(--text-muted);">' + escapeHtml(platform) + '</div>';
 				html += '</div>';
 			});
 			container.innerHTML = html;
@@ -3378,12 +3545,12 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		function renderPlatformMaintenance() {
 			const container = document.getElementById('platform-maintenance-list');
 			if (!maintenanceData || !maintenanceData.platformSpecific) {
-				container.innerHTML = '<p style="color:#94a3b8;">No platform-specific maintenance configured.</p>';
+				container.innerHTML = '<p style="color:var(--text-muted);">No platform-specific maintenance configured.</p>';
 				return;
 			}
 			const platforms = Object.entries(maintenanceData.platformSpecific);
 			if (platforms.length === 0) {
-				container.innerHTML = '<p style="color:#94a3b8;">No platform-specific maintenance configured.</p>';
+				container.innerHTML = '<p style="color:var(--text-muted);">No platform-specific maintenance configured.</p>';
 				return;
 			}
 			let html = '';
@@ -3486,7 +3653,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			const container = document.getElementById('updates-content');
 			if (!container) return;
 			if (!updatesData || !updatesData.platforms) {
-				container.innerHTML = '<p style="color:#94a3b8;">No platforms configured.</p>';
+				container.innerHTML = '<p style="color:var(--text-muted);">No platforms configured.</p>';
 				return;
 			}
 			const term = (document.getElementById('updates-search')?.value || '').trim().toLowerCase();
@@ -3516,7 +3683,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				}
 				html += '</div>';
 			}
-			container.innerHTML = html || '<p style="color:#94a3b8;">No platforms match your search.</p>';
+			container.innerHTML = html || '<p style="color:var(--text-muted);">No platforms match your search.</p>';
 		}
 		
 		async function saveUpdates() {
@@ -3565,13 +3732,13 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			const data = await res.json();
 			const container = document.getElementById('scan-results');
 			if (!data.files || data.files.length === 0) {
-				container.innerHTML = '<p style="color:#94a3b8;">No files found in directory.</p>';
+				container.innerHTML = '<p style="color:var(--text-muted);">No files found in directory.</p>';
 				return;
 			}
 			let html = '<p style="color:#22d3ee;">Found ' + data.count + ' file(s):</p>';
-			html += '<div style="max-height:200px;overflow-y:auto;background:#0f172a;padding:12px;border-radius:8px;font-family:monospace;font-size:12px;">';
+			html += '<div style="max-height:200px;overflow-y:auto;background:var(--surface-3);padding:12px;border-radius:8px;font-family:monospace;font-size:12px;">';
 			data.files.forEach(f => {
-				html += '<div style="margin-bottom:4px;">' + escapeHtml(f.fileName) + ' <span style="color:#94a3b8;">(' + escapeHtml(f.checksum.substring(0,16)) + '...)</span></div>';
+				html += '<div style="margin-bottom:4px;">' + escapeHtml(f.fileName) + ' <span style="color:var(--text-muted);">(' + escapeHtml(f.checksum.substring(0,16)) + '...)</span></div>';
 			});
 			html += '</div>';
 			container.innerHTML = html;
@@ -3624,14 +3791,14 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				return;
 			}
 			const container = document.getElementById('upload-results');
-			let html = '<div style="background:#0f172a;padding:12px;border-radius:8px;">';
+			let html = '<div style="background:var(--surface-3);padding:12px;border-radius:8px;">';
 			html += '<div style="color:#22d3ee;margin-bottom:8px;">Uploaded ' + escapeHtml(data.fileName) + ' (' + data.size + ' bytes)</div>';
 			html += '<div style="display:flex;gap:8px;align-items:center;">';
 			html += '<input type="text" readonly value="' + escapeHtml(data.url) + '" style="flex:1;font-family:monospace;font-size:12px;" id="upload-url" />';
 			html += '<button class="btn btn-secondary" onclick="copyUploadUrl()">Copy</button>';
 			html += '<button class="btn btn-secondary" onclick="useUploadUrl()">Use as Base URL</button>';
 			html += '</div>';
-			html += '<div style="color:#94a3b8;font-size:12px;margin-top:8px;">sha256: ' + escapeHtml(data.checksum) + '</div>';
+			html += '<div style="color:var(--text-muted);font-size:12px;margin-top:8px;">sha256: ' + escapeHtml(data.checksum) + '</div>';
 			html += '</div>';
 			container.innerHTML = html;
 			// Default: add the uploaded file's URL root to the saved Base URLs.
@@ -3781,7 +3948,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (!container) return;
 			const presets = getBaseUrlPresets();
 			if (presets.length === 0) {
-				container.innerHTML = '<div style="color:#94a3b8;">' + escapeHtml(t('noSavedBaseUrls')) + '</div>';
+				container.innerHTML = '<div style="color:var(--text-muted);">' + escapeHtml(t('noSavedBaseUrls')) + '</div>';
 				return;
 			}
 			let html = '';
@@ -3843,7 +4010,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				row.textContent = label;
 				if (clickable) {
 					row.className = 'dir-row';
-					row.style.cssText = 'padding:8px;cursor:pointer;color:#e2e8f0;';
+					row.style.cssText = 'padding:8px;cursor:pointer;color:var(--text);';
 					row.addEventListener('click', () => browseDir(navPath));
 				} else {
 					row.style.cssText = 'padding:8px;color:#64748b;';
@@ -3858,7 +4025,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			});
 			if (!list.children.length) {
 				const empty = document.createElement('div');
-				empty.style.cssText = 'color:#94a3b8;padding:8px;';
+				empty.style.cssText = 'color:var(--text-muted);padding:8px;';
 				empty.textContent = 'Empty directory';
 				list.appendChild(empty);
 			}
@@ -3882,7 +4049,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		function renderNews() {
 			const container = document.getElementById('news-list');
 			if (!newsData || !newsData.items || newsData.items.length === 0) {
-				container.innerHTML = '<p style="color:#94a3b8;">No news items.</p>';
+				container.innerHTML = '<p style="color:var(--text-muted);">No news items.</p>';
 				return;
 			}
 			// Pair each item with its original index so edits map to the real array.
@@ -3908,7 +4075,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				}
 			});
 			if (view.length === 0) {
-				container.innerHTML = '<p style="color:#94a3b8;">No news items match your search.</p>';
+				container.innerHTML = '<p style="color:var(--text-muted);">No news items match your search.</p>';
 				return;
 			}
 			let html = '';
@@ -3983,16 +4150,16 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		function renderUsersTable() {
 			const tbody = document.getElementById('users-table-body');
 			if (!usersData || usersData.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="5" style="padding: 20px; text-align: center; color: #94a3b8;">No users found.</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="5" style="padding: 20px; text-align: center; color: var(--text-muted);">No users found.</td></tr>';
 				return;
 			}
 			let html = '';
 			usersData.forEach(user => {
-				html += '<tr style="border-bottom: 1px solid #1f2937;">';
+				html += '<tr style="border-bottom: 1px solid var(--border);">';
 				html += '<td style="padding: 10px;">' + user.id + '</td>';
 				html += '<td style="padding: 10px;">' + escapeHtml(user.username) + '</td>';
-				html += '<td style="padding: 10px;"><span style="padding: 4px 8px; border-radius: 4px; background: ' + (user.role === 'admin' ? '#7c3aed' : '#374151') + '; font-size: 12px;">' + escapeHtml(user.role) + '</span></td>';
-				html += '<td style="padding: 10px; color: #94a3b8;">' + escapeHtml(user.createdAt) + '</td>';
+				html += '<td style="padding: 10px;"><span style="padding: 4px 8px; border-radius: 4px; background: ' + (user.role === 'admin' ? '#7c3aed' : 'var(--border-2)') + '; font-size: 12px;">' + escapeHtml(user.role) + '</span></td>';
+				html += '<td style="padding: 10px; color: var(--text-muted);">' + escapeHtml(user.createdAt) + '</td>';
 				html += '<td style="padding: 10px;">';
 				html += '<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 4px;" onclick="editUser(' + user.id + ')">Edit</button>';
 				html += '<button class="btn btn-danger" style="padding: 4px 8px; font-size: 12px; background: #dc2626;" onclick="deleteUser(' + user.id + ', \'' + escapeHtml(user.username) + '\')">Delete</button>';
@@ -4169,11 +4336,11 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				}
 			});
 			if (view.length === 0) {
-				container.innerHTML = '<p style="color:#94a3b8;">No feedback entries matching filters.</p>';
+				container.innerHTML = '<p style="color:var(--text-muted);">No feedback entries matching filters.</p>';
 				return;
 			}
 			let html = '<table style="width:100%;border-collapse:collapse;table-layout:fixed;">';
-			html += '<thead><tr style="border-bottom:1px solid #374151;">';
+			html += '<thead><tr style="border-bottom:1px solid var(--border-2);">';
 			html += '<th style="text-align:left;padding:8px;width:160px;">Time</th>';
 			html += '<th style="text-align:left;padding:8px;width:110px;">Platform</th>';
 			html += '<th style="text-align:left;padding:8px;width:90px;">Version</th>';
@@ -4183,10 +4350,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			html += '<tbody>';
 			view.forEach(item => {
 				const long = (item.content || '').length > 160 || (item.content || '').split('\n').length > 3;
-				html += '<tr style="border-bottom:1px solid #1f2937;vertical-align:top;">';
-				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;">' + escapeHtml(item.receivedAt || '') + '</td>';
-				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;word-break:break-word;">' + escapeHtml(item.platform || '-') + '</td>';
-				html += '<td style="padding:8px;color:#94a3b8;font-size:13px;word-break:break-word;">' + escapeHtml(item.coreVersion || '-') + '</td>';
+				html += '<tr style="border-bottom:1px solid var(--border);vertical-align:top;">';
+				html += '<td style="padding:8px;color:var(--text-muted);font-size:13px;">' + escapeHtml(item.receivedAt || '') + '</td>';
+				html += '<td style="padding:8px;color:var(--text-muted);font-size:13px;word-break:break-word;">' + escapeHtml(item.platform || '-') + '</td>';
+				html += '<td style="padding:8px;color:var(--text-muted);font-size:13px;word-break:break-word;">' + escapeHtml(item.coreVersion || '-') + '</td>';
 				html += '<td style="padding:8px;">';
 				html += '<div class="fb-content' + (long ? ' collapsed' : '') + '" id="fb-content-' + item.id + '">' + escapeHtml(item.content || '') + '</div>';
 				if (long) {
@@ -4197,7 +4364,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				html += '</tr>';
 			});
 			html += '</tbody></table>';
-			html += '<p style="color:#94a3b8;font-size:13px;margin-top:12px;">Showing ' + view.length + ' entries</p>';
+			html += '<p style="color:var(--text-muted);font-size:13px;margin-top:12px;">Showing ' + view.length + ' entries</p>';
 			container.innerHTML = html;
 		}
 
@@ -4228,7 +4395,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			await checkAuth();
 			applyLang();
 			renderBaseUrlPresets();
-			loadStats();
+			showSection('stats');
 		})();
 	</script>
 </body>
@@ -4241,60 +4408,69 @@ var appUserDashboardTemplate = template.Must(template.New("appUserDashboard").Pa
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>NekoLc Dashboard</title>
 <style>
+:root { --bg:#0f172a; --surface:#111827; --surface-2:#1f2937; --surface-3:#0b1220; --border:#1f2937; --border-2:#374151; --text:#e2e8f0; --text-strong:#f8fafc; --text-muted:#94a3b8; --text-soft:#cbd5e1; --hover-2:#4b5563; }
+:root[data-theme="light"] { --bg:#f1f5f9; --surface:#ffffff; --surface-2:#f1f5f9; --surface-3:#f8fafc; --border:#e2e8f0; --border-2:#cbd5e1; --text:#1e293b; --text-strong:#0f172a; --text-muted:#64748b; --text-soft:#334155; --hover-2:#cbd5e1; }
+@media (prefers-color-scheme: light) { :root:not([data-theme]) { --bg:#f1f5f9; --surface:#ffffff; --surface-2:#f1f5f9; --surface-3:#f8fafc; --border:#e2e8f0; --border-2:#cbd5e1; --text:#1e293b; --text-strong:#0f172a; --text-muted:#64748b; --text-soft:#334155; --hover-2:#cbd5e1; } }
 * { box-sizing: border-box; }
-body { font-family: "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; }
-.header { background: #111827; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; }
+body { font-family: "Segoe UI", sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; }
+.header { background: var(--surface); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
 .header h1 { margin: 0; font-size: 18px; }
 .user { display: flex; align-items: center; gap: 12px; }
-.user span { color: #94a3b8; }
-.user button { padding: 8px 16px; border: none; border-radius: 6px; background: #374151; color: #e2e8f0; cursor: pointer; }
-.user button:hover { background: #4b5563; }
+.user span { color: var(--text-muted); }
+.user button { padding: 8px 16px; border: none; border-radius: 6px; background: var(--border-2); color: var(--text); cursor: pointer; }
+.user button:hover { background: var(--hover-2); }
 .container { max-width: 1000px; margin: 0 auto; padding: 24px; }
-.card { background: #111827; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
-h2 { margin: 0 0 16px 0; color: #f8fafc; font-size: 18px; }
+.card { background: var(--surface); border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
+h2 { margin: 0 0 16px 0; color: var(--text-strong); font-size: 18px; }
 .welcome { font-size: 28px; margin-bottom: 8px; }
-.subtitle { color: #94a3b8; margin-bottom: 24px; }
+.subtitle { color: var(--text-muted); margin-bottom: 24px; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-.info-item { background: #1f2937; padding: 16px; border-radius: 8px; }
-.info-label { color: #94a3b8; font-size: 13px; margin-bottom: 4px; }
+.info-item { background: var(--surface-2); padding: 16px; border-radius: 8px; }
+.info-label { color: var(--text-muted); font-size: 13px; margin-bottom: 4px; }
 .info-value { font-size: 18px; font-weight: 600; word-break: break-all; }
 .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .badge-ok { background: rgba(52,211,153,0.15); color: #34d399; }
 .badge-warn { background: rgba(251,191,36,0.15); color: #fbbf24; }
 .lang-switch { display: flex; align-items: center; gap: 8px; }
-.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid #374151; background: #1f2937; color: #e2e8f0; cursor: pointer; }
+.lang-switch select, #themeSelect { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text); cursor: pointer; }
 .actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
 .actions a, .actions button { padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; border: none; cursor: pointer; font-size: 14px; }
 .btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
-.btn-secondary { background: #374151; color: #e2e8f0; }
+.btn-secondary { background: var(--border-2); color: var(--text); }
 .maintenance { border-left: 4px solid #fbbf24; }
 .news-list { display: flex; flex-direction: column; gap: 12px; }
-.news-entry { background: #1f2937; padding: 14px 16px; border-radius: 8px; }
+.news-entry { background: var(--surface-2); padding: 14px 16px; border-radius: 8px; }
 .news-entry h3 { margin: 0 0 6px 0; font-size: 15px; }
-.news-entry .meta { color: #94a3b8; font-size: 12px; margin-bottom: 6px; }
+.news-entry .meta { color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
 .news-entry a { color: #22d3ee; text-decoration: none; }
 .markdown-body { line-height: 1.6; }
-.markdown-body h1, .markdown-body h2, .markdown-body h3 { color: #f8fafc; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { color: var(--text-strong); }
 .markdown-body a { color: #22d3ee; }
-.markdown-body pre { background: #0b1220; padding: 12px; border-radius: 8px; overflow-x: auto; }
-.markdown-body code { background: #0b1220; padding: 2px 6px; border-radius: 4px; }
-.markdown-body blockquote { border-left: 3px solid #374151; margin: 8px 0; padding-left: 12px; color: #94a3b8; }
+.markdown-body pre { background: var(--surface-3); padding: 12px; border-radius: 8px; overflow-x: auto; }
+.markdown-body code { background: var(--surface-3); padding: 2px 6px; border-radius: 4px; }
+.markdown-body blockquote { border-left: 3px solid var(--border-2); margin: 8px 0; padding-left: 12px; color: var(--text-muted); }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 50; }
 .modal-overlay.show { display: flex; }
-.modal { background: #111827; padding: 24px; border-radius: 12px; width: 360px; max-width: 92vw; }
+.modal { background: var(--surface); padding: 24px; border-radius: 12px; width: 360px; max-width: 92vw; }
 .modal h2 { margin-top: 0; }
-.modal label { display: block; margin-top: 12px; color: #cbd5e1; }
-.modal input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid #1f2937; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
+.modal label { display: block; margin-top: 12px; color: var(--text-soft); }
+.modal input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text); box-sizing: border-box; }
 .modal .error { color: #f87171; margin-top: 10px; min-height: 18px; }
 .modal .success { color: #34d399; margin-top: 10px; min-height: 18px; }
 .modal .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
 .hidden { display: none; }
 </style>
+<script>(function(){var th=localStorage.getItem('theme');if(th==='light'||th==='dark'){document.documentElement.setAttribute('data-theme',th);}})();</script>
 </head>
 <body>
 <div class="header">
 <h1>🐱 NekoLc</h1>
 <div class="user">
+<select id="themeSelect" onchange="changeTheme()" style="margin-right:8px;" aria-label="Theme">
+<option value="auto" id="opt-theme-auto">Auto</option>
+<option value="light" id="opt-theme-light">Light</option>
+<option value="dark" id="opt-theme-dark">Dark</option>
+</select>
 <div class="lang-switch">
 <select id="langSelect" onchange="changeLang()">
 <option value="en">English</option>
@@ -4385,15 +4561,24 @@ h2 { margin: 0 0 16px 0; color: #f8fafc; font-size: 18px; }
 <script>
 const basePath = '{{.BasePath}}';
 const i18n = {
-'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed' },
-'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败' },
-'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗' }
+'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed', themeAuto: 'Auto', themeLight: 'Light', themeDark: 'Dark' },
+'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败', themeAuto: '自动', themeLight: '浅色', themeDark: '深色' },
+'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗', themeAuto: '自動', themeLight: '淺色', themeDark: '深色' }
 };
 let currentUser = null;
 function getLang() { return localStorage.getItem('lang') || 'en'; }
 function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
 function changeLang() { setLang(document.getElementById('langSelect').value); }
 function t() { return i18n[getLang()] || i18n['en']; }
+function getTheme() { return localStorage.getItem('theme') || 'auto'; }
+function applyTheme() {
+const th = getTheme();
+if (th === 'light' || th === 'dark') document.documentElement.setAttribute('data-theme', th);
+else document.documentElement.removeAttribute('data-theme');
+const sel = document.getElementById('themeSelect');
+if (sel) sel.value = th;
+}
+function changeTheme() { localStorage.setItem('theme', document.getElementById('themeSelect').value); applyTheme(); }
 function escapeHtml(str) {
 if (!str) return '';
 return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -4402,6 +4587,10 @@ function applyLang() {
 const lang = getLang();
 document.getElementById('langSelect').value = lang;
 const tt = t();
+document.getElementById('opt-theme-auto').innerText = tt.themeAuto || 'Auto';
+document.getElementById('opt-theme-light').innerText = tt.themeLight || 'Light';
+document.getElementById('opt-theme-dark').innerText = tt.themeDark || 'Dark';
+applyTheme();
 document.getElementById('welcome').innerText = tt.welcome;
 document.getElementById('subtitle').innerText = tt.subtitle;
 document.getElementById('lbl-username').innerText = tt.username;

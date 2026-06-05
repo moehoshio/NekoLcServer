@@ -99,3 +99,53 @@ func TestAdminSiteConfigRoundTrip(t *testing.T) {
 		t.Fatalf("home page missing site name/announcement")
 	}
 }
+
+// TestAdminDashboardStructure verifies the admin page reflects the reorganized
+// sections, theme switcher and removal of the stats auto-refresh control.
+func TestAdminDashboardStructure(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {})
+	rec := doRequest(t, srv, http.MethodGet, "/app/admin", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin page expected 200 got %d", rec.Code)
+	}
+	body := rec.Body.String()
+
+	mustContain := []string{
+		`id="themeSelect"`,       // theme switcher present
+		`changeTheme()`,          // theme JS wired
+		`data-theme`,             // theme application
+		`prefers-color-scheme`,   // auto system theme
+		`id="nav-site"`,          // site config nav
+		`id="acct-policy-title"`, // account policy moved into Users section
+		`id="maint-title"`,       // maintenance i18n wired
+		`id="updates-config-title"`,
+		`id="upload-title"`,
+	}
+	for _, s := range mustContain {
+		if !strings.Contains(body, s) {
+			t.Fatalf("admin page missing %q", s)
+		}
+	}
+
+	mustNotContain := []string{
+		`id="stats-autorefresh"`, // auto-refresh control removed
+		`Email &amp; Home`,       // nav renamed to just Email
+	}
+	for _, s := range mustNotContain {
+		if strings.Contains(body, s) {
+			t.Fatalf("admin page should not contain %q", s)
+		}
+	}
+
+	// The home-content editor must now live inside the Site Config section,
+	// not the Email section.
+	siteIdx := strings.Index(body, `id="section-site"`)
+	settingsIdx := strings.Index(body, `id="section-settings"`)
+	homeIdx := strings.Index(body, `id="home-content"`)
+	if siteIdx < 0 || settingsIdx < 0 || homeIdx < 0 {
+		t.Fatalf("expected site/settings/home markers present")
+	}
+	if !(homeIdx > siteIdx && homeIdx < settingsIdx) {
+		t.Fatalf("home-content editor is not inside the Site Config section")
+	}
+}

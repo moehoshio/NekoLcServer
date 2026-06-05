@@ -193,6 +193,7 @@ const (
 	ConfigKeySMTP        = "smtp"
 	ConfigKeyAccount     = "account"
 	ConfigKeyHomeContent = "homeContent"
+	ConfigKeySite        = "site"
 )
 
 // normalizeEmail lowercases and trims an email address for consistent storage and lookup.

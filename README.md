@@ -92,7 +92,9 @@ Access the visual admin dashboard at `http://localhost:8080/app/admin`. Features
 - **Updates**: Configure update packages for each platform and architecture. Upload files (hosted by the server with an auto-generated download URL), browse and scan server directories visually, search and sort items
 - **News**: Create and manage multiple news items with search and sorting
 - **Feedback**: View user feedback logs with search, sorting, deletion, and collapsible long entries
-- **Email & Home**: Configure SMTP (used for password recovery and email verification), account policy (`requireEmail`, `verifyEmail`), and the Markdown home-page content shown on the user dashboard. Includes a "send test email" action.
+- **Users**: Manage user accounts, plus the **Account Policy** (`allowRegistration`, `requireEmail`, `verifyEmail`). When the account/authentication feature is disabled, the user-facing pages (`/app/login`, `/app/register`, `/app/dashboard`) show a "feature not enabled" notice.
+- **Email & Home**: Configure SMTP (used for password recovery and email verification) and the Markdown home-page content shown on the user dashboard. Includes a "send test email" action.
+- **Site Config**: Configure the site name, SEO description and a site announcement. The site name and SEO description are rendered server-side into the public home page (`<title>` / `<meta name="description">`), and a non-empty announcement is shown as a banner.
 
 Uploaded update assets are served as static files at `/files/<relative-path>` (resolved within the configured update assets directory; path traversal is rejected).
 
@@ -124,13 +126,16 @@ The following admin API endpoints are available for configuration management (re
 - `POST /v0/api/admin/uploadFile` - Upload a file (multipart `file`, optional `subdir`); stored under the update assets directory and served by this server. The response includes an absolute download `url` generated from the current request URL (scheme/host/base path)
 - `GET /v0/api/admin/browseDir` - Browse sub-directories/files under the update assets directory (for the visual directory picker; optional `path` query)
 - `DELETE /v0/api/admin/feedbackLogs/{id}` - Delete a single feedback log entry
-- `GET /v0/api/admin/account` - Get account policy (`requireEmail`, `verifyEmail`)
+- `GET /v0/api/admin/account` - Get account policy (`allowRegistration`, `requireEmail`, `verifyEmail`)
 - `PUT /v0/api/admin/account` - Update account policy
 - `GET /v0/api/admin/smtp` - Get SMTP settings (password redacted)
 - `PUT /v0/api/admin/smtp` - Update SMTP settings (a blank/`********` password preserves the stored one)
 - `POST /v0/api/admin/smtp/test` - Send a test email to a recipient
 - `GET /v0/api/admin/homeContent` - Get the Markdown home-page content
 - `PUT /v0/api/admin/homeContent` - Update the Markdown home-page content
+- `GET /v0/api/admin/site` - Get site config (`siteName`, `seoDescription`, `announcement`)
+- `PUT /v0/api/admin/site` - Update site config
+- `GET /app/api/site-config` - Public site config (site name, SEO description, announcement)
 
 ## Account Operations
 
@@ -145,7 +150,25 @@ When authentication is enabled, the NekoLc web UI exposes account self-service e
 - `POST /app/api/send-verification` - Send an email-verification link to the authenticated user
 - `GET|POST /app/api/verify-email` - Verify an email address using a single-use token
 
-Registration (`POST /app/register`) accepts an optional `email` in `registerRequest`. When `account.requireEmail` is enabled, an email is mandatory; when `account.verifyEmail` is enabled, a verification email is sent on registration. Email addresses are unique per account when provided.
+Registration (`POST /app/register`) accepts an optional `email` in `registerRequest`. Registration is allowed only when `account.allowRegistration` is enabled (it defaults to `true` and may be turned off from the admin **Users → Account Policy** panel). When `account.requireEmail` is enabled, an email is mandatory; when `account.verifyEmail` is enabled, a verification email is sent on registration. Email addresses are unique per account when provided.
+
+### WebSocket configuration
+
+The server-side WebSocket listener is controlled by the `webSocket` section in `config.json`:
+
+```json
+"webSocket": {
+  "enable": false,
+  "port": "",
+  "path": "/v0/ws"
+}
+```
+
+- `enable` - turn the WebSocket hub on/off.
+- `path` - the endpoint path (default `/v0/ws`).
+- `port` - when empty (or equal to the main `server.port`), the endpoint is served on the main HTTP listener at `path`. When set to a different port, a dedicated listener is started on that local port serving only the WebSocket endpoint.
+
+For backward compatibility the launcher config's `webSocket.enable` flag is still honored when the app-level flag is off.
 
 ### Email (SMTP) configuration
 

@@ -213,6 +213,69 @@ var appVerifyEmailTemplate = template.Must(template.New("appVerify").Parse(`<!do
 </body>
 </html>`))
 
+var appAccountDisabledTemplate = template.Must(template.New("appDisabled").Parse(`<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>NekoLc</title>
+	<style>` + sharedPageStyle + `
+		.card { text-align: center; }
+		.icon { font-size: 48px; margin-bottom: 8px; }
+		.msg { color: #cbd5e1; margin-top: 8px; line-height: 1.6; }</style>
+</head>
+<body>
+	<div class="lang-switch">
+		<select id="langSelect" onchange="changeLang()">
+			<option value="en">English</option>
+			<option value="zh-hans">简体中文</option>
+			<option value="zh-hant">繁體中文</option>
+		</select>
+	</div>
+	<div class="card">
+		<div class="icon">🔒</div>
+		<h1 id="title">Account feature disabled</h1>
+		<p class="msg" id="msg">The account feature is not enabled on this server.</p>
+		<div class="link"><a href="{{.BasePath}}/app" id="link-home">Back to home</a></div>
+	</div>
+	<script>
+		const i18n = {
+			'en': { title: 'Account feature disabled', msg: 'The account feature is not enabled on this server. Please contact the administrator.', home: 'Back to home' },
+			'zh-hans': { title: '账户功能未启用', msg: '此服务器未启用账户功能。请联系管理员。', home: '返回首页' },
+			'zh-hant': { title: '帳戶功能未啟用', msg: '此伺服器未啟用帳戶功能。請聯絡管理員。', home: '返回首頁' }
+		};
+		function getLang() { return localStorage.getItem('lang') || 'en'; }
+		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
+		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function applyLang() {
+			const t = i18n[getLang()] || i18n['en'];
+			document.getElementById('langSelect').value = getLang();
+			document.getElementById('title').innerText = t.title;
+			document.getElementById('msg').innerText = t.msg;
+			document.getElementById('link-home').innerText = t.home;
+		}
+		applyLang();
+	</script>
+</body>
+</html>`))
+
+// accountModeEnabled reports whether the account/authentication feature is active.
+func (s *Server) accountModeEnabled() bool {
+	return s.authService != nil && s.authService.Enabled()
+}
+
+// renderIfAccountDisabled writes the "account feature disabled" page and returns
+// true when the account feature is off, so callers can stop further handling.
+func (s *Server) renderIfAccountDisabled(w http.ResponseWriter) bool {
+	if s.accountModeEnabled() {
+		return false
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	appAccountDisabledTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
+	return true
+}
+
 func (s *Server) handleAppForgotPasswordPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	appForgotPasswordTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})

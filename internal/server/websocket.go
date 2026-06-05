@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -142,6 +143,36 @@ const (
 	wsPingPeriod     = (wsPongWait * 9) / 10
 	wsMaxMessageSize = 4096
 )
+
+// WebSocketDedicatedAddr returns the listen address (":port") for a dedicated
+// WebSocket listener, or "" when the WebSocket should be served on the main HTTP
+// listener. A dedicated listener is used when WebSocket is enabled and a non-empty
+// port distinct from the main server port is configured.
+func (s *Server) WebSocketDedicatedAddr() string {
+	if s.wsHub == nil {
+		return ""
+	}
+	port := strings.TrimSpace(s.appConfig.WebSocket.Port)
+	if port == "" || port == strings.TrimSpace(s.appConfig.Server.Port) {
+		return ""
+	}
+	if strings.HasPrefix(port, ":") {
+		return port
+	}
+	return ":" + port
+}
+
+// WebSocketHandler returns an http.Handler that serves only the WebSocket
+// endpoint at the configured path. It is intended for a dedicated listener.
+func (s *Server) WebSocketHandler() http.Handler {
+	mux := http.NewServeMux()
+	path := s.wsPath
+	if s.basePath != "" {
+		path = s.basePath + path
+	}
+	mux.HandleFunc(path, s.handleWebSocket)
+	return mux
+}
 
 // --- WebSocket Handler ---
 

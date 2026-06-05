@@ -36,6 +36,7 @@
     "enabled": false
   },
   "account": {
+    "allowRegistration": true,
     "requireEmail": false,
     "verifyEmail": false
   },
@@ -49,5 +50,15 @@
     "fromName": "NekoLc",
     "tlsMode": "starttls",
     "baseUrl": ""
+  },
+  "site": {
+    "siteName": "NekoLcServer",
+    "seoDescription": "A modern launcher server for managing updates, news, and user authentication",
+    "announcement": ""
+  },
+  "webSocket": {
+    "enable": false,
+    "port": "",
+    "path": "/v0/ws"
   }
 }

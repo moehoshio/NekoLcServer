@@ -43,7 +43,7 @@ func authEnabled(cfg *config.AppConfig) {
 
 func TestRegisterRequiresEmailWhenConfigured(t *testing.T) {
 	srv := newTestServer(t, authEnabled)
-	srv.setAccountConfig(&config.AccountConfig{RequireEmail: true})
+	srv.setAccountConfig(&config.AccountConfig{AllowRegistration: true, RequireEmail: true})
 
 	// Missing email should be rejected.
 	rec := doRequest(t, srv, http.MethodPost, "/app/register", map[string]interface{}{

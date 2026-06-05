@@ -50,7 +50,9 @@ type Server struct {
 	mailer                *mailer.Mailer
 	accountConfig         *config.AccountConfig
 	smtpConfig            *config.SMTPConfig
+	siteConfig            *config.SiteConfig
 	homeContent           string
+	wsPath                string
 	feedbackLogPath       string
 	debug                 bool
 	basePath              string
@@ -111,8 +113,14 @@ func New(
 		dirCache:              map[string]dirCacheEntry{},
 		loginLimiter:          newRateLimiter(loginRateLimitMax, loginRateLimitWindow),
 	}
-	// Initialize WebSocket hub if WebSocket is enabled in launcher config
-	if launcherCfg != nil && launcherCfg.WebSocket.Enable {
+	// Resolve the WebSocket mount path (defaults to /v0/ws).
+	srv.wsPath = strings.TrimSpace(appCfg.WebSocket.Path)
+	if srv.wsPath == "" {
+		srv.wsPath = "/v0/ws"
+	}
+	// Initialize WebSocket hub if WebSocket is enabled in the app config. The
+	// launcher config flag is still honored for backward compatibility.
+	if appCfg.WebSocket.Enable || (launcherCfg != nil && launcherCfg.WebSocket.Enable) {
 		srv.wsHub = newWSHub(srv)
 		go srv.wsHub.run()
 	}
@@ -128,11 +136,14 @@ func New(
 func (s *Server) initAccountAndSMTP() {
 	account := s.appConfig.Account
 	smtp := s.appConfig.SMTP
+	site := s.appConfig.Site
 	home := ""
 	if s.store != nil {
 		ctx := context.Background()
 		if data, err := s.store.GetConfig(ctx, store.ConfigKeyAccount); err == nil {
-			var c config.AccountConfig
+			// Unmarshal over the file-provided defaults so fields absent from an
+			// older stored config (e.g. allowRegistration) keep their defaults.
+			c := account
 			if json.Unmarshal(data, &c) == nil {
 				account = c
 			}
@@ -141,6 +152,12 @@ func (s *Server) initAccountAndSMTP() {
 			var c config.SMTPConfig
 			if json.Unmarshal(data, &c) == nil {
 				smtp = c
+			}
+		}
+		if data, err := s.store.GetConfig(ctx, store.ConfigKeySite); err == nil {
+			c := site
+			if json.Unmarshal(data, &c) == nil {
+				site = c
 			}
 		}
 		if data, err := s.store.GetConfig(ctx, store.ConfigKeyHomeContent); err == nil {
@@ -152,6 +169,7 @@ func (s *Server) initAccountAndSMTP() {
 	}
 	s.accountConfig = &account
 	s.smtpConfig = &smtp
+	s.siteConfig = &site
 	s.homeContent = home
 	s.mailer = mailer.New(smtp)
 }
@@ -218,6 +236,8 @@ func (s *Server) buildRouter() chi.Router {
 				adminRouter.Put("/account", s.handleAdminUpdateAccount)
 				adminRouter.Get("/homeContent", s.handleAdminGetHomeContent)
 				adminRouter.Put("/homeContent", s.handleAdminUpdateHomeContent)
+				adminRouter.Get("/site", s.handleAdminGetSite)
+				adminRouter.Put("/site", s.handleAdminUpdateSite)
 				// Feedback filtering
 				adminRouter.Get("/feedbackLogs", s.handleFeedbackLogs)
 				adminRouter.Delete("/feedbackLogs/{id}", s.handleAdminDeleteFeedback)
@@ -227,8 +247,8 @@ func (s *Server) buildRouter() chi.Router {
 			})
 		})
 
-		// WebSocket endpoint
-		router.Get("/v0/ws", s.handleWebSocket)
+		// WebSocket endpoint (path configurable via webSocket.path)
+		router.Get(s.wsPath, s.handleWebSocket)
 
 		if s.debug {
 			router.Get("/debug/feedback", s.handleFeedbackView)
@@ -257,6 +277,7 @@ func (s *Server) buildRouter() chi.Router {
 			appApiRouter.Post("/register", s.handleAppRegisterSubmit)
 			appApiRouter.Get("/me", s.handleAppMe)
 			appApiRouter.Get("/home-content", s.handleAppHomeContent)
+			appApiRouter.Get("/site-config", s.handleAppSiteConfig)
 			appApiRouter.Post("/change-password", s.handleAppChangePassword)
 			appApiRouter.Post("/change-email", s.handleAppChangeEmail)
 			appApiRouter.Post("/forgot-password", s.handleAppForgotPassword)
@@ -543,6 +564,24 @@ func (s *Server) currentMailer() *mailer.Mailer {
 	return m
 }
 
+// currentSiteConfig returns the active site configuration. The returned pointer
+// must be treated as read-only.
+func (s *Server) currentSiteConfig() *config.SiteConfig {
+	s.configMu.RLock()
+	cfg := s.siteConfig
+	s.configMu.RUnlock()
+	if cfg == nil {
+		return &config.SiteConfig{}
+	}
+	return cfg
+}
+
+func (s *Server) setSiteConfig(cfg *config.SiteConfig) {
+	s.configMu.Lock()
+	s.siteConfig = cfg
+	s.configMu.Unlock()
+}
+
 func (s *Server) currentHomeContent() string {
 	s.configMu.RLock()
 	c := s.homeContent
@@ -697,9 +736,11 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>NekoLcServer</title>
+	<title>{{.SiteName}}</title>
+	<meta name="description" content="{{.SEODescription}}" />
 	<style>
 		* { box-sizing: border-box; margin: 0; padding: 0; }
+		.announcement { max-width: 720px; margin: 0 auto 28px auto; padding: 14px 20px; border-radius: 12px; background: rgba(129,140,248,0.12); border: 1px solid rgba(129,140,248,0.35); color: #e0e7ff; font-size: 15px; line-height: 1.6; }
 		body { font-family: "Segoe UI", sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%); color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 		.container { text-align: center; padding: 40px; }
 		.logo { font-size: 80px; margin-bottom: 20px; animation: float 3s ease-in-out infinite; }
@@ -733,8 +774,9 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 	</div>
 	<div class="container">
 		<div class="logo">🐱</div>
-		<h1>NekoLcServer</h1>
+		<h1>{{.SiteName}}</h1>
 		<p class="subtitle" id="subtitle">A modern launcher server for managing updates, news, and user authentication</p>
+		{{if .Announcement}}<div class="announcement" id="site-announcement">📢 {{.Announcement}}</div>{{end}}
 		<div class="links">
 			<a href="{{.BasePath}}/app/login" class="btn btn-primary" id="link-signin">🔑 Sign In</a>
 			<a href="{{.BasePath}}/app/register" class="btn btn-secondary" id="link-register">📝 Register</a>
@@ -789,7 +831,17 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 
 func (s *Server) handleAppHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	appHomeTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
+	site := s.currentSiteConfig()
+	name := site.SiteName
+	if name == "" {
+		name = "NekoLcServer"
+	}
+	appHomeTemplate.Execute(w, map[string]interface{}{
+		"BasePath":       s.basePath,
+		"SiteName":       name,
+		"SEODescription": site.SEODescription,
+		"Announcement":   site.Announcement,
+	})
 }
 
 var appLoginTemplate = template.Must(template.New("appLogin").Parse(`<!doctype html>
@@ -1080,11 +1132,17 @@ var appFeedbackTemplate = template.Must(template.New("appFeedback").Parse(`<!doc
 </html>`))
 
 func (s *Server) handleAppLogin(w http.ResponseWriter, r *http.Request) {
+	if s.renderIfAccountDisabled(w) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	appLoginTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }
 
 func (s *Server) handleAppRegister(w http.ResponseWriter, r *http.Request) {
+	if s.renderIfAccountDisabled(w) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	appRegisterTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }
@@ -1096,6 +1154,10 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 	}
 	if s.store == nil {
 		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
+		return
+	}
+	if acct := s.currentAccountConfig(); acct != nil && !acct.AllowRegistration {
+		s.writeError(w, http.StatusForbidden, s.appConfig.Language.Default, "Unauthorized", "registration is disabled")
 		return
 	}
 	var payload RegisterPayload
@@ -1568,6 +1630,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		.toggle input[type="checkbox"]:checked { background: #22d3ee; }
 		.toggle input[type="checkbox"]::before { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #f8fafc; border-radius: 50%; transition: transform 0.2s; }
 		.toggle input[type="checkbox"]:checked::before { transform: translateX(20px); }
+		.toggle span { color: #e2e8f0; font-size: 14px; }
+		.form-group input[type="file"] { padding: 8px; cursor: pointer; }
+		.form-group input[type="file"]::file-selector-button { padding: 9px 16px; margin-right: 12px; border: none; border-radius: 8px; background: linear-gradient(120deg,#22d3ee,#818cf8); color: #0b1220; font-weight: 600; cursor: pointer; transition: filter 0.2s; }
+		.form-group input[type="file"]::file-selector-button:hover { filter: brightness(1.1); }
 		.btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; transition: all 0.2s; }
 		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
 		.btn-primary:hover { filter: brightness(1.1); }
@@ -1622,6 +1688,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<button onclick="showSection('users')" id="nav-users">👥 Users</button>
 			<button onclick="showSection('feedback')" id="nav-feedback">💬 Feedback</button>
 			<button onclick="showSection('email')" id="nav-email">✉️ Email &amp; Home</button>
+			<button onclick="showSection('site')" id="nav-site">🌐 Site Config</button>
 			<button onclick="showSection('settings')" id="nav-settings">⚙️ Settings</button>
 		</div>
 		<div class="main">
@@ -1976,11 +2043,26 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<!-- Users Section -->
 			<div id="section-users" class="section hidden">
 				<div class="card">
+					<h2 id="acct-policy-title">👤 Account Policy</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="acct-policy-desc">Control whether visitors can register and what is required at registration.</p>
+					<div class="form-group">
+						<label class="toggle"><input type="checkbox" id="account-allow-registration" /> <span id="lbl-account-allow-registration">Allow new user registration</span></label>
+					</div>
+					<div class="form-group">
+						<label class="toggle"><input type="checkbox" id="account-require-email" /> <span id="lbl-account-require-email">Require email at registration</span></label>
+					</div>
+					<div class="form-group">
+						<label class="toggle"><input type="checkbox" id="account-verify-email" /> <span id="lbl-account-verify-email">Send verification email on registration</span></label>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveAccount()" id="btn-save-account">Save Account Policy</button>
+					</div>
+				</div>
+				<div class="card">
 					<h2>User Management</h2>
 					<p style="color: #94a3b8; margin-bottom: 16px;">Manage user accounts and permissions.</p>
 					<div class="actions" style="margin-bottom: 16px;">
 						<button class="btn btn-primary" onclick="showAddUserForm()">+ Add User</button>
-						<button class="btn btn-secondary" onclick="loadUsers()">Reload</button>
 					</div>
 					<div id="add-user-form" style="display:none; margin-bottom: 16px; padding: 16px; background: #0b1220; border-radius: 8px;">
 						<h3 style="margin-bottom: 12px;">New User</h3>
@@ -2077,7 +2159,6 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 					<div style="margin-bottom: 16px;">
 						<button class="btn btn-secondary" onclick="clearFeedbackFilters()">Clear Filters</button>
-						<button class="btn btn-secondary" onclick="loadFeedback()" style="margin-left: 8px;">Reload</button>
 					</div>
 					<div class="form-row" style="margin-bottom:16px;flex-wrap:wrap;">
 						<div class="form-group" style="flex:2;min-width:180px;">
@@ -2107,7 +2188,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					<h2 id="email-smtp-title">✉️ SMTP Settings</h2>
 					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-smtp-desc">Configure the outbound email server used for password recovery and email verification.</p>
 					<div class="form-group">
-						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="smtp-enabled" /> <span id="lbl-smtp-enabled">Enable email sending</span></label>
+						<label class="toggle"><input type="checkbox" id="smtp-enabled" /> <span id="lbl-smtp-enabled">Enable email sending</span></label>
 					</div>
 					<div class="form-row">
 						<div class="form-group" style="flex:2;">
@@ -2154,7 +2235,6 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveSMTP()" id="btn-save-smtp">Save SMTP</button>
-						<button class="btn btn-secondary" onclick="loadEmailSettings()" id="btn-reload-smtp">Reload</button>
 					</div>
 					<h3 style="margin-top: 24px; margin-bottom: 12px; font-size: 16px;" id="email-test-title">Send Test Email</h3>
 					<div class="form-row">
@@ -2168,18 +2248,6 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 				</div>
 				<div class="card">
-					<h2 id="email-account-title">👤 Account Policy</h2>
-					<div class="form-group">
-						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="account-require-email" /> <span id="lbl-account-require-email">Require email at registration</span></label>
-					</div>
-					<div class="form-group">
-						<label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="account-verify-email" /> <span id="lbl-account-verify-email">Send verification email on registration</span></label>
-					</div>
-					<div class="actions">
-						<button class="btn btn-primary" onclick="saveAccount()" id="btn-save-account">Save Account Policy</button>
-					</div>
-				</div>
-				<div class="card">
 					<h2 id="email-home-title">🏠 Home Page Content (Markdown)</h2>
 					<p style="color: #94a3b8; margin-bottom: 16px;" id="email-home-desc">This Markdown content is rendered safely and shown on the user dashboard.</p>
 					<div class="form-group">
@@ -2187,7 +2255,32 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 					<div class="actions">
 						<button class="btn btn-primary" onclick="saveHomeContent()" id="btn-save-home">Save Content</button>
-						<button class="btn btn-secondary" onclick="loadHomeContent()" id="btn-reload-home">Reload</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Site Config Section -->
+			<div id="section-site" class="section hidden">
+				<div class="card">
+					<h2 id="site-title">🌐 Site Configuration</h2>
+					<p style="color: #94a3b8; margin-bottom: 16px;" id="site-desc">Configure site-wide branding and announcements shown on public pages.</p>
+					<div class="form-group">
+						<label for="site-name" id="lbl-site-name">Site Name</label>
+						<input type="text" id="site-name" placeholder="NekoLcServer" />
+						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="site-name-help">Shown as the page title and heading on the public home page.</p>
+					</div>
+					<div class="form-group">
+						<label for="site-seo" id="lbl-site-seo">SEO Description</label>
+						<textarea id="site-seo" rows="3" placeholder="A short description for search engines."></textarea>
+						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="site-seo-help">Used for the home page meta description tag.</p>
+					</div>
+					<div class="form-group">
+						<label for="site-announcement" id="lbl-site-announcement">Site Announcement</label>
+						<textarea id="site-announcement" rows="3" placeholder="Shown as a banner on the home page (leave empty to hide)."></textarea>
+						<p style="color: #94a3b8; margin-top: 6px; font-size: 13px;" id="site-announcement-help">Displayed as a banner on the public home page. Leave empty to hide.</p>
+					</div>
+					<div class="actions">
+						<button class="btn btn-primary" onclick="saveSite()" id="btn-save-site">Save Changes</button>
 					</div>
 				</div>
 			</div>
@@ -2393,13 +2486,24 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				emailTestTitle: 'Send Test Email',
 				smtpTestTo: 'Recipient',
 				sendTest: 'Send',
-				emailAccountTitle: '👤 Account Policy',
 				accountRequireEmail: 'Require email at registration',
 				accountVerifyEmail: 'Send verification email on registration',
 				saveAccountPolicy: 'Save Account Policy',
 				emailHomeTitle: '🏠 Home Page Content (Markdown)',
 				emailHomeDesc: 'This Markdown content is rendered safely and shown on the user dashboard.',
-				saveContent: 'Save Content'
+				saveContent: 'Save Content',
+				acctPolicyTitle: '👤 Account Policy',
+				acctPolicyDesc: 'Control whether visitors can register and what is required at registration.',
+				accountAllowRegistration: 'Allow new user registration',
+				navSite: '🌐 Site Config',
+				siteTitle: '🌐 Site Configuration',
+				siteDesc: 'Configure site-wide branding and announcements shown on public pages.',
+				siteName: 'Site Name',
+				siteNameHelp: 'Shown as the page title and heading on the public home page.',
+				seoDescription: 'SEO Description',
+				seoDescriptionHelp: 'Used for the home page meta description tag.',
+				announcement: 'Site Announcement',
+				announcementHelp: 'Displayed as a banner on the public home page. Leave empty to hide.'
 			},
 			'zh-hans': {
 				adminTitle: '🐱 NekoLc 管理面板',
@@ -2530,13 +2634,24 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				emailTestTitle: '发送测试邮件',
 				smtpTestTo: '收件人',
 				sendTest: '发送',
-				emailAccountTitle: '👤 账户策略',
 				accountRequireEmail: '注册时要求邮箱',
 				accountVerifyEmail: '注册时发送验证邮件',
 				saveAccountPolicy: '保存账户策略',
 				emailHomeTitle: '🏠 首页内容（Markdown）',
 				emailHomeDesc: '此 Markdown 内容将安全渲染并显示在用户仪表板上。',
-				saveContent: '保存内容'
+				saveContent: '保存内容',
+				acctPolicyTitle: '👤 账户策略',
+				acctPolicyDesc: '控制访客是否可以注册，以及注册时的必填项。',
+				accountAllowRegistration: '允许新用户注册',
+				navSite: '🌐 站点配置',
+				siteTitle: '🌐 站点配置',
+				siteDesc: '配置显示在公开页面上的站点品牌和公告。',
+				siteName: '站点名称',
+				siteNameHelp: '显示为公开首页的页面标题和标题文字。',
+				seoDescription: 'SEO 描述',
+				seoDescriptionHelp: '用于首页的 meta description 标签。',
+				announcement: '站点公告',
+				announcementHelp: '以横幅形式显示在公开首页。留空则隐藏。'
 			},
 			'zh-hant': {
 				adminTitle: '🐱 NekoLc 管理面板',
@@ -2667,13 +2782,24 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				emailTestTitle: '傳送測試郵件',
 				smtpTestTo: '收件人',
 				sendTest: '傳送',
-				emailAccountTitle: '👤 帳戶策略',
 				accountRequireEmail: '註冊時要求電子郵件',
 				accountVerifyEmail: '註冊時傳送驗證郵件',
 				saveAccountPolicy: '儲存帳戶策略',
 				emailHomeTitle: '🏠 首頁內容（Markdown）',
 				emailHomeDesc: '此 Markdown 內容將安全渲染並顯示在使用者儀表板上。',
-				saveContent: '儲存內容'
+				saveContent: '儲存內容',
+				acctPolicyTitle: '👤 帳戶策略',
+				acctPolicyDesc: '控制訪客是否可以註冊，以及註冊時的必填項。',
+				accountAllowRegistration: '允許新使用者註冊',
+				navSite: '🌐 站點配置',
+				siteTitle: '🌐 站點配置',
+				siteDesc: '設定顯示在公開頁面上的站點品牌與公告。',
+				siteName: '站點名稱',
+				siteNameHelp: '顯示為公開首頁的頁面標題與標題文字。',
+				seoDescription: 'SEO 描述',
+				seoDescriptionHelp: '用於首頁的 meta description 標籤。',
+				announcement: '站點公告',
+				announcementHelp: '以橫幅形式顯示在公開首頁。留空則隱藏。'
 			}
 		};
 		
@@ -2755,18 +2881,30 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('lbl-smtp-baseurl').innerText = t('smtpBaseUrl');
 			document.getElementById('smtp-baseurl-help').innerText = t('smtpBaseUrlHelp');
 			document.getElementById('btn-save-smtp').innerText = t('saveSMTP');
-			document.getElementById('btn-reload-smtp').innerText = t('reload');
 			document.getElementById('email-test-title').innerText = t('emailTestTitle');
 			document.getElementById('lbl-smtp-test-to').innerText = t('smtpTestTo');
 			document.getElementById('btn-test-email').innerText = t('sendTest');
-			document.getElementById('email-account-title').innerText = t('emailAccountTitle');
-			document.getElementById('lbl-account-require-email').innerText = t('accountRequireEmail');
-			document.getElementById('lbl-account-verify-email').innerText = t('accountVerifyEmail');
-			document.getElementById('btn-save-account').innerText = t('saveAccountPolicy');
 			document.getElementById('email-home-title').innerText = t('emailHomeTitle');
 			document.getElementById('email-home-desc').innerText = t('emailHomeDesc');
 			document.getElementById('btn-save-home').innerText = t('saveContent');
-			document.getElementById('btn-reload-home').innerText = t('reload');
+			// Account policy (Users section)
+			document.getElementById('acct-policy-title').innerText = t('acctPolicyTitle');
+			document.getElementById('acct-policy-desc').innerText = t('acctPolicyDesc');
+			document.getElementById('lbl-account-allow-registration').innerText = t('accountAllowRegistration');
+			document.getElementById('lbl-account-require-email').innerText = t('accountRequireEmail');
+			document.getElementById('lbl-account-verify-email').innerText = t('accountVerifyEmail');
+			document.getElementById('btn-save-account').innerText = t('saveAccountPolicy');
+			// Site config section
+			document.getElementById('nav-site').innerText = t('navSite');
+			document.getElementById('site-title').innerText = t('siteTitle');
+			document.getElementById('site-desc').innerText = t('siteDesc');
+			document.getElementById('lbl-site-name').innerText = t('siteName');
+			document.getElementById('site-name-help').innerText = t('siteNameHelp');
+			document.getElementById('lbl-site-seo').innerText = t('seoDescription');
+			document.getElementById('site-seo-help').innerText = t('seoDescriptionHelp');
+			document.getElementById('lbl-site-announcement').innerText = t('announcement');
+			document.getElementById('site-announcement-help').innerText = t('announcementHelp');
+			document.getElementById('btn-save-site').innerText = t('saveChanges');
 			renderSettingsPresets();
 		}
 		
@@ -2853,8 +2991,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (name === 'updates') applyScanDefaults();
 			if (name === 'news' && !newsData) loadNews();
 			if (name === 'users' && !usersData) loadUsers();
+			if (name === 'users') loadAccountPolicy();
 			if (name === 'feedback') loadFeedback();
 			if (name === 'email') loadEmailSettings();
+			if (name === 'site') loadSite();
 			if (name === 'settings') loadSettings();
 		}
 		
@@ -2883,8 +3023,26 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		// Email & Home (SMTP / account policy / markdown home content) functions
 		async function loadEmailSettings() {
 			await loadSMTP();
-			await loadAccountPolicy();
 			await loadHomeContent();
+		}
+		async function loadSite() {
+			const res = await apiRequest('GET', '/v0/api/admin/site');
+			if (!res || !res.ok) return;
+			const data = await res.json();
+			const c = data.site || {};
+			document.getElementById('site-name').value = c.siteName || '';
+			document.getElementById('site-seo').value = c.seoDescription || '';
+			document.getElementById('site-announcement').value = c.announcement || '';
+		}
+		async function saveSite() {
+			const site = {
+				siteName: document.getElementById('site-name').value.trim(),
+				seoDescription: document.getElementById('site-seo').value.trim(),
+				announcement: document.getElementById('site-announcement').value.trim()
+			};
+			const res = await apiRequest('PUT', '/v0/api/admin/site', { site });
+			if (res && res.ok) showMessage(t('settingsSaved'));
+			else showMessage(t('saveFailed'), true);
 		}
 		async function loadSMTP() {
 			const res = await apiRequest('GET', '/v0/api/admin/smtp');
@@ -2932,11 +3090,13 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (!res || !res.ok) return;
 			const data = await res.json();
 			const c = data.account || {};
+			document.getElementById('account-allow-registration').checked = !!c.allowRegistration;
 			document.getElementById('account-require-email').checked = !!c.requireEmail;
 			document.getElementById('account-verify-email').checked = !!c.verifyEmail;
 		}
 		async function saveAccount() {
 			const account = {
+				allowRegistration: document.getElementById('account-allow-registration').checked,
 				requireEmail: document.getElementById('account-require-email').checked,
 				verifyEmail: document.getElementById('account-verify-email').checked
 			};
@@ -4400,6 +4560,9 @@ func (s *Server) handleAppAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAppUserDashboard(w http.ResponseWriter, r *http.Request) {
+	if s.renderIfAccountDisabled(w) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	appUserDashboardTemplate.Execute(w, map[string]interface{}{"BasePath": s.basePath})
 }

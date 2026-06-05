@@ -121,6 +121,63 @@ func (s *Server) handleAdminUpdateAccount(w http.ResponseWriter, r *http.Request
 	s.writeJSON(w, http.StatusOK, AdminMessageResponse{Message: "account settings updated", Meta: s.meta()})
 }
 
+// AdminSiteResponse returns the current site configuration settings.
+type AdminSiteResponse struct {
+	Site config.SiteConfig `json:"site"`
+	Meta Meta              `json:"meta"`
+}
+
+func (s *Server) handleAdminGetSite(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	resp := AdminSiteResponse{Site: *s.currentSiteConfig(), Meta: s.meta()}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminUpdateSite(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requireAdmin(w, r); err != nil {
+		return
+	}
+	var payload struct {
+		Site config.SiteConfig `json:"site"`
+	}
+	if err := s.decode(r, &payload); err != nil {
+		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
+		return
+	}
+	cfg := payload.Site
+	cfg.SiteName = strings.TrimSpace(cfg.SiteName)
+	cfg.SEODescription = strings.TrimSpace(cfg.SEODescription)
+	cfg.Announcement = strings.TrimSpace(cfg.Announcement)
+	s.setSiteConfig(&cfg)
+	if err := s.saveConfigValue(store.ConfigKeySite, cfg); err != nil {
+		s.writeError(w, http.StatusInternalServerError, s.appConfig.Language.Default, "InternalError", err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusOK, AdminMessageResponse{Message: "site settings updated", Meta: s.meta()})
+}
+
+// AppSiteConfigResponse is the public, non-sensitive view of the site config
+// used by the public-facing pages (announcement banner, branding).
+type AppSiteConfigResponse struct {
+	SiteName       string `json:"siteName"`
+	SEODescription string `json:"seoDescription"`
+	Announcement   string `json:"announcement"`
+	Meta           Meta   `json:"meta"`
+}
+
+func (s *Server) handleAppSiteConfig(w http.ResponseWriter, r *http.Request) {
+	site := s.currentSiteConfig()
+	resp := AppSiteConfigResponse{
+		SiteName:       site.SiteName,
+		SEODescription: site.SEODescription,
+		Announcement:   site.Announcement,
+		Meta:           s.meta(),
+	}
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
 // AdminHomeContentResponse returns the admin-authored Markdown home content.
 type AdminHomeContentResponse struct {
 	Content string `json:"content"`

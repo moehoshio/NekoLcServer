@@ -202,8 +202,9 @@ These settings can also be changed at runtime from the Admin Dashboard under **U
 ### Email (SMTP)
 
 - **Statistics**: Live server usage overview that auto-refreshes while open (no manual refresh needed); pick the time range.
+- **User Dashboard**: A live, embedded preview of the signed-in user dashboard (announcements, news and maintenance notices) so admins can see exactly what users see.
 - **Launcher Configuration**: Manage hosts, WebSocket settings, security settings
-- **Maintenance**: Enable/disable maintenance mode with custom messages
+- **Maintenance**: Force an immediate maintenance, or plan any number of **scheduled windows**. The `scheduled` and `in progress` statuses are derived automatically from each window's start/end times — admins never set the status by hand. A configurable lead time controls how long before a window's start it begins reporting `scheduled`. An upcoming (`scheduled`) window is informational and does not block update delivery; only an `in progress` window does.
 - **Updates**: Configure update packages for each platform and architecture. Upload files (hosted by the server with an auto-generated download URL), browse and scan server directories visually, search and sort items
 - **News**: Create and manage multiple news items with search and sorting
 - **Feedback**: View user feedback logs with search, sorting, deletion, and collapsible long entries
@@ -212,7 +213,7 @@ These settings can also be changed at runtime from the Admin Dashboard under **U
 - **Site Config**: Configure the site name, SEO description, a site announcement (banner), the Markdown dashboard content shown on the user dashboard, and **Dashboard Options** that toggle whether news and the maintenance status are shown on the user dashboard. The site name and SEO description are rendered server-side into the public home page (`<title>` / `<meta name="description">`), and a non-empty announcement is shown as a banner.
 - **Maintenance announcement link**: On the Maintenance page, the **Announcement Link** can be auto-filled from an existing news item — pick one from the dropdown and the link is generated for you (the news item's own link when set, otherwise a permalink to the in-app news page at `/app/news?id=<id>`).
 
-The dashboard, user dashboard and public pages support **light / dark / auto** themes. The admin and user dashboards expose a theme switcher (Auto / Light / Dark, stored per-browser); other pages follow the operating-system `prefers-color-scheme` setting automatically. The interface is localized in English, Simplified Chinese and Traditional Chinese.
+The dashboard, user dashboard and public home page support **light / dark / auto** themes. The admin dashboard, user dashboard and the public home page expose a theme switcher (Auto / Light / Dark, with icons, stored per-browser); remaining pages follow the operating-system `prefers-color-scheme` setting automatically. The interface is localized in English, Simplified Chinese and Traditional Chinese, with an icon on the language selector.
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -283,8 +284,9 @@ The admin dashboard at `/app/admin` lets you manage the entire server visually.
 
 | Section | What You Can Do |
 |---------|-----------------|
+| **User Dashboard** | Preview the signed-in user dashboard live (announcements, news, maintenance) |
 | **Launcher** | Configure hosts, retry behavior, security settings, and feature flags |
-| **Maintenance** | Enable/disable maintenance mode with custom messages and per-platform overrides; auto-fill the announcement link from an existing news item |
+| **Maintenance** | Force maintenance now, or plan multiple scheduled windows whose `scheduled`/`in progress` status is derived automatically from their times; set the scheduled lead time; per-platform overrides; auto-fill the announcement link from an existing news item |
 | **Updates** | Upload update packages, manage versions for each platform/architecture, browse server files |
 | **News** | Create, edit, and manage news items with search and sorting |
 | **Users** | Manage user accounts and registration policy (allow registration, require email, verify email) |

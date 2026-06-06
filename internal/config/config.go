@@ -195,11 +195,49 @@ type SecurityUIConfig struct {
 	RegisterURL string `json:"registerUrl,omitempty"`
 }
 
+// Maintenance status values returned to clients. "scheduled" and "progress" are
+// derived automatically from a schedule's start/end times; "none" means inactive.
+const (
+	MaintenanceStatusNone      = "none"
+	MaintenanceStatusScheduled = "scheduled"
+	MaintenanceStatusProgress  = "progress"
+)
+
+// DefaultScheduledLeadMinutes is the fallback lead time (in minutes) before a
+// schedule's start during which its status is reported as "scheduled", used when
+// MaintenanceConfig.ScheduledLeadMinutes is not a positive value.
+const DefaultScheduledLeadMinutes = 60
+
 // MaintenanceConfig reflects maintenance.json.
 type MaintenanceConfig struct {
+	// MaintenanceActive forces an immediate, global maintenance ("progress") now,
+	// independent of any schedule. It is the manual override switch.
 	MaintenanceActive bool                           `json:"maintenanceActive"`
 	MaintenanceInfo   MaintenanceInfo                `json:"maintenanceInfo"`
 	PlatformSpecific  map[string]PlatformMaintenance `json:"platformSpecific"`
+	// Schedules holds any number of planned maintenance windows. Their status is
+	// derived from the current time rather than set manually.
+	Schedules []MaintenanceSchedule `json:"schedules,omitempty"`
+	// ScheduledLeadMinutes is how long before a window's start its status becomes
+	// "scheduled". When not positive, DefaultScheduledLeadMinutes is used.
+	ScheduledLeadMinutes int `json:"scheduledLeadMinutes,omitempty"`
+}
+
+// MaintenanceSchedule is a single planned maintenance window. The reported status
+// ("scheduled" or "progress") is computed from StartTime/EndTime and the
+// configured lead time; admins never set it directly.
+type MaintenanceSchedule struct {
+	ID        string `json:"id"`
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"exEndTime"`
+	Message   string `json:"message"`
+	Poster    string `json:"posterUrl"`
+	Link      string `json:"link"`
+	// Platforms restricts the window to specific "os-arch" keys (e.g. "windows-x64").
+	// An empty list applies the window to every platform.
+	Platforms         []string      `json:"platforms,omitempty"`
+	LocalizedMessages LocalizedText `json:"localizedMessages,omitempty"`
+	LocalizedTitle    LocalizedText `json:"localizedTitle,omitempty"`
 }
 
 // PlatformMaintenance contains overrides per platform tuple.

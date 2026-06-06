@@ -100,6 +100,118 @@ func TestAdminSiteConfigRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSiteConfigShowToggleDefaults verifies the custom unmarshaler defaults the
+// ShowNews and ShowMaintenance dashboard toggles to true when absent, while still
+// honoring an explicit false.
+func TestSiteConfigShowToggleDefaults(t *testing.T) {
+	var cfg config.SiteConfig
+	if err := json.Unmarshal([]byte(`{"siteName":"x"}`), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !cfg.ShowNews || !cfg.ShowMaintenance {
+		t.Fatalf("expected ShowNews/ShowMaintenance to default to true, got %+v", cfg)
+	}
+	if err := json.Unmarshal([]byte(`{"showNews":false,"showMaintenance":false}`), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.ShowNews || cfg.ShowMaintenance {
+		t.Fatalf("expected explicit false to be honored, got %+v", cfg)
+	}
+}
+
+// TestDashboardSectionToggles verifies the home-content API omits news and the
+// maintenance notice when the corresponding site config toggles are disabled.
+func TestDashboardSectionToggles(t *testing.T) {
+	srv := newTestServer(t, authEnabled)
+	srv.setNewsItems([]config.NewsItem{{ID: "n1", Title: "Hello"}})
+	srv.setMaintenanceConfig(&config.MaintenanceConfig{
+		MaintenanceActive: true,
+		MaintenanceInfo:   config.MaintenanceInfo{Status: "progress", Message: "down"},
+	})
+
+	// Disabled: neither section should be present.
+	srv.setSiteConfig(&config.SiteConfig{ShowNews: false, ShowMaintenance: false})
+	rec := doRequest(t, srv, http.MethodGet, "/app/api/home-content", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("home-content expected 200 got %d", rec.Code)
+	}
+	var resp HomeContentResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.News) != 0 {
+		t.Fatalf("expected no news when showNews is off, got %d", len(resp.News))
+	}
+	if resp.Maintenance != nil {
+		t.Fatalf("expected no maintenance when showMaintenance is off")
+	}
+
+	// Enabled: both sections should be present.
+	srv.setSiteConfig(&config.SiteConfig{ShowNews: true, ShowMaintenance: true})
+	rec = doRequest(t, srv, http.MethodGet, "/app/api/home-content", nil)
+	resp = HomeContentResponse{}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.News) != 1 {
+		t.Fatalf("expected 1 news item when showNews is on, got %d", len(resp.News))
+	}
+	if resp.Maintenance == nil || !resp.Maintenance.Active {
+		t.Fatalf("expected active maintenance notice when showMaintenance is on")
+	}
+}
+
+// TestNewsPermalinkPage verifies the public per-news page renders an existing
+// item and returns 404 for an unknown id.
+func TestNewsPermalinkPage(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {})
+	srv.setNewsItems([]config.NewsItem{{ID: "n1", Title: "Patch Notes", Content: "Body text"}})
+
+	rec := doRequest(t, srv, http.MethodGet, "/app/news?id=n1", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("news page expected 200 got %d", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "Patch Notes") || !strings.Contains(body, "Body text") {
+		t.Fatalf("news page missing title/content: %s", body)
+	}
+
+	rec = doRequest(t, srv, http.MethodGet, "/app/news?id=missing", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown news id expected 404 got %d", rec.Code)
+	}
+}
+
+// TestHomePageHasNoAdminLink verifies the public home page no longer exposes a
+// default admin dashboard entry (admin access is gated by role at login).
+func TestHomePageHasNoAdminLink(t *testing.T) {
+	srv := newTestServer(t, func(cfg *config.AppConfig) {})
+	rec := doRequest(t, srv, http.MethodGet, "/app", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("home expected 200 got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, `id="link-admin"`) || strings.Contains(body, "/app/admin") {
+		t.Fatalf("home page should not contain the admin dashboard entry")
+	}
+}
+
+// TestUserDashboardAdminLinkRoleGated verifies the user dashboard ships a hidden
+// admin entry that is revealed by JS only for admin-role users.
+func TestUserDashboardAdminLinkRoleGated(t *testing.T) {
+	srv := newTestServer(t, authEnabled)
+	rec := doRequest(t, srv, http.MethodGet, "/app/dashboard", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dashboard expected 200 got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `class="btn-secondary hidden" id="link-admin"`) {
+		t.Fatalf("dashboard admin link should be present but hidden by default")
+	}
+	if !strings.Contains(body, "/app/admin") {
+		t.Fatalf("dashboard should link to the admin panel for admins")
+	}
+}
+
 // TestAdminDashboardStructure verifies the admin page reflects the reorganized
 // sections, theme switcher and removal of the stats auto-refresh control.
 func TestAdminDashboardStructure(t *testing.T) {

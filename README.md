@@ -209,7 +209,8 @@ These settings can also be changed at runtime from the Admin Dashboard under **U
 - **Feedback**: View user feedback logs with search, sorting, deletion, and collapsible long entries
 - **Users**: Manage user accounts, plus the **Account Policy** (`allowRegistration`, `requireEmail`, `verifyEmail`). When the account/authentication feature is disabled, the user-facing pages (`/app/login`, `/app/register`, `/app/dashboard`) show a "feature not enabled" notice.
 - **Email**: Configure SMTP (used for password recovery and email verification). Includes a "send test email" action.
-- **Site Config**: Configure the site name, SEO description, a site announcement (banner), and the Markdown home-page content shown on the user dashboard. The site name and SEO description are rendered server-side into the public home page (`<title>` / `<meta name="description">`), and a non-empty announcement is shown as a banner.
+- **Site Config**: Configure the site name, SEO description, a site announcement (banner), the Markdown dashboard content shown on the user dashboard, and **Dashboard Options** that toggle whether news and the maintenance status are shown on the user dashboard. The site name and SEO description are rendered server-side into the public home page (`<title>` / `<meta name="description">`), and a non-empty announcement is shown as a banner.
+- **Maintenance announcement link**: On the Maintenance page, the **Announcement Link** can be auto-filled from an existing news item — pick one from the dropdown and the link is generated for you (the news item's own link when set, otherwise a permalink to the in-app news page at `/app/news?id=<id>`).
 
 The dashboard, user dashboard and public pages support **light / dark / auto** themes. The admin and user dashboards expose a theme switcher (Auto / Light / Dark, stored per-browser); other pages follow the operating-system `prefers-color-scheme` setting automatically. The interface is localized in English, Simplified Chinese and Traditional Chinese.
 
@@ -232,7 +233,9 @@ The dashboard, user dashboard and public pages support **light / dark / auto** t
 "site": {
   "siteName": "NekoLcServer",
   "seoDescription": "A modern launcher server",
-  "announcement": ""
+  "announcement": "",
+  "showNews": true,
+  "showMaintenance": true
 }
 ```
 
@@ -241,6 +244,8 @@ The dashboard, user dashboard and public pages support **light / dark / auto** t
 | `siteName` | Name shown in the browser tab and pages | `"NekoLcServer"` |
 | `seoDescription` | Meta description for search engines | — |
 | `announcement` | Banner text shown at the top of the user-facing pages. Leave empty to hide. | `""` |
+| `showNews` | Show the news list on the user dashboard | `true` |
+| `showMaintenance` | Show the maintenance status on the user dashboard | `true` |
 
 ### WebSocket
 
@@ -279,14 +284,13 @@ The admin dashboard at `/app/admin` lets you manage the entire server visually.
 | Section | What You Can Do |
 |---------|-----------------|
 | **Launcher** | Configure hosts, retry behavior, security settings, and feature flags |
-| **Maintenance** | Enable/disable maintenance mode with custom messages and per-platform overrides |
+| **Maintenance** | Enable/disable maintenance mode with custom messages and per-platform overrides; auto-fill the announcement link from an existing news item |
 | **Updates** | Upload update packages, manage versions for each platform/architecture, browse server files |
 | **News** | Create, edit, and manage news items with search and sorting |
 | **Users** | Manage user accounts and registration policy (allow registration, require email, verify email) |
 | **Feedback** | View, search, and delete user feedback logs |
 | **Email** | Configure SMTP settings and send test emails |
-| **Home Content** | Edit the Markdown content displayed on the user dashboard |
-| **Site Config** | Set the site name, SEO description, and announcement banner |
+| **Site Config** | Set the site name, SEO description, announcement banner, dashboard Markdown content, and toggle whether news / maintenance are shown on the user dashboard |
 
 <!-- Screenshot placeholders -->
 <!-- ![Dashboard Overview](docs/screenshots/admin-overview.png) -->

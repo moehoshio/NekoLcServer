@@ -369,7 +369,9 @@ func (s *Server) handleCheckUpdates(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, lang, "InvalidRequest", "clientInfo.app and clientInfo.system are required")
 		return
 	}
-	if info, active := s.maintenanceForClient(client); active {
+	// Only an in-progress maintenance window blocks update delivery; an upcoming
+	// ("scheduled") window is informational and must not stop updates.
+	if info, active := s.maintenanceForClient(client); active && info.Status == config.MaintenanceStatusProgress {
 		if info.Message == "" && s.localizer != nil {
 			info.Message = s.localizer.Maintenance(lang, info.Status)
 		}
@@ -471,7 +473,9 @@ func (s *Server) handleNews(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := s.languageFromPreferences(payload.Preferences)
 	req := payload.NewsRequest
-	if info, active := s.maintenanceForClient(req.ClientInfo); active {
+	// Only an in-progress maintenance window blocks news; an upcoming ("scheduled")
+	// window is informational.
+	if info, active := s.maintenanceForClient(req.ClientInfo); active && info.Status == config.MaintenanceStatusProgress {
 		if info.Message == "" && s.localizer != nil {
 			info.Message = s.localizer.Maintenance(lang, info.Status)
 		}

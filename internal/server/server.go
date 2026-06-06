@@ -413,19 +413,135 @@ func (s *Server) writeError(w http.ResponseWriter, status int, lang, errorType, 
 	}
 	s.writeJSON(w, status, resp)
 }
+
+// maintenanceForClient returns the single most relevant maintenance window for a
+// client: any in-progress window takes precedence over an upcoming ("scheduled")
+// one. The boolean reports whether a window applies at all.
 func (s *Server) maintenanceForClient(client *ClientInfo) (config.MaintenanceInfo, bool) {
-	cfg := s.currentMaintenanceConfig()
-	if cfg != nil && cfg.MaintenanceActive {
-		return cfg.MaintenanceInfo, true
-	}
-	key := platformKey(client)
-	if key == "" || cfg == nil {
+	list := s.activeMaintenance(client, time.Now().UTC())
+	if len(list) == 0 {
 		return config.MaintenanceInfo{}, false
 	}
-	if platform, ok := cfg.PlatformSpecific[key]; ok && platform.MaintenanceActive {
-		return platform.MaintenanceInfo, true
+	return list[0], true
+}
+
+// activeMaintenance returns every maintenance window currently applicable to the
+// client at time now, ordered with in-progress windows first and scheduled
+// (upcoming, within the lead time) windows after. Manual overrides (the global
+// switch and platform-specific switches) are always treated as in-progress.
+func (s *Server) activeMaintenance(client *ClientInfo, now time.Time) []config.MaintenanceInfo {
+	cfg := s.currentMaintenanceConfig()
+	if cfg == nil {
+		return nil
 	}
-	return config.MaintenanceInfo{}, false
+	lead := cfg.ScheduledLeadMinutes
+	if lead <= 0 {
+		lead = config.DefaultScheduledLeadMinutes
+	}
+	key := platformKey(client)
+
+	var progress, scheduled []config.MaintenanceInfo
+
+	// Manual global override: force an immediate maintenance now.
+	if cfg.MaintenanceActive {
+		info := cfg.MaintenanceInfo
+		info.Status = config.MaintenanceStatusProgress
+		progress = append(progress, info)
+	}
+	// Manual platform-specific override.
+	if key != "" {
+		if platform, ok := cfg.PlatformSpecific[key]; ok && platform.MaintenanceActive {
+			info := platform.MaintenanceInfo
+			info.Status = config.MaintenanceStatusProgress
+			progress = append(progress, info)
+		}
+	}
+	// Time-driven schedules.
+	for _, sc := range cfg.Schedules {
+		if !scheduleAppliesToPlatform(sc, key) {
+			continue
+		}
+		status := scheduleStatusAt(sc, lead, now)
+		switch status {
+		case config.MaintenanceStatusProgress:
+			progress = append(progress, scheduleToInfo(sc, status))
+		case config.MaintenanceStatusScheduled:
+			scheduled = append(scheduled, scheduleToInfo(sc, status))
+		}
+	}
+	return append(progress, scheduled...)
+}
+
+// scheduleAppliesToPlatform reports whether a schedule targets the given platform
+// key. Windows without an explicit platform list apply everywhere. When the client
+// platform is unknown (key == ""), only all-platform windows apply.
+func scheduleAppliesToPlatform(sc config.MaintenanceSchedule, key string) bool {
+	if len(sc.Platforms) == 0 {
+		return true
+	}
+	if key == "" {
+		return false
+	}
+	for _, p := range sc.Platforms {
+		if strings.EqualFold(strings.TrimSpace(p), key) {
+			return true
+		}
+	}
+	return false
+}
+
+// scheduleStatusAt derives the status of a schedule at time now: "progress" while
+// inside [start, end), "scheduled" within the lead window before start, and "" when
+// inactive (finished, or further out than the lead time). A schedule without a
+// valid start time is always inactive.
+func scheduleStatusAt(sc config.MaintenanceSchedule, leadMinutes int, now time.Time) string {
+	start, err := parseMaintenanceTime(sc.StartTime)
+	if err != nil {
+		return ""
+	}
+	if now.Before(start) {
+		lead := time.Duration(leadMinutes) * time.Minute
+		if !now.Before(start.Add(-lead)) {
+			return config.MaintenanceStatusScheduled
+		}
+		return ""
+	}
+	// now is at or after the start time.
+	if end, err := parseMaintenanceTime(sc.EndTime); err == nil && !now.Before(end) {
+		return ""
+	}
+	return config.MaintenanceStatusProgress
+}
+
+// parseMaintenanceTime parses an RFC3339 timestamp, tolerating the trailing-Z and
+// offset forms used by the admin UI's datetime-local inputs.
+func parseMaintenanceTime(value string) (time.Time, error) {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return time.Time{}, errors.New("empty time")
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t.UTC(), nil
+	}
+	// Fallback for "2006-01-02T15:04" (datetime-local without seconds/zone).
+	if t, err := time.Parse("2006-01-02T15:04", v); err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, errors.New("invalid time")
+}
+
+// scheduleToInfo projects a schedule into the public MaintenanceInfo contract.
+func scheduleToInfo(sc config.MaintenanceSchedule, status string) config.MaintenanceInfo {
+	return config.MaintenanceInfo{
+		Status:            status,
+		Message:           sc.Message,
+		Start:             sc.StartTime,
+		End:               sc.EndTime,
+		Poster:            sc.Poster,
+		Link:              sc.Link,
+		LocalizedMessages: sc.LocalizedMessages,
+		LocalizedTitle:    sc.LocalizedTitle,
+	}
 }
 
 // localizeMaintenanceInfo returns a copy of the maintenance info with localized messages applied.
@@ -740,51 +856,83 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>{{.SiteName}}</title>
 	<meta name="description" content="{{.SEODescription}}" />
+	<script>(function(){var th=localStorage.getItem('theme');if(th==='light'||th==='dark'){document.documentElement.setAttribute('data-theme',th);}})();</script>
 	<style>
+		:root {
+			--page-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+			--text: #e2e8f0; --subtitle: #94a3b8;
+			--btn-sec-bg: rgba(255,255,255,0.1); --btn-sec-border: rgba(255,255,255,0.2); --btn-sec-hover: rgba(255,255,255,0.2);
+			--feature-bg: rgba(255,255,255,0.05); --feature-border: rgba(255,255,255,0.1); --feature-h3: #f8fafc; --feature-p: #94a3b8; --feature-shadow: none;
+			--footer: #64748b;
+			--ann-bg: rgba(129,140,248,0.12); --ann-border: rgba(129,140,248,0.35); --ann-color: #e0e7ff;
+			--control-bg: rgba(0,0,0,0.3); --control-border: rgba(255,255,255,0.2);
+		}
+		:root[data-theme="light"] {
+			--page-bg: linear-gradient(135deg, #f1f5f9 0%, #e0e7ff 50%, #f1f5f9 100%);
+			--text: #1e293b; --subtitle: #475569;
+			--btn-sec-bg: rgba(15,23,42,0.06); --btn-sec-border: rgba(15,23,42,0.12); --btn-sec-hover: rgba(15,23,42,0.12);
+			--feature-bg: #ffffff; --feature-border: #e2e8f0; --feature-h3: #0f172a; --feature-p: #475569; --feature-shadow: 0 4px 16px rgba(15,23,42,0.06);
+			--footer: #64748b;
+			--ann-bg: rgba(129,140,248,0.14); --ann-border: rgba(129,140,248,0.4); --ann-color: #3730a3;
+			--control-bg: #ffffff; --control-border: #cbd5e1;
+		}
+		@media (prefers-color-scheme: light) {
+			:root:not([data-theme]) {
+				--page-bg: linear-gradient(135deg, #f1f5f9 0%, #e0e7ff 50%, #f1f5f9 100%);
+				--text: #1e293b; --subtitle: #475569;
+				--btn-sec-bg: rgba(15,23,42,0.06); --btn-sec-border: rgba(15,23,42,0.12); --btn-sec-hover: rgba(15,23,42,0.12);
+				--feature-bg: #ffffff; --feature-border: #e2e8f0; --feature-h3: #0f172a; --feature-p: #475569; --feature-shadow: 0 4px 16px rgba(15,23,42,0.06);
+				--footer: #64748b;
+				--ann-bg: rgba(129,140,248,0.14); --ann-border: rgba(129,140,248,0.4); --ann-color: #3730a3;
+				--control-bg: #ffffff; --control-border: #cbd5e1;
+			}
+		}
 		* { box-sizing: border-box; margin: 0; padding: 0; }
-		.announcement { max-width: 720px; margin: 0 auto 28px auto; padding: 14px 20px; border-radius: 12px; background: rgba(129,140,248,0.12); border: 1px solid rgba(129,140,248,0.35); color: #e0e7ff; font-size: 15px; line-height: 1.6; }
-		body { font-family: "Segoe UI", sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%); color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+		.announcement { max-width: 720px; margin: 0 auto 28px auto; padding: 14px 20px; border-radius: 12px; background: var(--ann-bg); border: 1px solid var(--ann-border); color: var(--ann-color); font-size: 15px; line-height: 1.6; }
+		body { font-family: "Segoe UI", sans-serif; background: var(--page-bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 		.container { text-align: center; padding: 40px; }
 		.logo { font-size: 80px; margin-bottom: 20px; animation: float 3s ease-in-out infinite; }
 		@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
 		h1 { font-size: 48px; font-weight: 700; margin-bottom: 16px; background: linear-gradient(120deg, #22d3ee, #818cf8, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-		.subtitle { font-size: 20px; color: #94a3b8; margin-bottom: 40px; }
+		.subtitle { font-size: 20px; color: var(--subtitle); margin-bottom: 40px; }
 		.links { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
 		.btn { padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 16px; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
 		.btn-primary { background: linear-gradient(120deg, #22d3ee, #818cf8); color: #0b1220; }
 		.btn-primary:hover { filter: brightness(1.1); transform: translateY(-2px); box-shadow: 0 10px 40px rgba(34, 211, 238, 0.3); }
-		.btn-secondary { background: rgba(255, 255, 255, 0.1); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); }
-		.btn-secondary:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
+		.btn-secondary { background: var(--btn-sec-bg); color: var(--text); border: 1px solid var(--btn-sec-border); }
+		.btn-secondary:hover { background: var(--btn-sec-hover); transform: translateY(-2px); }
 		.features { margin-top: 60px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; max-width: 900px; }
-		.feature { background: rgba(255, 255, 255, 0.05); padding: 24px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); }
-		.feature h3 { font-size: 18px; margin-bottom: 8px; color: #f8fafc; }
-		.feature p { font-size: 14px; color: #94a3b8; line-height: 1.6; }
-		.footer { margin-top: 60px; color: #64748b; font-size: 14px; }
+		.feature { background: var(--feature-bg); padding: 24px; border-radius: 16px; border: 1px solid var(--feature-border); box-shadow: var(--feature-shadow); }
+		.feature h3 { font-size: 18px; margin-bottom: 8px; color: var(--feature-h3); }
+		.feature p { font-size: 14px; color: var(--feature-p); line-height: 1.6; }
+		.footer { margin-top: 60px; color: var(--footer); font-size: 14px; }
 		.footer a { color: #818cf8; text-decoration: none; }
 		.footer a:hover { text-decoration: underline; }
-		.lang-switch { position: absolute; top: 16px; right: 16px; }
-		.lang-switch select { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: #e2e8f0; cursor: pointer; }
-		@media (prefers-color-scheme: light) {
-			body { background: linear-gradient(135deg, #f1f5f9 0%, #e0e7ff 50%, #f1f5f9 100%); color: #1e293b; }
-			.subtitle { color: #475569; }
-			.btn-secondary { background: rgba(15, 23, 42, 0.06); color: #1e293b; border: 1px solid rgba(15, 23, 42, 0.12); }
-			.btn-secondary:hover { background: rgba(15, 23, 42, 0.12); }
-			.features .feature { background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(15,23,42,0.06); }
-			.feature h3 { color: #0f172a; }
-			.feature p { color: #475569; }
-			.footer { color: #64748b; }
-			.announcement { color: #3730a3; background: rgba(129,140,248,0.14); border: 1px solid rgba(129,140,248,0.4); }
-			.lang-switch select { border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; }
-		}
+		.top-controls { position: absolute; top: 16px; right: 16px; display: flex; gap: 10px; align-items: center; }
+		.control { display: inline-flex; align-items: center; gap: 6px; background: var(--control-bg); border: 1px solid var(--control-border); border-radius: 8px; padding: 4px 8px; }
+		.control select { border: none; background: transparent; color: var(--text); cursor: pointer; outline: none; font-size: 14px; }
+		.control select option { color: #1e293b; }
+		.ctrl-icon { font-size: 15px; line-height: 1; }
 	</style>
 </head>
 <body>
-	<div class="lang-switch">
-		<select id="langSelect" onchange="changeLang()">
-			<option value="en">English</option>
-			<option value="zh-hans">简体中文</option>
-			<option value="zh-hant">繁體中文</option>
-		</select>
+	<div class="top-controls">
+		<div class="control">
+			<span class="ctrl-icon" aria-hidden="true">🌓</span>
+			<select id="themeSelect" onchange="changeTheme()" aria-label="Theme">
+				<option value="auto" id="opt-theme-auto">🌗 Auto</option>
+				<option value="light" id="opt-theme-light">☀️ Light</option>
+				<option value="dark" id="opt-theme-dark">🌙 Dark</option>
+			</select>
+		</div>
+		<div class="control">
+			<span class="ctrl-icon" aria-hidden="true">🌐</span>
+			<select id="langSelect" onchange="changeLang()" aria-label="Language">
+				<option value="en">English</option>
+				<option value="zh-hans">简体中文</option>
+				<option value="zh-hant">繁體中文</option>
+			</select>
+		</div>
 	</div>
 	<div class="container">
 		<div class="logo">🐱</div>
@@ -815,13 +963,22 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 	</div>
 	<script>
 		const i18n = {
-			'en': { subtitle: 'A modern launcher server for managing updates, news, and user authentication', signin: '🔑 Sign In', register: '📝 Register', admin: '⚙️ Admin Dashboard', f1t: '🚀 Update Management', f1d: 'Configure and distribute updates for multiple platforms and architectures with automatic checksum verification.', f2t: '🔧 Maintenance Control', f2d: 'Schedule and manage maintenance windows with platform-specific settings and customizable messages.', f3t: '📰 News System', f3d: 'Publish and manage news items with categories, priorities, and rich content support.' },
-			'zh-hans': { subtitle: '一个现代化的启动器服务器，用于管理更新、新闻和用户认证', signin: '🔑 登录', register: '📝 注册', admin: '⚙️ 管理面板', f1t: '🚀 更新管理', f1d: '配置和分发多平台多架构的更新，支持自动校验。', f2t: '🔧 维护控制', f2d: '安排和管理维护窗口，支持按平台设置和自定义消息。', f3t: '📰 新闻系统', f3d: '发布和管理新闻，支持分类、优先级和富文本内容。' },
-			'zh-hant': { subtitle: '一個現代化的啟動器伺服器，用於管理更新、新聞和使用者認證', signin: '🔑 登入', register: '📝 註冊', admin: '⚙️ 管理面板', f1t: '🚀 更新管理', f1d: '配置和分發多平台多架構的更新，支援自動校驗。', f2t: '🔧 維護控制', f2d: '安排和管理維護視窗，支援按平台設定和自訂訊息。', f3t: '📰 新聞系統', f3d: '發佈和管理新聞，支援分類、優先順序和富文本內容。' }
+			'en': { subtitle: 'A modern launcher server for managing updates, news, and user authentication', signin: '🔑 Sign In', register: '📝 Register', admin: '⚙️ Admin Dashboard', f1t: '🚀 Update Management', f1d: 'Configure and distribute updates for multiple platforms and architectures with automatic checksum verification.', f2t: '🔧 Maintenance Control', f2d: 'Schedule and manage maintenance windows with platform-specific settings and customizable messages.', f3t: '📰 News System', f3d: 'Publish and manage news items with categories, priorities, and rich content support.', themeAuto: '🌗 Auto', themeLight: '☀️ Light', themeDark: '🌙 Dark' },
+			'zh-hans': { subtitle: '一个现代化的启动器服务器，用于管理更新、新闻和用户认证', signin: '🔑 登录', register: '📝 注册', admin: '⚙️ 管理面板', f1t: '🚀 更新管理', f1d: '配置和分发多平台多架构的更新，支持自动校验。', f2t: '🔧 维护控制', f2d: '安排和管理维护窗口，支持按平台设置和自定义消息。', f3t: '📰 新闻系统', f3d: '发布和管理新闻，支持分类、优先级和富文本内容。', themeAuto: '🌗 自动', themeLight: '☀️ 浅色', themeDark: '🌙 深色' },
+			'zh-hant': { subtitle: '一個現代化的啟動器伺服器，用於管理更新、新聞和使用者認證', signin: '🔑 登入', register: '📝 註冊', admin: '⚙️ 管理面板', f1t: '🚀 更新管理', f1d: '配置和分發多平台多架構的更新，支援自動校驗。', f2t: '🔧 維護控制', f2d: '安排和管理維護視窗，支援按平台設定和自訂訊息。', f3t: '📰 新聞系統', f3d: '發佈和管理新聞，支援分類、優先順序和富文本內容。', themeAuto: '🌗 自動', themeLight: '☀️ 淺色', themeDark: '🌙 深色' }
 		};
 		function getLang() { return localStorage.getItem('lang') || 'en'; }
 		function setLang(lang) { localStorage.setItem('lang', lang); applyLang(); }
 		function changeLang() { setLang(document.getElementById('langSelect').value); }
+		function getTheme() { return localStorage.getItem('theme') || 'auto'; }
+		function applyTheme() {
+			const th = getTheme();
+			if (th === 'light' || th === 'dark') document.documentElement.setAttribute('data-theme', th);
+			else document.documentElement.removeAttribute('data-theme');
+			const sel = document.getElementById('themeSelect');
+			if (sel) sel.value = th;
+		}
+		function changeTheme() { localStorage.setItem('theme', document.getElementById('themeSelect').value); applyTheme(); }
 		function applyLang() {
 			const lang = getLang();
 			document.getElementById('langSelect').value = lang;
@@ -835,6 +992,10 @@ var appHomeTemplate = template.Must(template.New("appHome").Parse(`<!doctype htm
 			document.getElementById('f2-desc').innerText = t.f2d;
 			document.getElementById('f3-title').innerText = t.f3t;
 			document.getElementById('f3-desc').innerText = t.f3d;
+			document.getElementById('opt-theme-auto').innerText = t.themeAuto;
+			document.getElementById('opt-theme-light').innerText = t.themeLight;
+			document.getElementById('opt-theme-dark').innerText = t.themeDark;
+			applyTheme();
 		}
 		applyLang();
 	</script>
@@ -1806,6 +1967,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 	<div class="container">
 		<div class="sidebar">
 			<button class="active" onclick="showSection('stats')" id="nav-stats">📊 Statistics</button>
+			<button onclick="showSection('dashboard')" id="nav-dashboard">🖥️ User Dashboard</button>
 			<button onclick="showSection('launcher')" id="nav-launcher">🚀 Launcher</button>
 			<button onclick="showSection('maintenance')" id="nav-maintenance">🔧 Maintenance</button>
 			<button onclick="showSection('updates')" id="nav-updates">📦 Updates</button>
@@ -1872,7 +2034,19 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 				</div>
 			</div>
-			
+
+			<!-- User Dashboard Preview Section -->
+			<div id="section-dashboard" class="section hidden">
+				<div class="card">
+					<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+						<h2 id="dashboard-preview-title" style="margin:0;">🖥️ User Dashboard Preview</h2>
+						<button class="btn btn-secondary" onclick="refreshDashboardPreview()" id="btn-refresh-preview">↻ Refresh</button>
+					</div>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="dashboard-preview-desc">A live preview of the signed-in user dashboard, including announcements, news and maintenance notices as your account sees them.</p>
+					<iframe id="dashboard-preview-frame" title="User dashboard preview" style="width:100%;height:78vh;border:1px solid var(--border);border-radius:12px;background:var(--surface);"></iframe>
+				</div>
+			</div>
+
 			<!-- Launcher Section -->
 			<div id="section-launcher" class="section hidden">
 				<div class="card">
@@ -1960,23 +2134,21 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			<div id="section-maintenance" class="section hidden">
 				<div class="card">
 					<h2 id="maint-title">Maintenance Configuration</h2>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="maint-desc">Force an immediate maintenance, or plan scheduled windows below. The "scheduled" and "in progress" statuses are derived automatically from each window's times.</p>
 					<div class="form-group toggle">
 						<input type="checkbox" id="maint-active" />
-						<label for="maint-active" id="lbl-maint-active">Maintenance Active</label>
+						<label for="maint-active" id="lbl-maint-active">Force maintenance now</label>
 					</div>
-					<div class="form-row">
-						<div class="form-group">
-							<label for="maint-status" id="lbl-maint-status">Status</label>
-							<select id="maint-status">
-								<option value="none" id="opt-status-none">None</option>
-								<option value="scheduled" id="opt-status-scheduled">Scheduled</option>
-								<option value="progress" id="opt-status-progress">In Progress</option>
-							</select>
-						</div>
-						<div class="form-group">
-							<label for="maint-poster" id="lbl-maint-poster">Poster URL</label>
-							<input type="text" id="maint-poster" placeholder="https://..." />
-						</div>
+					<div class="form-group">
+						<label for="maint-lead" id="lbl-maint-lead">Show "scheduled" status before start (minutes)</label>
+						<input type="number" id="maint-lead" min="0" placeholder="60" style="max-width: 220px;" />
+						<p style="color: var(--text-muted); margin-top: 6px; font-size: 13px;" id="maint-lead-help">How long before a window's start time it begins reporting the "scheduled" status. Defaults to 60.</p>
+					</div>
+					<h3 style="margin-top: 20px; font-size: 16px;" id="maint-forced-title">Forced maintenance message</h3>
+					<p style="color: var(--text-muted); margin-bottom: 12px; font-size: 13px;" id="maint-forced-desc">Shown to clients while "Force maintenance now" is enabled.</p>
+					<div class="form-group">
+						<label for="maint-poster" id="lbl-maint-poster">Poster URL</label>
+						<input type="text" id="maint-poster" placeholder="https://..." />
 					</div>
 					<div class="form-group">
 						<label for="maint-message" id="lbl-maint-message">Message (Default)</label>
@@ -1987,16 +2159,6 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 						<p style="color: var(--text-muted); margin-bottom: 8px; font-size: 13px;" id="maint-localized-help">Add messages for different languages. The default message above will be used if no localized message is available.</p>
 						<div id="localized-messages-list"></div>
 						<button type="button" class="btn btn-secondary" style="margin-top: 8px;" onclick="addLocalizedMessage()" id="btn-add-language">+ Add Language</button>
-					</div>
-					<div class="form-row">
-						<div class="form-group">
-							<label for="maint-start" id="lbl-maint-start">Start Time</label>
-							<input type="datetime-local" id="maint-start" />
-						</div>
-						<div class="form-group">
-							<label for="maint-end" id="lbl-maint-end">Expected End Time</label>
-							<input type="datetime-local" id="maint-end" />
-						</div>
 					</div>
 					<div class="form-group">
 						<label for="maint-link" id="lbl-maint-link">Announcement Link</label>
@@ -2018,13 +2180,19 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 					</div>
 				</div>
 				<div class="card">
+					<h2 id="schedules-title">Scheduled Maintenance Windows</h2>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="schedules-desc">Plan one or more windows. Each one automatically becomes "scheduled" within the lead time above, then "in progress" between its start and end times.</p>
+					<div id="schedules-list"></div>
+					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addSchedule()" id="btn-add-schedule">+ Add Schedule</button>
+				</div>
+				<div class="card">
 					<h2 id="platform-maint-title">Platform-Specific Maintenance</h2>
-					<p style="color: var(--text-muted); margin-bottom: 16px;" id="platform-maint-desc">Configure maintenance settings per platform (e.g., windows-x64, linux-arm64).</p>
+					<p style="color: var(--text-muted); margin-bottom: 16px;" id="platform-maint-desc">Force maintenance for specific platforms (e.g., windows-x64, linux-arm64).</p>
 					<div id="platform-maintenance-list"></div>
 					<button class="btn btn-secondary" style="margin-top: 16px;" onclick="addPlatformMaintenance()" id="btn-add-platform">+ Add Platform</button>
 				</div>
 			</div>
-			
+
 			<!-- Updates Section -->
 			<div id="section-updates" class="section hidden">
 				<div class="card">
@@ -2503,6 +2671,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				adminTitle: '🐱 NekoLc Admin Dashboard',
 				logout: 'Logout',
 				navStats: '📊 Statistics',
+				navDashboard: '🖥️ User Dashboard',
+				dashboardPreviewTitle: '🖥️ User Dashboard Preview',
+				dashboardPreviewDesc: 'A live preview of the signed-in user dashboard, including announcements, news and maintenance notices as your account sees them.',
+				refreshPreview: '↻ Refresh',
 				navLauncher: '🚀 Launcher',
 				navMaintenance: '🔧 Maintenance',
 				navUpdates: '📦 Updates',
@@ -2542,7 +2714,19 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				savedSuccess: 'Saved successfully',
 				saveFailed: 'Failed to save',
 				maintTitle: 'Maintenance Configuration',
+				maintDesc: 'Force an immediate maintenance, or plan scheduled windows below. The "scheduled" and "in progress" statuses are derived automatically from each window\'s times.',
 				maintActive: 'Maintenance Active',
+				forceMaintNow: 'Force maintenance now',
+				scheduledLead: 'Show "scheduled" status before start (minutes)',
+				scheduledLeadHelp: 'How long before a window\'s start time it begins reporting the "scheduled" status. Defaults to 60.',
+				forcedMaintTitle: 'Forced maintenance message',
+				forcedMaintDesc: 'Shown to clients while "Force maintenance now" is enabled.',
+				schedulesTitle: 'Scheduled Maintenance Windows',
+				schedulesDesc: 'Plan one or more windows. Each one automatically becomes "scheduled" within the lead time above, then "in progress" between its start and end times.',
+				addSchedule: '+ Add Schedule',
+				statusInactive: 'Inactive',
+				schedPlatforms: 'Platforms (comma separated, blank = all)',
+				schedLocalizedHelp: 'Localized messages, one per line as "lang: message" (e.g. zh-hant: 維護中).',
 				status: 'Status',
 				statusNone: 'None',
 				statusScheduled: 'Scheduled',
@@ -2678,6 +2862,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 统计',
+				navDashboard: '🖥️ 用户仪表板',
+				dashboardPreviewTitle: '🖥️ 用户仪表板预览',
+				dashboardPreviewDesc: '实时预览登录用户的仪表板，包括公告、新闻和维护通知，与您的账户所见一致。',
+				refreshPreview: '↻ 刷新',
 				navLauncher: '🚀 启动器',
 				navMaintenance: '🔧 维护',
 				navUpdates: '📦 更新',
@@ -2717,7 +2905,19 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				savedSuccess: '保存成功',
 				saveFailed: '保存失败',
 				maintTitle: '维护配置',
+				maintDesc: '可立即强制进入维护，或在下方规划计划窗口。"已计划"和"进行中"状态会根据每个窗口的时间自动产生。',
 				maintActive: '维护中',
+				forceMaintNow: '立即强制维护',
+				scheduledLead: '开始前多少分钟显示"已计划"状态',
+				scheduledLeadHelp: '在窗口开始时间前多久开始报告"已计划"状态。默认 60。',
+				forcedMaintTitle: '强制维护消息',
+				forcedMaintDesc: '当"立即强制维护"开启时向客户端显示。',
+				schedulesTitle: '计划维护窗口',
+				schedulesDesc: '规划一个或多个窗口。每个窗口在上方设定的提前时间内自动变为"已计划"，并在其开始与结束时间之间变为"进行中"。',
+				addSchedule: '+ 添加窗口',
+				statusInactive: '未激活',
+				schedPlatforms: '平台（逗号分隔，留空=全部）',
+				schedLocalizedHelp: '本地化消息，每行一条，格式为 "语言: 消息"（例如 zh-hant: 維護中）。',
 				status: '状态',
 				statusNone: '无',
 				statusScheduled: '已计划',
@@ -2853,6 +3053,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				adminTitle: '🐱 NekoLc 管理面板',
 				logout: '登出',
 				navStats: '📊 統計',
+				navDashboard: '🖥️ 使用者儀表板',
+				dashboardPreviewTitle: '🖥️ 使用者儀表板預覽',
+				dashboardPreviewDesc: '即時預覽登入使用者的儀表板，包括公告、新聞與維護通知，與您的帳戶所見一致。',
+				refreshPreview: '↻ 重新整理',
 				navLauncher: '🚀 啟動器',
 				navMaintenance: '🔧 維護',
 				navUpdates: '📦 更新',
@@ -2892,7 +3096,19 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				savedSuccess: '儲存成功',
 				saveFailed: '儲存失敗',
 				maintTitle: '維護設定',
+				maintDesc: '可立即強制進入維護，或在下方規劃排程視窗。"已排程"與"進行中"狀態會根據每個視窗的時間自動產生。',
 				maintActive: '維護中',
+				forceMaintNow: '立即強制維護',
+				scheduledLead: '開始前多少分鐘顯示"已排程"狀態',
+				scheduledLeadHelp: '在視窗開始時間前多久開始回報"已排程"狀態。預設 60。',
+				forcedMaintTitle: '強制維護訊息',
+				forcedMaintDesc: '當"立即強制維護"開啟時向客戶端顯示。',
+				schedulesTitle: '排程維護視窗',
+				schedulesDesc: '規劃一個或多個視窗。每個視窗在上方設定的提前時間內自動變為"已排程"，並在其開始與結束時間之間變為"進行中"。',
+				addSchedule: '+ 新增視窗',
+				statusInactive: '未啟用',
+				schedPlatforms: '平台（逗號分隔，留空=全部）',
+				schedLocalizedHelp: '本地化訊息，每行一條，格式為 "語言: 訊息"（例如 zh-hant: 維護中）。',
 				status: '狀態',
 				statusNone: '無',
 				statusScheduled: '已排程',
@@ -3054,6 +3270,10 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('btn-logout').innerText = t('logout');
 			// Navigation
 			document.getElementById('nav-stats').innerText = t('navStats');
+			document.getElementById('nav-dashboard').innerText = t('navDashboard');
+			document.getElementById('dashboard-preview-title').innerText = t('dashboardPreviewTitle');
+			document.getElementById('dashboard-preview-desc').innerText = t('dashboardPreviewDesc');
+			document.getElementById('btn-refresh-preview').innerText = t('refreshPreview');
 			document.getElementById('nav-launcher').innerText = t('navLauncher');
 			document.getElementById('nav-maintenance').innerText = t('navMaintenance');
 			document.getElementById('nav-updates').innerText = t('navUpdates');
@@ -3149,26 +3369,29 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			document.getElementById('btn-save-site').innerText = t('saveChanges');
 			// Maintenance section
 			document.getElementById('maint-title').innerText = t('maintTitle');
-			document.getElementById('lbl-maint-active').innerText = t('maintActive');
-			document.getElementById('lbl-maint-status').innerText = t('status');
-			document.getElementById('opt-status-none').innerText = t('statusNone');
-			document.getElementById('opt-status-scheduled').innerText = t('statusScheduled');
-			document.getElementById('opt-status-progress').innerText = t('statusProgress');
+			document.getElementById('maint-desc').innerText = t('maintDesc');
+			document.getElementById('lbl-maint-active').innerText = t('forceMaintNow');
+			document.getElementById('lbl-maint-lead').innerText = t('scheduledLead');
+			document.getElementById('maint-lead-help').innerText = t('scheduledLeadHelp');
+			document.getElementById('maint-forced-title').innerText = t('forcedMaintTitle');
+			document.getElementById('maint-forced-desc').innerText = t('forcedMaintDesc');
 			document.getElementById('lbl-maint-poster').innerText = t('posterUrl');
 			document.getElementById('lbl-maint-message').innerText = t('messageDefault');
 			document.getElementById('lbl-maint-localized').innerText = t('localizedMessages');
 			document.getElementById('maint-localized-help').innerText = t('localizedMessagesHelp');
 			document.getElementById('btn-add-language').innerText = t('addLanguage');
-			document.getElementById('lbl-maint-start').innerText = t('startTime');
-			document.getElementById('lbl-maint-end').innerText = t('endTime');
 			document.getElementById('lbl-maint-link').innerText = t('announcementLink');
 			document.getElementById('opt-maint-news-none').innerText = t('selectNews');
 			document.getElementById('maint-link-news-help').innerText = t('selectNewsHelp');
 			document.getElementById('btn-save-maint').innerText = t('saveChanges');
 			document.getElementById('btn-reload-maint').innerText = t('reload');
+			document.getElementById('schedules-title').innerText = t('schedulesTitle');
+			document.getElementById('schedules-desc').innerText = t('schedulesDesc');
+			document.getElementById('btn-add-schedule').innerText = t('addSchedule');
 			document.getElementById('platform-maint-title').innerText = t('platformMaintTitle');
 			document.getElementById('platform-maint-desc').innerText = t('platformMaintDesc');
 			document.getElementById('btn-add-platform').innerText = t('addPlatform');
+			if (maintenanceData) renderSchedules();
 			// Updates section
 			document.getElementById('updates-autogen-title').innerText = t('updatesAutoGen');
 			document.getElementById('updates-autogen-desc').innerText = t('updatesAutoGenDesc');
@@ -3289,6 +3512,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				loadStats();
 				statsAutoRefreshTimer = setInterval(loadStats, 5000);
 			}
+			if (name === 'dashboard') refreshDashboardPreview();
 			if (name === 'launcher' && !launcherData) loadLauncher();
 			if (name === 'maintenance' && !maintenanceData) loadMaintenance();
 			if (name === 'updates' && !updatesData) loadUpdates();
@@ -3301,7 +3525,16 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			if (name === 'site') loadSite();
 			if (name === 'settings') loadSettings();
 		}
-		
+
+		// refreshDashboardPreview (re)loads the embedded user dashboard. It runs in the
+		// same origin so the iframe reuses the admin's stored session and shows the
+		// dashboard exactly as the signed-in user would see it.
+		function refreshDashboardPreview() {
+			const frame = document.getElementById('dashboard-preview-frame');
+			if (!frame) return;
+			frame.src = basePath + '/app/dashboard?preview=1&t=' + Date.now();
+		}
+
 		async function apiRequest(method, path, body = null) {
 			const opts = {
 				method,
@@ -3581,23 +3814,131 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			const res = await apiRequest('GET', '/v0/api/admin/maintenance');
 			if (!res) return;
 			const data = await res.json();
-			maintenanceData = data.maintenance;
-			
+			maintenanceData = data.maintenance || {};
+			if (!Array.isArray(maintenanceData.schedules)) maintenanceData.schedules = [];
+
 			document.getElementById('maint-active').checked = maintenanceData.maintenanceActive || false;
+			document.getElementById('maint-lead').value = maintenanceData.scheduledLeadMinutes || '';
 			const info = maintenanceData.maintenanceInfo || {};
-			document.getElementById('maint-status').value = info.status || 'none';
 			document.getElementById('maint-message').value = info.message || '';
 			document.getElementById('maint-poster').value = info.posterUrl || '';
 			document.getElementById('maint-link').value = info.link || '';
-			if (info.startTime) {
-				document.getElementById('maint-start').value = info.startTime.slice(0, 16);
-			}
-			if (info.exEndTime) {
-				document.getElementById('maint-end').value = info.exEndTime.slice(0, 16);
-			}
 			renderLocalizedMessages();
+			renderSchedules();
 			renderPlatformMaintenance();
 			populateMaintLinkNews();
+		}
+
+		// localizedToLines / linesToLocalized convert between a LocalizedText object
+		// and the compact "lang: message" textarea format used in schedule cards.
+		function localizedToLines(loc) {
+			if (!loc || !loc.langs) return '';
+			return Object.keys(loc.langs).map(k => k + ': ' + loc.langs[k]).join('\n');
+		}
+		function linesToLocalized(text, fallbackDefault) {
+			const langs = {};
+			(text || '').split('\n').forEach(line => {
+				const idx = line.indexOf(':');
+				if (idx <= 0) return;
+				const lang = line.slice(0, idx).trim().toLowerCase();
+				const msg = line.slice(idx + 1).trim();
+				if (lang && msg) langs[lang] = msg;
+			});
+			return { default: fallbackDefault || '', langs: langs };
+		}
+
+		// scheduleStatusBadge mirrors the server's status derivation so the admin sees
+		// a live preview of each window's current state.
+		function scheduleStatusBadge(sc) {
+			const lead = parseInt(document.getElementById('maint-lead').value, 10) || 60;
+			const now = Date.now();
+			const start = sc.startTime ? Date.parse(sc.startTime) : NaN;
+			const end = sc.exEndTime ? Date.parse(sc.exEndTime) : NaN;
+			let status = 'inactive', label = t('statusInactive'), color = 'var(--text-muted)';
+			if (!isNaN(start)) {
+				if (now < start) {
+					if (now >= start - lead * 60000) { status = 'scheduled'; label = t('statusScheduled'); color = '#fbbf24'; }
+				} else if (isNaN(end) || now < end) {
+					status = 'progress'; label = t('statusProgress'); color = '#f87171';
+				}
+			}
+			return '<span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:rgba(148,163,184,0.15);color:' + color + ';">' + escapeHtml(label) + '</span>';
+		}
+
+		function renderSchedules() {
+			const container = document.getElementById('schedules-list');
+			if (!maintenanceData || !Array.isArray(maintenanceData.schedules) || maintenanceData.schedules.length === 0) {
+				container.innerHTML = '<p style="color:var(--text-muted);">' + escapeHtml(t('schedulesDesc')) + '</p>';
+				return;
+			}
+			let html = '';
+			maintenanceData.schedules.forEach((sc, idx) => {
+				html += '<div class="platform-section" style="border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;">';
+				html += '<div class="header-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+				html += '<div>' + scheduleStatusBadge(sc) + '</div>';
+				html += '<button class="btn btn-danger" onclick="removeSchedule(' + idx + ')">' + escapeHtml(t('remove')) + '</button>';
+				html += '</div>';
+				html += '<div class="form-row">';
+				html += '<div class="form-group"><label>' + escapeHtml(t('startTime')) + '</label><input type="datetime-local" value="' + escapeHtml((sc.startTime || '').slice(0,16)) + '" onchange="updateScheduleTime(' + idx + ', \'startTime\', this.value)" /></div>';
+				html += '<div class="form-group"><label>' + escapeHtml(t('endTime')) + '</label><input type="datetime-local" value="' + escapeHtml((sc.exEndTime || '').slice(0,16)) + '" onchange="updateScheduleTime(' + idx + ', \'exEndTime\', this.value)" /></div>';
+				html += '</div>';
+				html += '<div class="form-group"><label>' + escapeHtml(t('messageDefault')) + '</label><textarea rows="2" onchange="updateSchedule(' + idx + ', \'message\', this.value)">' + escapeHtml(sc.message || '') + '</textarea></div>';
+				html += '<div class="form-row">';
+				html += '<div class="form-group"><label>' + escapeHtml(t('posterUrl')) + '</label><input type="text" placeholder="https://..." value="' + escapeHtml(sc.posterUrl || '') + '" onchange="updateSchedule(' + idx + ', \'posterUrl\', this.value)" /></div>';
+				html += '<div class="form-group"><label>' + escapeHtml(t('announcementLink')) + '</label><input type="text" placeholder="https://..." value="' + escapeHtml(sc.link || '') + '" onchange="updateSchedule(' + idx + ', \'link\', this.value)" /></div>';
+				html += '</div>';
+				html += '<div class="form-group"><label>' + escapeHtml(t('schedPlatforms')) + '</label><input type="text" placeholder="windows-x64, linux-arm64" value="' + escapeHtml((sc.platforms || []).join(', ')) + '" onchange="updateSchedulePlatforms(' + idx + ', this.value)" /></div>';
+				html += '<div class="form-group"><label>' + escapeHtml(t('localizedMessages')) + '</label><p style="color:var(--text-muted);font-size:13px;margin-bottom:6px;">' + escapeHtml(t('schedLocalizedHelp')) + '</p><textarea rows="2" placeholder="zh-hant: 維護中" onchange="updateScheduleLocalized(' + idx + ', this.value)">' + escapeHtml(localizedToLines(sc.localizedMessages)) + '</textarea></div>';
+				html += '</div>';
+			});
+			container.innerHTML = html;
+		}
+
+		function addSchedule() {
+			if (!maintenanceData) maintenanceData = { maintenanceActive: false, maintenanceInfo: {}, schedules: [] };
+			if (!Array.isArray(maintenanceData.schedules)) maintenanceData.schedules = [];
+			const start = new Date(Date.now() + 60 * 60000);
+			const end = new Date(Date.now() + 2 * 60 * 60000);
+			const pad = n => String(n).padStart(2, '0');
+			const fmt = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+			maintenanceData.schedules.push({
+				id: 'sch-' + Date.now(),
+				startTime: new Date(fmt(start)).toISOString(),
+				exEndTime: new Date(fmt(end)).toISOString(),
+				message: '', posterUrl: '', link: '', platforms: [],
+				localizedMessages: { default: '', langs: {} }
+			});
+			renderSchedules();
+		}
+
+		function removeSchedule(idx) {
+			if (maintenanceData && maintenanceData.schedules) {
+				maintenanceData.schedules.splice(idx, 1);
+				renderSchedules();
+			}
+		}
+
+		function updateSchedule(idx, field, value) {
+			if (maintenanceData && maintenanceData.schedules && maintenanceData.schedules[idx]) {
+				maintenanceData.schedules[idx][field] = value;
+			}
+		}
+
+		function updateScheduleTime(idx, field, value) {
+			if (!maintenanceData || !maintenanceData.schedules || !maintenanceData.schedules[idx]) return;
+			maintenanceData.schedules[idx][field] = value ? new Date(value).toISOString() : '';
+			renderSchedules();
+		}
+
+		function updateSchedulePlatforms(idx, value) {
+			if (!maintenanceData || !maintenanceData.schedules || !maintenanceData.schedules[idx]) return;
+			maintenanceData.schedules[idx].platforms = value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+		}
+
+		function updateScheduleLocalized(idx, value) {
+			if (!maintenanceData || !maintenanceData.schedules || !maintenanceData.schedules[idx]) return;
+			const sc = maintenanceData.schedules[idx];
+			sc.localizedMessages = linesToLocalized(value, sc.message || '');
 		}
 
 		// newsUrlFor builds the URL returned for a maintenance announcement that
@@ -3740,15 +4081,8 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 				html += '<button class="btn btn-danger" onclick="removePlatformMaintenance(\'' + safeKey + '\')">Remove</button>';
 				html += '</div>';
 				html += '<div class="form-group toggle"><input type="checkbox" id="plat-maint-active-' + idx + '" ' + (pdata.maintenanceActive ? 'checked' : '') + ' onchange="updatePlatformMaint(\'' + safeKey + '\', \'active\', this.checked)" />';
-				html += '<label for="plat-maint-active-' + idx + '">Maintenance Active</label></div>';
-				html += '<div class="form-row">';
-				html += '<div class="form-group"><label>Status</label><select id="plat-maint-status-' + idx + '" onchange="updatePlatformMaint(\'' + safeKey + '\', \'status\', this.value)">';
-				html += '<option value="none"' + (info.status === 'none' ? ' selected' : '') + '>None</option>';
-				html += '<option value="scheduled"' + (info.status === 'scheduled' ? ' selected' : '') + '>Scheduled</option>';
-				html += '<option value="progress"' + (info.status === 'progress' ? ' selected' : '') + '>In Progress</option>';
-				html += '</select></div>';
-				html += '<div class="form-group"><label>Message</label><input type="text" value="' + escapeHtml(info.message || '') + '" onchange="updatePlatformMaint(\'' + safeKey + '\', \'message\', this.value)" /></div>';
-				html += '</div>';
+				html += '<label for="plat-maint-active-' + idx + '">' + escapeHtml(t('forceMaintNow')) + '</label></div>';
+				html += '<div class="form-group"><label>' + escapeHtml(t('messageDefault')) + '</label><input type="text" value="' + escapeHtml(info.message || '') + '" onchange="updatePlatformMaint(\'' + safeKey + '\', \'message\', this.value)" /></div>';
 				html += '</div>';
 			});
 			container.innerHTML = html;
@@ -3766,7 +4100,7 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 			}
 			maintenanceData.platformSpecific[platformKey] = {
 				maintenanceActive: false,
-				maintenanceInfo: { status: 'none', message: '', startTime: '', exEndTime: '', posterUrl: '', link: '' }
+				maintenanceInfo: { status: 'progress', message: '', startTime: '', exEndTime: '', posterUrl: '', link: '' }
 			};
 			renderPlatformMaintenance();
 			showMessage('Platform added. Remember to save changes.');
@@ -3794,18 +4128,21 @@ var appAdminTemplate = template.Must(template.New("appAdmin").Parse(`<!doctype h
 		
 		async function saveMaintenance() {
 			const localizedMessages = maintenanceData?.maintenanceInfo?.localizedMessages || { default: '', langs: {} };
+			const leadVal = parseInt(document.getElementById('maint-lead').value, 10);
 			const payload = {
 				maintenance: {
 					maintenanceActive: document.getElementById('maint-active').checked,
+					scheduledLeadMinutes: (isNaN(leadVal) || leadVal < 0) ? 0 : leadVal,
 					maintenanceInfo: {
-						status: document.getElementById('maint-status').value,
+						status: 'progress',
 						message: document.getElementById('maint-message').value,
-						startTime: document.getElementById('maint-start').value ? new Date(document.getElementById('maint-start').value).toISOString() : '',
-						exEndTime: document.getElementById('maint-end').value ? new Date(document.getElementById('maint-end').value).toISOString() : '',
+						startTime: '',
+						exEndTime: '',
 						posterUrl: document.getElementById('maint-poster').value,
 						link: document.getElementById('maint-link').value,
 						localizedMessages: localizedMessages
 					},
+					schedules: (maintenanceData?.schedules || []),
 					platformSpecific: maintenanceData?.platformSpecific || {}
 				}
 			};
@@ -4739,9 +5076,9 @@ h2 { margin: 0 0 16px 0; color: var(--text-strong); font-size: 18px; }
 <script>
 const basePath = '{{.BasePath}}';
 const i18n = {
-'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', adminPanel: '⚙️ Admin Dashboard', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed', themeAuto: 'Auto', themeLight: 'Light', themeDark: 'Dark' },
-'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', adminPanel: '⚙️ 管理面板', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败', themeAuto: '自动', themeLight: '浅色', themeDark: '深色' },
-'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', adminPanel: '⚙️ 管理面板', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗', themeAuto: '自動', themeLight: '淺色', themeDark: '深色' }
+'en': { welcome: 'Welcome!', subtitle: "Here's your account overview", username: 'Username', email: 'Email', role: 'Role', status: 'Status', active: 'Active', logout: 'Logout', home: 'Home', user: 'User', admin: 'Admin', adminPanel: '⚙️ Admin Dashboard', noEmail: 'Not set', verified: 'Verified', unverified: 'Unverified', changePassword: 'Change Password', changeEmail: 'Change Email', verifyEmail: 'Verify Email', news: 'News', announcements: 'Announcements', maintenance: 'Maintenance', maintScheduled: 'Scheduled', maintInProgress: 'In progress', current: 'Current Password', newPassword: 'New Password', newEmail: 'New Email', save: 'Save', cancel: 'Cancel', pwChanged: 'Password updated', emailChanged: 'Email updated', verifySent: 'Verification email sent', failed: 'Request failed', themeAuto: 'Auto', themeLight: 'Light', themeDark: 'Dark' },
+'zh-hans': { welcome: '欢迎！', subtitle: '这是您的账户概览', username: '用户名', email: '邮箱', role: '角色', status: '状态', active: '正常', logout: '登出', home: '首页', user: '用户', admin: '管理员', adminPanel: '⚙️ 管理面板', noEmail: '未设置', verified: '已验证', unverified: '未验证', changePassword: '修改密码', changeEmail: '修改邮箱', verifyEmail: '验证邮箱', news: '新闻', announcements: '公告', maintenance: '维护', maintScheduled: '已计划', maintInProgress: '进行中', current: '当前密码', newPassword: '新密码', newEmail: '新邮箱', save: '保存', cancel: '取消', pwChanged: '密码已更新', emailChanged: '邮箱已更新', verifySent: '验证邮件已发送', failed: '请求失败', themeAuto: '自动', themeLight: '浅色', themeDark: '深色' },
+'zh-hant': { welcome: '歡迎！', subtitle: '這是您的帳戶概覽', username: '使用者名稱', email: '電子郵件', role: '角色', status: '狀態', active: '正常', logout: '登出', home: '首頁', user: '使用者', admin: '管理員', adminPanel: '⚙️ 管理面板', noEmail: '未設定', verified: '已驗證', unverified: '未驗證', changePassword: '修改密碼', changeEmail: '修改電子郵件', verifyEmail: '驗證電子郵件', news: '新聞', announcements: '公告', maintenance: '維護', maintScheduled: '已排程', maintInProgress: '進行中', current: '目前密碼', newPassword: '新密碼', newEmail: '新電子郵件', save: '儲存', cancel: '取消', pwChanged: '密碼已更新', emailChanged: '電子郵件已更新', verifySent: '驗證郵件已傳送', failed: '請求失敗', themeAuto: '自動', themeLight: '淺色', themeDark: '深色' }
 };
 let currentUser = null;
 function getLang() { return localStorage.getItem('lang') || 'en'; }
@@ -4850,8 +5187,24 @@ if (data.contentHtml && data.contentHtml.trim()) {
 document.getElementById('home-content-body').innerHTML = data.contentHtml;
 document.getElementById('home-content-card').classList.remove('hidden');
 }
-if (data.maintenance && data.maintenance.active) {
-document.getElementById('maintenance-message').innerText = data.maintenance.message || data.maintenance.status || '';
+const tt2 = t();
+const maint = (data.maintenances && data.maintenances.length) ? data.maintenances : (data.maintenance ? [data.maintenance] : []);
+if (maint.length) {
+const box = document.getElementById('maintenance-message');
+box.innerHTML = '';
+for (const m of maint) {
+const statusLabel = m.status === 'scheduled' ? tt2.maintScheduled : (m.status === 'progress' ? tt2.maintInProgress : '');
+const color = m.status === 'scheduled' ? '#fbbf24' : '#f87171';
+const entry = document.createElement('div');
+entry.style.cssText = 'padding:8px 0;border-top:1px solid var(--border);';
+let html = '';
+if (statusLabel) html += '<span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:rgba(148,163,184,0.15);color:' + color + ';margin-bottom:6px;">' + escapeHtml(statusLabel) + '</span>';
+if (m.message) html += '<div>' + escapeHtml(m.message) + '</div>';
+if (m.startTime || m.exEndTime) html += '<div class="meta" style="color:var(--text-muted);font-size:12px;margin-top:4px;">' + escapeHtml((m.startTime || '').replace('T',' ').replace(/:00(\.\d+)?Z?$/,'')) + (m.exEndTime ? ' → ' + escapeHtml((m.exEndTime || '').replace('T',' ').replace(/:00(\.\d+)?Z?$/,'')) : '') + '</div>';
+if (m.link) html += '<div style="margin-top:4px;"><a href="' + encodeURI(m.link) + '" target="_blank" rel="noopener noreferrer">&#8594;</a></div>';
+entry.innerHTML = html;
+box.appendChild(entry);
+}
 document.getElementById('maintenance-card').classList.remove('hidden');
 }
 const news = data.news || [];

@@ -371,18 +371,24 @@ func (s *Server) handleAppChangeEmail(w http.ResponseWriter, r *http.Request) {
 // HTML), the current maintenance notice and the latest news items for the user
 // homepage/dashboard.
 type HomeContentResponse struct {
-	ContentHTML     string             `json:"contentHtml"`
-	ContentMarkdown string             `json:"contentMarkdown"`
-	Maintenance     *MaintenanceNotice `json:"maintenance,omitempty"`
-	News            []HomeNewsItem     `json:"news"`
-	Meta            Meta               `json:"meta"`
+	ContentHTML     string `json:"contentHtml"`
+	ContentMarkdown string `json:"contentMarkdown"`
+	// Maintenance is the single most relevant active window, kept for backward
+	// compatibility. Maintenances lists every currently active window.
+	Maintenance  *MaintenanceNotice  `json:"maintenance,omitempty"`
+	Maintenances []MaintenanceNotice `json:"maintenances"`
+	News         []HomeNewsItem      `json:"news"`
+	Meta         Meta                `json:"meta"`
 }
 
-// MaintenanceNotice is a compact maintenance summary for the homepage.
+// MaintenanceNotice is a compact maintenance summary for the dashboard.
 type MaintenanceNotice struct {
-	Active  bool   `json:"active"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	Active    bool   `json:"active"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	StartTime string `json:"startTime,omitempty"`
+	EndTime   string `json:"exEndTime,omitempty"`
+	Link      string `json:"link,omitempty"`
 }
 
 // HomeNewsItem is a compact news entry for the homepage.
@@ -398,17 +404,29 @@ func (s *Server) handleAppHomeContent(w http.ResponseWriter, r *http.Request) {
 	resp := HomeContentResponse{
 		ContentMarkdown: s.currentHomeContent(),
 		ContentHTML:     markdown.Render(s.currentHomeContent()),
+		Maintenances:    []MaintenanceNotice{},
 		News:            []HomeNewsItem{},
 		Meta:            s.meta(),
 	}
 	site := s.currentSiteConfig()
 	if site.ShowMaintenance {
-		if mc := s.currentMaintenanceConfig(); mc != nil && mc.MaintenanceActive {
-			resp.Maintenance = &MaintenanceNotice{
-				Active:  true,
-				Status:  mc.MaintenanceInfo.Status,
-				Message: mc.MaintenanceInfo.Message,
+		// The dashboard is not platform-specific, so evaluate with no client: this
+		// surfaces the global override and all all-platform schedules currently
+		// in-progress or upcoming within the lead time.
+		for _, info := range s.activeMaintenance(nil, time.Now().UTC()) {
+			notice := MaintenanceNotice{
+				Active:    true,
+				Status:    info.Status,
+				Message:   info.Message,
+				StartTime: info.Start,
+				EndTime:   info.End,
+				Link:      info.Link,
 			}
+			resp.Maintenances = append(resp.Maintenances, notice)
+		}
+		if len(resp.Maintenances) > 0 {
+			first := resp.Maintenances[0]
+			resp.Maintenance = &first
 		}
 	}
 	if site.ShowNews {

@@ -62,6 +62,7 @@ type Server struct {
 	dirCache              map[string]dirCacheEntry
 	updateConfigMu        sync.RWMutex
 	loginLimiter          *rateLimiter
+	accountLimiter        *rateLimiter
 	wsHub                 *wsHub
 }
 
@@ -113,6 +114,7 @@ func New(
 		basePath:              normalizeBasePath(appCfg.Server.BasePath),
 		dirCache:              map[string]dirCacheEntry{},
 		loginLimiter:          newRateLimiter(loginRateLimitMax, loginRateLimitWindow),
+		accountLimiter:        newRateLimiter(accountRateLimitMax, accountRateLimitWindow),
 	}
 	// Resolve the WebSocket mount path (defaults to /v0/ws).
 	srv.wsPath = strings.TrimSpace(appCfg.WebSocket.Path)
@@ -186,6 +188,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(securityHeadersMiddleware)
 	r.Use(s.apiTrackingMiddleware)
 
 	mount := func(router chi.Router) {
@@ -1417,6 +1420,9 @@ func (s *Server) handleAppRegisterSubmit(w http.ResponseWriter, r *http.Request)
 	}
 	if acct := s.currentAccountConfig(); acct != nil && !acct.AllowRegistration {
 		s.writeError(w, http.StatusForbidden, s.appConfig.Language.Default, "Unauthorized", "registration is disabled")
+		return
+	}
+	if s.accountRateLimited(w, r) {
 		return
 	}
 	var payload RegisterPayload

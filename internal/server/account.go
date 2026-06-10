@@ -58,6 +58,17 @@ func userIDFromClaims(c *authClaims) (int64, error) {
 	return strconv.ParseInt(parts[1], 10, 64)
 }
 
+// accountRateLimited reports whether the request exceeds the limit for sensitive
+// account endpoints. When the limit is hit it writes a 429 response and returns
+// true so the caller can abort.
+func (s *Server) accountRateLimited(w http.ResponseWriter, r *http.Request) bool {
+	if s.accountLimiter != nil && !s.accountLimiter.Allow(clientIP(r)) {
+		s.writeError(w, http.StatusTooManyRequests, s.appConfig.Language.Default, "TooManyRequests", "Too many requests. Please try again later.")
+		return true
+	}
+	return false
+}
+
 // requireUser authenticates the request and loads the corresponding user.
 func (s *Server) requireUser(r *http.Request) (*store.User, error) {
 	claims, err := s.authenticate(r)
@@ -154,6 +165,9 @@ func (s *Server) handleAppForgotPassword(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
 		return
 	}
+	if s.accountRateLimited(w, r) {
+		return
+	}
 	var req ForgotPasswordRequest
 	if err := s.decode(r, &req); err != nil {
 		s.writeError(w, http.StatusBadRequest, s.appConfig.Language.Default, "InvalidRequest", err.Error())
@@ -187,6 +201,9 @@ type ResetPasswordRequest struct {
 func (s *Server) handleAppResetPassword(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
+		return
+	}
+	if s.accountRateLimited(w, r) {
 		return
 	}
 	var req ResetPasswordRequest
@@ -226,6 +243,9 @@ func (s *Server) handleAppSendVerification(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Authentication is disabled")
 		return
 	}
+	if s.accountRateLimited(w, r) {
+		return
+	}
 	user, err := s.requireUser(r)
 	if err != nil {
 		s.writeError(w, http.StatusUnauthorized, s.appConfig.Language.Default, "Unauthorized", "invalid credentials")
@@ -254,6 +274,9 @@ type VerifyEmailRequest struct {
 func (s *Server) handleAppVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		s.writeError(w, http.StatusNotImplemented, s.appConfig.Language.Default, "NotImplemented", "Account store not configured")
+		return
+	}
+	if s.accountRateLimited(w, r) {
 		return
 	}
 	token := strings.TrimSpace(r.URL.Query().Get("token"))

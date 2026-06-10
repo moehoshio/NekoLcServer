@@ -16,6 +16,14 @@ const (
 	loginRateLimitWindow = time.Minute
 )
 
+// Default policy for sensitive, unauthenticated account endpoints (registration,
+// password reset, email verification). These are kept stricter than login to
+// curb email-sending abuse, token brute-forcing and account enumeration.
+const (
+	accountRateLimitMax    = 5
+	accountRateLimitWindow = time.Minute
+)
+
 // rateLimiter is a simple in-memory sliding-window rate limiter keyed by an
 // arbitrary string (typically the client IP).
 type rateLimiter struct {

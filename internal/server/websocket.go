@@ -130,9 +130,9 @@ func (h *wsHub) Broadcast(notification *WSNotification) {
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins; tighten in production via reverse proxy
-	},
+	// Reject cross-origin upgrade requests to prevent Cross-Site WebSocket
+	// Hijacking. Non-browser clients (no Origin header) are still allowed.
+	CheckOrigin: sameOriginWebSocket,
 }
 
 // --- WebSocket Constants ---

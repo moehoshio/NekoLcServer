@@ -316,11 +316,22 @@ Uploaded files are served at `/files/<path>` with path-traversal protection.
 
 ## Running Behind a Reverse Proxy
 
+> [!WARNING]
+> **Do not expose the server directly to the public internet.** The server
+> unconditionally trusts the `X-Forwarded-For` / `X-Real-IP` headers when
+> identifying client IPs for rate limiting (login, registration, password
+> reset, email verification). Without a trusted reverse proxy in front,
+> an attacker can spoof these headers to bypass rate limits entirely.
+> Always deploy behind a reverse proxy (Nginx, Caddy, etc.) that
+> **overwrites** these headers with the real client address, and make sure
+> the application port (e.g. `8080`) is only reachable from the proxy
+> (bind to `127.0.0.1` or restrict it with a firewall).
+
 If you run NekoLc Server behind Nginx, Caddy, or another reverse proxy:
 
 1. Set `server.basePath` if the server is not at the root (e.g. `"/launcher"`)
 2. Set `smtp.baseUrl` to your public URL so email links work correctly
-3. Forward the `X-Forwarded-For` header for accurate rate limiting
+3. Forward the `X-Forwarded-For` header for accurate rate limiting — the proxy must **set/overwrite** it, never pass through the client-supplied value
 
 **Nginx example:**
 
